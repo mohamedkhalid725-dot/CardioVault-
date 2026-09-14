@@ -1,0 +1,43 @@
+{
+  "project_info": {
+    "project_number": "963615758407",
+    "project_id": "ccu-notebook",
+    "storage_bucket": "ccu-notebook.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:963615758407:android:56a114967ef9429250b962",
+        "android_client_info": { "package_name": "com.cardiovault.app" }
+      },
+      "oauth_client": [
+        {
+          "client_id": "963615758407-hd8jf9ue7f7dtmt7pf0f8956tq2khoam.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cardiovault.app",
+            "certificate_hash": "f5ac589a4738ae1ced074faf3831caa6b4517d45"
+          }
+        },
+        {
+          "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        { "current_key": "AIzaSyCwoEwTLG3yfY7gnd2LDk2sFm6oFKBqX7c" }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
