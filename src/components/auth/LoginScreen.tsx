@@ -17,29 +17,20 @@ function switchLocalAccount(email: string) {
     const currentAuth = StorageService.getAuth();
     const currentEmail = String(currentAuth?.userEmail || '').trim().toLowerCase();
     if (currentEmail && currentEmail !== target) {
-      localStorage.setItem(accountKey(currentEmail), JSON.stringify({
-        units: StorageService.getUnits(),
-        beds: StorageService.getBeds(),
-        patients: StorageService.getPatients(),
-      }));
+      localStorage.setItem(accountKey(currentEmail), JSON.stringify({ units: StorageService.getUnits(), beds: StorageService.getBeds(), patients: StorageService.getPatients() }));
     }
     const saved = localStorage.getItem(accountKey(target));
     if (saved) {
       const data = JSON.parse(saved);
       if (Array.isArray(data.units) && Array.isArray(data.beds) && Array.isArray(data.patients)) {
-        StorageService.saveUnits(data.units);
-        StorageService.saveBeds(data.beds);
-        StorageService.savePatients(data.patients);
-        return;
+        StorageService.saveUnits(data.units); StorageService.saveBeds(data.beds); StorageService.savePatients(data.patients); return;
       }
     }
     StorageService.saveUnits(INITIAL_UNITS);
     StorageService.saveBeds(emptyBeds());
     StorageService.savePatients([]);
     localStorage.setItem(accountKey(target), JSON.stringify({ units: INITIAL_UNITS, beds: emptyBeds(), patients: [] }));
-  } catch (error) {
-    console.error('Account data isolation error:', error);
-  }
+  } catch (error) { console.error('Account data isolation error:', error); }
 }
 
 export const LoginScreen: React.FC = () => {
@@ -50,39 +41,38 @@ export const LoginScreen: React.FC = () => {
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState(false);
 
-  const finishLocalAccountLogin = (userEmail: string) => {
-    switchLocalAccount(userEmail);
-    loginWithEmail(userEmail);
-  };
+  const finishLocalAccountLogin = (userEmail: string) => { switchLocalAccount(userEmail); loginWithEmail(userEmail); };
 
   const handleGoogleLogin = async () => {
     if (!Capacitor.isNativePlatform()) { loginWithGoogle(); return; }
     try {
       showToast('Opening Google account…', 'info');
-      const result = await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
-      const googleUser = result.user;
+      // Use the current Android Credential Manager implementation. The Firebase
+      // config contains the Web OAuth client used as the server client ID.
+      let googleUser = (await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: true })).user;
+      // Android can return a pending authentication result after the account
+      // chooser/activity resumes. Read it as a fallback instead of leaving the
+      // user on the login screen with no visible error.
+      if (!googleUser) {
+        const pending = await FirebaseAuthentication.getPendingAuthResult();
+        googleUser = pending.user;
+      }
       if (!googleUser?.email) {
-        showToast('Google did not return a signed-in account.', 'error');
+        showToast('Google account selection did not complete. Please try again.', 'error');
         return;
       }
       localStorage.removeItem('cardiovault_google_uid');
       finishLocalAccountLogin(googleUser.email);
       if (googleUser.uid) localStorage.setItem('cardiovault_google_uid', googleUser.uid);
       void (async () => {
-        let cloud: { uid: string; found: boolean } | null = null;
         try {
-          cloud = await Promise.race([
+          const cloud = await Promise.race([
             loadCurrentUserFromCloud(),
             new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 5000)),
           ]);
-        } catch (error) {
-          console.warn('Background cloud load failed:', error);
-        }
-        if (cloud?.found) {
-          window.location.reload();
-        } else if (googleUser.uid) {
-          await saveCurrentUserToCloud();
-        }
+          if (cloud?.found) window.location.reload();
+          else if (googleUser?.uid) await saveCurrentUserToCloud();
+        } catch (error) { console.warn('Background cloud sync failed:', error); }
       })();
       showToast('Signed in with Google successfully.', 'success');
     } catch (error: any) {
