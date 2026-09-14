@@ -1,3 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1536" viewBox="0 0 1536 1536">
-<image width="1536" height="1536" href="data:image/webp;base64,UklGRiQKgABXRUJQVlA4IBgKgACwAQCdASoQABAAPtFiqzZQAAAAAA==" preserveAspectRatio="xMidYMid slice"/>
+<defs>
+  <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#1acbd1"/>
+    <stop offset="0.55" stop-color="#0cb9ce"/>
+    <stop offset="1" stop-color="#168fe0"/>
+  </linearGradient>
+  <linearGradient id="pulse" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#18bfe1"/>
+    <stop offset="1" stop-color="#168fe0"/>
+  </linearGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="48%">
+    <stop offset="0" stop-color="#0c789b" stop-opacity="0.12"/>
+    <stop offset="1" stop-color="#020514" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1536" height="1536" fill="#020514"/>
+<rect width="1536" height="1536" fill="url(#glow)"/>
+<rect x="310" y="310" width="916" height="916" rx="176" fill="none" stroke="url(#edge)" stroke-width="29"/>
+<path d="M768 1010 C768 1010 548 862 548 704 C548 620 610 566 681 566 C721 566 751 584 768 615 C785 584 815 566 855 566 C926 566 988 620 988 704 C988 862 768 1010 768 1010 Z" fill="none" stroke="url(#pulse)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M548 762 H655 L708 701 L752 859 L805 631 L856 877 L894 750 L944 765 H988" fill="none" stroke="url(#pulse)" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
