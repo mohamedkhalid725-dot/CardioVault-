@@ -1,0 +1,7 @@
+{
+  "name": "CardioVault",
+  "description": "Personal Clinical Notebook & Multi-Unit Patient Management for ICU, CCU, and Cardiology physicians",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

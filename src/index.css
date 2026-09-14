@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --bg-main: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-surface-elevated: #f1f5f9;
+    --border-color: #e2e8f0;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --accent-cyan: #0891b2;
+    --accent-cyan-light: #e0f2fe;
+  }
+
+  .dark {
+    --bg-main: #0b111e;
+    --bg-surface: #111c2e;
+    --bg-surface-elevated: #16243b;
+    --border-color: #1e2e4b;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent-cyan: #00d2f2;
+    --accent-cyan-light: rgba(0, 210, 242, 0.12);
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Print styling for clinical dossier export */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  header, nav, .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+}
+
+/* ECG Paper Grid Background */
+.ecg-grid-bg {
+  background-color: #ffeef0;
+  background-image: 
+    linear-gradient(#fca5a5 0.5px, transparent 0.5px),
+    linear-gradient(90deg, #fca5a5 0.5px, transparent 0.5px),
+    linear-gradient(#f87171 1px, transparent 1px),
+    linear-gradient(90deg, #f87171 1px, transparent 1px);
+  background-size: 8px 8px, 8px 8px, 40px 40px, 40px 40px;
+}
+
+.dark .ecg-grid-bg {
+  background-color: #1a0f12;
+  background-image: 
+    linear-gradient(rgba(244, 63, 94, 0.15) 0.5px, transparent 0.5px),
+    linear-gradient(90deg, rgba(244, 63, 94, 0.15) 0.5px, transparent 0.5px),
+    linear-gradient(rgba(244, 63, 94, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(244, 63, 94, 0.35) 1px, transparent 1px);
+  background-size: 8px 8px, 8px 8px, 40px 40px, 40px 40px;
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
