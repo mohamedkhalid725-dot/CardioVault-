@@ -20,16 +20,17 @@ export const PATIENT_SECTIONS: Array<{ id: PatientSectionId; order: number; labe
   { id:'pdf',order:14,label:'PDF',icon:FileDown },
 ];
 
-export const PatientFileNav: React.FC = () => {
+interface Props { onSelect?: () => void; }
+export const PatientFileNav: React.FC<Props> = ({ onSelect }) => {
   const { activePatientSection, setActivePatientSection } = useApp();
   return <nav className="w-full px-3 sm:px-4 py-2 bg-transparent">
     <div className="max-w-3xl mx-auto space-y-1">
       {PATIENT_SECTIONS.map(sec=>{
-        const Icon=sec.icon; const active=activePatientSection===sec.id;
-        return <button key={sec.id} onClick={()=>setActivePatientSection(sec.id)} className={`w-full min-h-[50px] flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all border ${active?'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/15':'bg-white/80 dark:bg-[#0E1626]/80 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40'}`}>
-          <Icon className={`w-5 h-5 shrink-0 ${active?'text-slate-950':'text-cyan-500 dark:text-cyan-400'}`} />
+        const Icon=sec.icon;
+        return <button key={sec.id} onClick={()=>{setActivePatientSection(sec.id);onSelect?.();}} className="w-full min-h-[54px] flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all border bg-white/90 dark:bg-[#0E1626]/90 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 hover:shadow-sm">
+          <Icon className="w-5 h-5 shrink-0 text-cyan-500 dark:text-cyan-400" />
           <span className="font-semibold text-sm sm:text-[15px] flex-1 truncate">{sec.label}</span>
-          <span className={`text-lg leading-none ${active?'text-slate-950':'text-slate-400'}`}>›</span>
+          <span className="text-lg leading-none text-slate-400">›</span>
         </button>;
       })}
     </div>
