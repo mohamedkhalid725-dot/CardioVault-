@@ -40,6 +40,14 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Prepare CardioVault launcher icon
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+          mkdir -p assets
+          rsvg-convert -w 1024 -h 1024 public/cardiovault-logo.svg -o assets/icon.png
+          npx @capacitor/assets@latest generate --android
+
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
