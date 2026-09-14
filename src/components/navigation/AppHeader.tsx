@@ -1,191 +1,44 @@
 import React, { useState } from 'react';
-import {
-  Search,
-  Moon,
-  Sun,
-  Lock,
-  RefreshCw,
-  LogOut,
-  User,
-  ShieldCheck,
-  Building2,
-} from 'lucide-react';
+import { Search, Moon, Sun, Lock, RefreshCw, LogOut, User, ShieldCheck, Building2, Cloud, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { CardioLogo } from '../CardioLogo';
 
 export const AppHeader: React.FC = () => {
-  const {
-    theme,
-    toggleTheme,
-    auth,
-    logout,
-    lockApp,
-    setIsSearchOpen,
-    syncNow,
-    isSyncing,
-    lastSyncTime,
-    currentView,
-    setCurrentView,
-    currentUnitId,
-    getUnitById,
-  } = useApp();
-
+  const { theme, toggleTheme, auth, logout, lockApp, setIsSearchOpen, syncNow, isSyncing, lastSyncTime, currentView, setCurrentView, currentUnitId, getUnitById } = useApp();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
   const currentUnit = currentUnitId ? getUnitById(currentUnitId) : null;
+  const openAccountSettings = () => { setShowProfileMenu(false); setShowAccountSettings(true); };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#0B111E]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-4 py-2.5 transition-colors">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        {/* Brand & Unit Breadcrumb */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setCurrentView('home')}
-            className="flex items-center gap-2.5 text-left focus:outline-none group"
-            title="CardioVault Home"
-          >
-            <CardioLogo size="sm" showText={true} showSubtitle={false} />
-          </button>
-
-          {currentUnit && currentView !== 'home' && (
-            <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-300 dark:border-slate-700/60 text-xs">
-              <Building2 className="w-3.5 h-3.5 text-cyan-500" />
-              <button
-                onClick={() => setCurrentView('census')}
-                className="font-medium text-slate-700 dark:text-slate-300 hover:text-cyan-500 dark:hover:text-cyan-400 transition-colors"
-              >
-                {currentUnit.name}
-              </button>
-            </div>
-          )}
+          <button onClick={() => setCurrentView('home')} className="flex items-center gap-2.5 text-left focus:outline-none group" title="CardioVault Home"><CardioLogo size="sm" showText={true} showSubtitle={false} /></button>
+          {currentUnit && currentView !== 'home' && <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-300 dark:border-slate-700/60 text-xs"><Building2 className="w-3.5 h-3.5 text-cyan-500" /><button onClick={() => setCurrentView('census')} className="font-medium text-slate-700 dark:text-slate-300 hover:text-cyan-500 dark:hover:text-cyan-400 transition-colors">{currentUnit.name}</button></div>}
         </div>
 
-        {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Global Search Button */}
-          <button
-            onClick={() => setIsSearchOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs transition-colors border border-transparent dark:border-slate-700/50"
-            title="Search Patients (MRN, Name, Bed, Diagnosis)"
-          >
-            <Search className="w-3.5 h-3.5 text-cyan-500" />
-            <span className="hidden md:inline">Quick Search...</span>
-            <kbd className="hidden md:inline-block px-1.5 py-0.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-400">
-              ⌘K
-            </kbd>
-          </button>
+          <button onClick={() => setIsSearchOpen(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs transition-colors border border-transparent dark:border-slate-700/50" title="Search Patients (MRN, Name, Bed, Diagnosis)"><Search className="w-3.5 h-3.5 text-cyan-500" /><span className="hidden md:inline">Quick Search...</span><kbd className="hidden md:inline-block px-1.5 py-0.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-400">⌘K</kbd></button>
+          <button onClick={syncNow} disabled={isSyncing} className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative" title={`Cloud Sync (Last: ${lastSyncTime})`}><RefreshCw className={`w-4 h-4 text-cyan-500 ${isSyncing ? 'animate-spin' : ''}`} /><span className="sr-only">Sync</span></button>
+          <button onClick={toggleTheme} className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-500" />}</button>
+          <button onClick={lockApp} className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Privacy Lock (Requires PIN to resume)"><Lock className="w-4 h-4 text-slate-400 hover:text-cyan-400" /></button>
 
-          {/* Cloud Sync Button */}
-          <button
-            onClick={syncNow}
-            disabled={isSyncing}
-            className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
-            title={`Cloud Sync (Last: ${lastSyncTime})`}
-          >
-            <RefreshCw className={`w-4 h-4 text-cyan-500 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span className="sr-only">Sync</span>
-          </button>
-
-          {/* Theme Switcher */}
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4 text-indigo-500" />
-            )}
-          </button>
-
-          {/* Privacy Quick Lock */}
-          <button
-            onClick={lockApp}
-            className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Privacy Lock (Requires PIN to resume)"
-          >
-            <Lock className="w-4 h-4 text-slate-400 hover:text-cyan-400" />
-          </button>
-
-          {/* User Profile Dropdown */}
           <div className="relative">
-            <button
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-sky-400 flex items-center justify-center text-white text-xs font-bold ring-2 ring-cyan-500/30 hover:ring-cyan-400 transition-all focus:outline-none ml-1"
-              title={auth.userName}
-            >
-              MK
-            </button>
-
-            {showProfileMenu && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowProfileMenu(false)}
-                />
-                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-[#111C2E] rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700/80 p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-                    <div className="w-10 h-10 rounded-full bg-cyan-600/20 text-cyan-500 flex items-center justify-center font-bold">
-                      <User className="w-5 h-5" />
-                    </div>
-                    <div className="overflow-hidden">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                        {auth.userName}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {auth.userEmail}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="py-2 space-y-1 text-xs">
-                    <div className="px-2 py-1.5 flex items-center justify-between text-slate-600 dark:text-slate-400">
-                      <span className="flex items-center gap-2">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> Security
-                      </span>
-                      <span className="text-emerald-500 font-medium">HIPAA / AES-256</span>
-                    </div>
-                    <div className="px-2 py-1.5 flex items-center justify-between text-slate-600 dark:text-slate-400">
-                      <span>Cloud Sync</span>
-                      <span className="text-slate-400">{lastSyncTime}</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        setCurrentView('settings');
-                      }}
-                      className="w-full text-left px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-2 transition-colors"
-                    >
-                      <User className="w-3.5 h-3.5 text-slate-400" /> Account Settings
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        lockApp();
-                      }}
-                      className="w-full text-left px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-2 transition-colors"
-                    >
-                      <Lock className="w-3.5 h-3.5 text-slate-400" /> Lock Screen
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        logout();
-                      }}
-                      className="w-full text-left px-2.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg flex items-center gap-2 transition-colors"
-                    >
-                      <LogOut className="w-3.5 h-3.5" /> Sign Out
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+            <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-sky-400 flex items-center justify-center text-white text-xs font-bold ring-2 ring-cyan-500/30 hover:ring-cyan-400 transition-all focus:outline-none ml-1" title={auth.userName}>MK</button>
+            {showProfileMenu && <><div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} /><div className="absolute right-0 mt-2 w-64 bg-white dark:bg-[#111C2E] rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700/80 p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800"><div className="w-10 h-10 rounded-full bg-cyan-600/20 text-cyan-500 flex items-center justify-center font-bold"><User className="w-5 h-5" /></div><div className="overflow-hidden"><p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{auth.userName}</p><p className="text-xs text-slate-500 dark:text-slate-400 truncate">{auth.userEmail}</p></div></div>
+              <div className="py-2 space-y-1 text-xs"><div className="px-2 py-1.5 flex items-center justify-between text-slate-600 dark:text-slate-400"><span className="flex items-center gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> Security</span><span className="text-emerald-500 font-medium">HIPAA / AES-256</span></div><div className="px-2 py-1.5 flex items-center justify-between text-slate-600 dark:text-slate-400"><span>Cloud Sync</span><span className="text-slate-400">{lastSyncTime}</span></div></div>
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1"><button onClick={openAccountSettings} className="w-full text-left px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-2 transition-colors"><User className="w-3.5 h-3.5 text-cyan-500" /> Account Settings</button><button onClick={()=>{setShowProfileMenu(false);setCurrentView('settings');}} className="w-full text-left px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-2 transition-colors"><ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> System Settings</button><button onClick={()=>{setShowProfileMenu(false);lockApp();}} className="w-full text-left px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-2 transition-colors"><Lock className="w-3.5 h-3.5 text-slate-400" /> Lock Screen</button><button onClick={()=>{setShowProfileMenu(false);logout();}} className="w-full text-left px-2.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg flex items-center gap-2 transition-colors"><LogOut className="w-3.5 h-3.5" /> Sign Out</button></div>
+            </div></>}
           </div>
         </div>
       </div>
+
+      {showAccountSettings && <div className="fixed inset-0 z-[80] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={()=>setShowAccountSettings(false)}><div className="w-full max-w-md bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800"><div><h2 className="text-base font-bold text-slate-900 dark:text-white">Account Settings</h2><p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Google account and CardioVault Cloud</p></div><button onClick={()=>setShowAccountSettings(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4" /></button></div>
+        <div className="p-5 space-y-4"><div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-cyan-500/15 text-cyan-500 flex items-center justify-center"><User className="w-5 h-5" /></div><div className="min-w-0"><p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{auth.userName}</p><p className="text-xs text-slate-500 dark:text-slate-400 truncate">{auth.userEmail}</p></div></div></div><div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white"><Cloud className="w-4 h-4 text-emerald-500" /> Cloud Sync</div><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Clinical data is mirrored to the signed-in Google account. Last sync: {lastSyncTime}</p><button onClick={syncNow} disabled={isSyncing} className="mt-3 px-4 py-2 rounded-xl bg-cyan-500 disabled:opacity-50 text-slate-950 text-xs font-bold flex items-center gap-2"><RefreshCw className={`w-3.5 h-3.5 ${isSyncing?'animate-spin':''}`} />{isSyncing?'Syncing…':'Sync Now'}</button></div><button onClick={()=>{setShowAccountSettings(false);logout();}} className="w-full py-2.5 rounded-xl border border-rose-500/30 bg-rose-500/5 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center justify-center gap-2"><LogOut className="w-4 h-4" /> Sign Out of Google / CardioVault</button></div>
+      </div></div>}
     </header>
   );
 };
