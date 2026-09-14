@@ -22,11 +22,11 @@ export const CardioLogo: React.FC<CardioLogoProps> = ({
 
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      <div className={`${sizeMap[size].icon} relative flex-shrink-0 overflow-hidden rounded-[26%] shadow-lg`}>
+      <div className={`${sizeMap[size].icon} relative flex-shrink-0 overflow-hidden rounded-[26%] shadow-lg bg-[#020514] p-0.5`}>
         <img
           src="/cardiovault-logo.svg"
           alt="CardioVault"
-          className="block w-full h-full object-cover"
+          className="block w-full h-full object-contain"
           draggable={false}
         />
       </div>
