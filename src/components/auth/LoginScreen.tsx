@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { StorageService, INITIAL_BEDS, INITIAL_UNITS } from '../../services/storage';
+import { loadCurrentUserFromCloud, saveCurrentUserToCloud } from '../../services/cloudSyncBridge';
 
 const accountKey = (email: string) => `cardiovault_account_v1_${encodeURIComponent(email.trim().toLowerCase())}`;
 const emptyBeds = () => INITIAL_BEDS.map(b => ({ ...b, patientId: undefined, status: 'Empty' as const }));
@@ -32,7 +33,6 @@ function switchLocalAccount(email: string) {
         return;
       }
     }
-    // First login for this account: same clinical unit structure, but absolutely no patients or occupied beds.
     StorageService.saveUnits(INITIAL_UNITS);
     StorageService.saveBeds(emptyBeds());
     StorageService.savePatients([]);
@@ -58,14 +58,27 @@ export const LoginScreen: React.FC = () => {
   const handleGoogleLogin = async () => {
     if (!Capacitor.isNativePlatform()) { loginWithGoogle(); return; }
     try {
-      // Credential Manager can return "No Credential Available" on a first-time account.
-      // The classic Google provider flow opens the account chooser and is more reliable for this APK.
+      showToast('Opening Google account…', 'info');
       const result = await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
-      if (!result.user?.email) {
+      const googleUser = result.user;
+      if (!googleUser?.email) {
         showToast('Google did not return a signed-in account.', 'error');
         return;
       }
-      finishLocalAccountLogin(result.user.email);
+
+      // Store the native Firebase UID before any local/cloud data operation.
+      if (googleUser.uid) localStorage.setItem('cardiovault_google_uid', googleUser.uid);
+
+      // Cloud data wins over any old local snapshot for this Google account.
+      // The load is intentionally outside the native sign-in call so the account
+      // chooser can never appear to hang because Firestore is slow/unavailable.
+      const cloud = await loadCurrentUserFromCloud();
+      if (cloud?.found) {
+        loginWithEmail(googleUser.email);
+      } else {
+        finishLocalAccountLogin(googleUser.email);
+        await saveCurrentUserToCloud();
+      }
       showToast('Signed in with Google successfully.', 'success');
     } catch (error: any) {
       console.error('Native Google Sign-In error:', error);
@@ -93,7 +106,7 @@ export const LoginScreen: React.FC = () => {
         {auth.isLocked ? (
           <div className="w-full space-y-5">
             <div className="bg-cyan-950/40 border border-cyan-800/60 rounded-2xl p-4 text-center"><div className="w-10 h-10 mx-auto rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center mb-2"><Lock className="w-5 h-5" /></div><h2 className="text-base font-semibold text-white">Notebook Locked</h2><p className="text-xs text-slate-400 mt-1">Enter your 4-digit PIN to access patient files</p></div>
-            <div className="flex justify-center gap-3 py-2">{[0,1,2,3].map(i=><div key={i} className={`w-3.5 h-3.5 rounded-full border transition-all ${pin.length>i?'bg-cyan-400 border-cyan-300 scale-110 shadow-sm shadow-cyan-400':pinError?'border-rose-500 bg-rose-500/20':'border-slate-600 bg-slate-800'}`} />)}</div>
+            <div className="flex justify-center gap-3 py-2">{[0,1,2,3].map(i=><div key={i} className={`w-3.5 h-3.5 rounded-full border transition-all ${pin.length>i?'bg-cyan-400 border-cyan-300 scale-110 shadow-sm shadow-cyan-400':'border-slate-600 bg-slate-800'}`} />)}</div>
             {pinError&&<p className="text-xs text-rose-400 animate-pulse">Incorrect PIN. Default demo PIN is 1234.</p>}
             <div className="grid grid-cols-3 gap-2.5 max-w-[240px] mx-auto pt-2">{['1','2','3','4','5','6','7','8','9','C','0','⌫'].map(k=><button key={k} type="button" onClick={()=>{if(k==='C'){setPin('');setPinError(false)}else if(k==='⌫'){setPin(p=>p.slice(0,-1));setPinError(false)}else handlePinDigit(k)}} className="h-12 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-white font-semibold text-lg flex items-center justify-center border border-slate-700/60 active:scale-95 transition-all shadow-sm">{k}</button>)}</div>
             <button onClick={()=>unlockWithPin('1234')} className="text-xs text-cyan-400 hover:text-cyan-300 underline pt-2">Quick Unlock (Default: 1234)</button>
