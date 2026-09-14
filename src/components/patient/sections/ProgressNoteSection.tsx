@@ -1,309 +1,71 @@
-import React, { useState } from 'react';
-import {
-  FileText,
-  Plus,
-  Clock,
-  Sparkles,
-  Calendar,
-  CheckCircle2,
-  Trash2,
-  Share2,
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FileText, Plus, Pencil, Trash2, X } from 'lucide-react';
 import { Patient, ProgressNote } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 
-interface ProgressNoteSectionProps {
-  patient: Patient;
-}
+interface Props { patient: Patient; }
 
-export const ProgressNoteSection: React.FC<ProgressNoteSectionProps> = ({ patient }) => {
-  const { updatePatient, showToast } = useApp();
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedNote, setSelectedNote] = useState<ProgressNote | null>(
-    patient.progressNotes?.[0] || null
-  );
+const now = () => ({ date: new Date().toISOString().split('T')[0], time: new Date().toTimeString().slice(0, 5) });
 
-  // New Note state
-  const [noteType, setNoteType] = useState<ProgressNote['type']>('SOAP Note');
-  const [author, setAuthor] = useState('Dr. Mohamed Khalid, MD (CCU Fellow)');
-  const [subjective, setSubjective] = useState(
-    'Patient rested well overnight. Denies recurrent chest tightness, orthopnea, or palpitations. Mild residual dyspnea upon ambulation.'
-  );
-  const [objective, setObjective] = useState(
-    `Vitals: BP ${patient.vitals.bpSystolic}/${patient.vitals.bpDiastolic} mmHg, HR ${patient.vitals.heartRate} bpm, SpO2 ${patient.vitals.spo2}%, RR ${patient.vitals.respiratoryRate}/min.\nCVS: S1+S2 present, no murmurs. JVP flat.\nRespiratory: Clear bibasilar breath sounds.\nLabs: Peak Troponin resolving, Creatinine ${patient.labResults?.[0]?.value || 'stable'}.`
-  );
-  const [assessment, setAssessment] = useState(
-    `Post-PCI Anterior STEMI (Day 2). Killip Class I. Preserved renal function. Patient hemodynamically stable, inotropes weaned.`
-  );
-  const [plan, setPlan] = useState(
-    `1. CV: Continue Dual Antiplatelet Therapy (Aspirin 81mg + Ticagrelor 90mg BID). Titrate Bisoprolol to target HR 60-70.\n2. Renal: Maintain positive fluid balance tracking, repeat BMP tomorrow.\n3. Mobilization: Cardiac rehab phase 1, transfer to telemetry step-down floor.`
-  );
+export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
+  const { updatePatient, showToast, auth } = useApp();
+  const notes = Array.isArray(patient.progressNotes) ? patient.progressNotes : [];
+  const [selectedId, setSelectedId] = useState<string | null>(notes[0]?.id || null);
+  const [editing, setEditing] = useState<ProgressNote | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
-  const notes = patient.progressNotes || [];
+  useEffect(() => {
+    if (selectedId && notes.some((n) => n.id === selectedId)) return;
+    setSelectedId(notes[0]?.id || null);
+  }, [patient.id, notes.length, selectedId]);
 
-  const handleAddNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newNote: ProgressNote = {
-      id: `note-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      time: new Date().toTimeString().slice(0, 5),
-      author,
-      type: noteType,
-      subjective,
-      objective,
-      assessment,
-      plan,
-    };
+  const selected = useMemo(() => notes.find((n) => n.id === selectedId) || null, [notes, selectedId]);
+  const latestVital = patient.vitalsHistory?.[0];
 
-    const updatedNotes = [newNote, ...notes];
-    updatePatient(patient.id, { progressNotes: updatedNotes });
-    setSelectedNote(newNote);
-    setShowAddModal(false);
-    showToast('Progress note signed and saved', 'success');
+  const openNew = () => {
+    const t = now();
+    setEditing({
+      id: '', date: t.date, time: t.time, author: auth.userName || 'Physician', type: 'SOAP Note',
+      subjective: '', objective: latestVital ? `BP ${latestVital.sbp}/${latestVital.dbp} mmHg, HR ${latestVital.hr} bpm, SpO₂ ${latestVital.spo2}%, RR ${latestVital.rr}/min.` : '',
+      assessment: '', plan: '',
+    });
+    setShowModal(true);
   };
 
-  return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-150">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <FileText className="w-5 h-5 text-cyan-500" /> Daily Clinical Documentation & SOAP Notes
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            SOAP rounding notes, systems-based critical care summaries, and SBAR handover
-          </p>
-        </div>
+  const save = () => {
+    if (!editing) return;
+    if (!editing.author.trim() || !editing.plan.trim()) {
+      showToast('Author and plan are required.', 'error');
+      return;
+    }
+    const record: ProgressNote = { ...editing, id: editing.id || `note-${Date.now()}` };
+    const next = editing.id ? notes.map((n) => n.id === editing.id ? record : n) : [record, ...notes];
+    updatePatient(patient.id, { progressNotes: next });
+    setSelectedId(record.id);
+    setEditing(null);
+    setShowModal(false);
+    showToast(editing.id ? 'Progress note updated.' : 'Progress note saved.', 'success');
+  };
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" /> New Progress Note
-        </button>
-      </div>
+  const remove = (id: string) => {
+    if (!window.confirm('Delete this progress note permanently?')) return;
+    const next = notes.filter((n) => n.id !== id);
+    updatePatient(patient.id, { progressNotes: next });
+    setSelectedId(next[0]?.id || null);
+    showToast('Progress note deleted.', 'info');
+  };
 
-      {/* Main Grid: History column + Active note view */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left Side: Note History */}
-        <div className="space-y-3">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-            Note Archive ({notes.length})
-          </span>
+  return <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-150">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><FileText className="w-5 h-5 text-cyan-500" /> Progress Notes</h2><p className="text-xs text-slate-500 dark:text-slate-400">Independent dated clinical notes with persistent history.</p></div><button onClick={openNew} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-4 h-4" /> New Progress Note</button></div>
 
-          <div className="space-y-2">
-            {notes.map((n) => {
-              const isSelected = selectedNote?.id === n.id;
-              return (
-                <div
-                  key={n.id}
-                  onClick={() => setSelectedNote(n)}
-                  className={`p-3.5 rounded-2xl cursor-pointer border transition-all ${
-                    isSelected
-                      ? 'bg-cyan-500/10 dark:bg-cyan-500/15 border-cyan-500/40 shadow-sm'
-                      : 'bg-white dark:bg-[#111C2E] border-slate-200 dark:border-slate-800 hover:border-cyan-500/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 dark:text-white">
-                      {n.type}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {n.date} {n.time}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-                    {n.author}
-                  </p>
-                </div>
-              );
-            })}
+    {notes.length === 0 ? <div className="p-10 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E]"><FileText className="w-8 h-8 mx-auto text-slate-400 mb-3" /><p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No Progress Notes recorded yet.</p><p className="text-xs text-slate-400 mt-1">Create the first clinical note for this patient.</p></div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="space-y-2">{notes.map((n) => <button key={n.id} onClick={() => setSelectedId(n.id)} className={`w-full text-left p-3.5 rounded-2xl border transition-colors ${selectedId === n.id ? 'bg-cyan-500/10 border-cyan-500/40' : 'bg-white dark:bg-[#111C2E] border-slate-200 dark:border-slate-800'}`}><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-900 dark:text-white">{n.type || 'Clinical Note'}</span><span className="text-[10px] text-slate-400">{n.date} {n.time}</span></div><div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">{n.author || 'Physician'}</div></button>)}</div>
+      <div className="md:col-span-2">{selected ? <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800"><div><h3 className="text-lg font-bold text-slate-900 dark:text-white">{selected.type || 'Clinical Note'}</h3><p className="text-xs text-slate-400">{selected.date} at {selected.time} • {selected.author || 'Physician'}</p></div><div className="flex gap-2"><button onClick={() => { setEditing({ ...selected }); setShowModal(true); }} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-cyan-500" title="Edit"><Pencil className="w-4 h-4" /></button><button onClick={() => remove(selected.id)} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-rose-500" title="Delete"><Trash2 className="w-4 h-4" /></button></div></div>
+        <div className="space-y-3 text-xs">{([['S','Subjective',selected.subjective],['O','Objective',selected.objective],['A','Assessment',selected.assessment],['P','Plan',selected.plan]] as const).map(([key,label,value]) => <div key={key} className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800"><div className="text-[11px] font-extrabold text-cyan-600 dark:text-cyan-400 uppercase mb-1">[{key}] {label}</div><p className="whitespace-pre-wrap leading-relaxed text-slate-700 dark:text-slate-300">{value || 'Not documented.'}</p></div>)}</div>
+      </div> : <div className="p-8 text-center text-xs text-slate-400">Select a note.</div>}</div>
+    </div>}
 
-            {notes.length === 0 && (
-              <div className="p-6 text-center text-xs text-slate-400 bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800">
-                No progress notes recorded yet.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Side: Selected Note View */}
-        <div className="md:col-span-2">
-          {selectedNote ? (
-            <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-2">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                    {selectedNote.type}
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Signed by {selectedNote.author} • {selectedNote.date} at {selectedNote.time}
-                  </p>
-                </div>
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 self-start sm:self-auto">
-                  Signed in EHR
-                </span>
-              </div>
-
-              {/* SOAP Body */}
-              <div className="space-y-4 text-xs">
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                  <span className="text-[11px] font-extrabold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
-                    [S] Subjective & Overnight Events
-                  </span>
-                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                    {selectedNote.subjective}
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                  <span className="text-[11px] font-extrabold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
-                    [O] Objective Exam, Vitals & Diagnostics
-                  </span>
-                  <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed">
-                    {selectedNote.objective}
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                  <span className="text-[11px] font-extrabold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
-                    [A] Clinical Assessment & Trajectory
-                  </span>
-                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-                    {selectedNote.assessment}
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                  <span className="text-[11px] font-extrabold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
-                    [P] Plan by Systems & Interventions
-                  </span>
-                  <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed">
-                    {selectedNote.plan}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="p-8 text-center text-slate-400 bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800">
-              Select a note on the left or create a new one.
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Add Progress Note Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="w-full max-w-2xl bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-              Compose Daily SOAP Clinical Note
-            </h3>
-
-            <form onSubmit={handleAddNote} className="space-y-4 pt-2">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Note Type
-                  </label>
-                  <select
-                    value={noteType}
-                    onChange={(e) => setNoteType(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm"
-                  >
-                    <option value="SOAP Note">Daily SOAP Rounding Note</option>
-                    <option value="ICU Rounding">Systems-Based ICU Rounding</option>
-                    <option value="Consultation">Cardiology Consultation Note</option>
-                    <option value="Transfer Note">Transfer Note (SBAR)</option>
-                    <option value="Discharge Summary">Discharge Summary</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Attending / Fellow Signature
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={author}
-                    onChange={(e) => setAuthor(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  [S] Subjective (Symptoms, overnight complaints, pain)
-                </label>
-                <textarea
-                  rows={2}
-                  required
-                  value={subjective}
-                  onChange={(e) => setSubjective(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  [O] Objective (Physical exam, vitals, labs, hemodynamics)
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  value={objective}
-                  onChange={(e) => setObjective(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  [A] Assessment (Clinical trajectory & differential)
-                </label>
-                <textarea
-                  rows={2}
-                  required
-                  value={assessment}
-                  onChange={(e) => setAssessment(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  [P] Plan (By systems: CV, Resp, Renal, Meds, Lines, Disposition)
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  value={plan}
-                  onChange={(e) => setPlan(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs transition-colors"
-                >
-                  Sign & Save Note
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    {showModal && editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xl"><div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800"><h3 className="text-lg font-bold text-slate-900 dark:text-white">{editing.id ? 'Edit Progress Note' : 'New Progress Note'}</h3><button onClick={() => { setShowModal(false); setEditing(null); }}><X className="w-5 h-5 text-slate-400" /></button></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4"><label className="text-xs font-semibold">Date<input type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Time<input type="time" value={editing.time} onChange={(e) => setEditing({ ...editing, time: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Author<input value={editing.author} onChange={(e) => setEditing({ ...editing, author: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Note Type<select value={editing.type || 'SOAP Note'} onChange={(e) => setEditing({ ...editing, type: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2"><option>SOAP Note</option><option>ICU Rounding</option><option>Consultation</option><option>Transfer Note</option><option>Discharge Summary</option></select></label></div>{([['subjective','Subjective'],['objective','Objective'],['assessment','Assessment'],['plan','Plan']] as const).map(([field,label]) => <label key={field} className="block text-xs font-semibold mb-3">{label}<textarea rows={field === 'plan' || field === 'objective' ? 4 : 3} value={editing[field] || ''} onChange={(e) => setEditing({ ...editing, [field]: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label>)}<div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button onClick={() => { setShowModal(false); setEditing(null); }} className="px-4 py-2 text-xs text-slate-500">Cancel</button><button onClick={save} className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold">Save Note</button></div></div></div>}
+  </div>;
 };
