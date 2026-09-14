@@ -13,8 +13,8 @@ export const BottomNav: React.FC = () => {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B111E]/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800/80 px-1 py-1.5 shadow-lg md:flex xl:hidden">
-      <div className="w-full max-w-2xl mx-auto grid grid-cols-6 items-end gap-0.5">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B111E]/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800/80 px-1 pt-1.5 pb-[calc(0.375rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] shadow-lg md:flex">
+      <div className="w-full max-w-3xl mx-auto grid grid-cols-6 items-end gap-0.5">
         {items.slice(0, 2).map(item => {
           const Icon = item.icon;
           const active = currentView === item.id || (item.id === 'home' && (currentView === 'census' || currentView === 'patient'));
