@@ -33,6 +33,21 @@ function switchLocalAccount(email: string) {
   } catch (error) { console.error('Account data isolation error:', error); }
 }
 
+async function waitForNativeGoogleUser(): Promise<any | null> {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      const pending = await FirebaseAuthentication.getPendingAuthResult();
+      if (pending?.user?.email) return pending.user;
+    } catch (error) { console.debug('Pending Google auth not available yet:', error); }
+    try {
+      const current = await FirebaseAuthentication.getCurrentUser();
+      if (current?.user?.email) return current.user;
+    } catch (error) { console.debug('Current Firebase user not available yet:', error); }
+    await new Promise(resolve => window.setTimeout(resolve, 500));
+  }
+  return null;
+}
+
 export const LoginScreen: React.FC = () => {
   const { loginWithGoogle, loginWithEmail, unlockWithPin, auth, showToast } = useApp();
   const [mode, setMode] = useState<'options' | 'email' | 'pin'>('options');
@@ -47,13 +62,18 @@ export const LoginScreen: React.FC = () => {
     if (!Capacitor.isNativePlatform()) { loginWithGoogle(); return; }
     try {
       showToast('Opening Google account…', 'info');
-      // Credential Manager has known Android compatibility issues in some devices.
-      // Use the classic native Google flow here; Firebase still performs the native
-      // authentication and returns the Firebase user to the app.
-      let googleUser = (await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false })).user;
-      if (!googleUser) {
-        googleUser = (await FirebaseAuthentication.getCurrentUser()).user;
-      }
+      const signInPromise = FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false })
+        .then(result => result?.user || null)
+        .catch(error => { console.warn('Direct Google sign-in result delayed/failed:', error); return null; });
+
+      // On Android the Google account chooser can return to the app before the
+      // native plugin promise resolves. In that case the pending auth result is
+      // the reliable source of the signed-in Firebase user.
+      let googleUser = await Promise.race([
+        signInPromise,
+        waitForNativeGoogleUser(),
+      ]);
+      if (!googleUser?.email) googleUser = await waitForNativeGoogleUser();
       if (!googleUser?.email) {
         showToast('Google account selection did not complete. Please try again.', 'error');
         return;
