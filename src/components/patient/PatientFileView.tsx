@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronRight, LayoutDashboard } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { PatientFileHeader } from './PatientFileHeader';
-import { PatientFileNav } from './PatientFileNav';
+import { PatientFileNav, PATIENT_SECTIONS } from './PatientFileNav';
 import { PatientEditModal } from './PatientEditModal';
 import { CalculatorsHub } from '../calculators/CalculatorsHub';
 import { OverviewSection } from './sections/OverviewSection';
@@ -47,39 +47,31 @@ export const PatientFileView: React.FC = () => {
     }
   };
 
-  const isOverview = activePatientSection === 'overview';
-  const activeLabel = activePatientSection === 'overview' ? 'Overview' : activePatientSection.replace('-', ' ');
+  const activeMeta = PATIENT_SECTIONS.find(section => section.id === activePatientSection) || PATIENT_SECTIONS[0];
+  const ActiveIcon = activeMeta?.icon || LayoutDashboard;
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-[#0A0F1D] text-slate-900 dark:text-slate-100">
       <PatientFileHeader patient={currentPatient} onEditClick={() => setEditing(true)}/>
 
-      {isOverview ? (
-        <>
-          <PatientFileNav/>
-          <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 pb-24 md:pb-12">
-            {renderSection()}
-          </main>
-        </>
-      ) : (
-        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 pb-24 md:pb-12">
-          <div className="py-3">
-            <button
-              type="button"
-              onClick={() => setActivePatientSection('overview')}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-cyan-600 dark:text-cyan-400 bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4"/> Back to Patient File
-            </button>
+      {/* Keep the complete clinical navigation visible. The selected section opens directly below it. */}
+      <PatientFileNav/>
+
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 pb-24 md:pb-12">
+        {/* Dedicated section banner — including a real Overview banner when Overview is selected. */}
+        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-2xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="w-9 h-9 rounded-xl bg-cyan-500/15 text-cyan-500 flex items-center justify-center shrink-0">
+            <ActiveIcon className="w-5 h-5" />
           </div>
-          <div className="mb-3 flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-cyan-500">Patient File</span>
-            <span className="text-slate-400">/</span>
-            <span className="text-sm font-bold text-slate-800 dark:text-white capitalize">{activeLabel}</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-500">Patient File</div>
+            <div className="text-base font-extrabold text-slate-900 dark:text-white truncate">{activeMeta.label}</div>
           </div>
-          {renderSection()}
-        </main>
-      )}
+          <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+        </div>
+
+        {renderSection()}
+      </main>
 
       <PatientEditModal patient={currentPatient} isOpen={editing} onClose={() => setEditing(false)}/>
     </div>
