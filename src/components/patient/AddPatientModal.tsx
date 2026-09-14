@@ -1,18 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import {
-  X,
-  Building2,
-  BedDouble,
-  UserPlus,
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  AlertCircle,
-  Stethoscope,
-  ShieldAlert,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { X, Building2, BedDouble, UserPlus, ArrowLeft, Check } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { PatientStatus, Patient } from '../../types/clinical';
+import { Patient, PatientStatus } from '../../types/clinical';
 
 interface AddPatientModalProps {
   isOpen: boolean;
@@ -21,463 +10,92 @@ interface AddPatientModalProps {
   defaultBedId?: string;
 }
 
-export const AddPatientModal: React.FC<AddPatientModalProps> = ({
-  isOpen,
-  onClose,
-  defaultUnitId,
-  defaultBedId,
-}) => {
-  const { units, beds, patients, addPatient, showToast, selectPatient } = useApp();
-
-  const [step, setStep] = useState<'unit' | 'bed' | 'details'>(
-    defaultUnitId && defaultBedId ? 'details' : defaultUnitId ? 'bed' : 'unit'
-  );
-
-  const [selectedUnitId, setSelectedUnitId] = useState<string>(
-    defaultUnitId || (units.length > 0 ? units[0].id : '')
-  );
-  const [selectedBedId, setSelectedBedId] = useState<string>(defaultBedId || '');
-
-  // Patient Form Fields
+export const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, defaultUnitId, defaultBedId }) => {
+  const { units, beds, patients, addPatient, showToast, setCurrentPatientId, setCurrentView } = useApp();
+  const initialStep = defaultUnitId && defaultBedId ? 'details' : defaultUnitId ? 'bed' : 'unit';
+  const [step, setStep] = useState<'unit' | 'bed' | 'details'>(initialStep);
+  const [selectedUnitId, setSelectedUnitId] = useState(defaultUnitId || '');
+  const [selectedBedId, setSelectedBedId] = useState(defaultBedId || '');
   const [fullName, setFullName] = useState('');
-  const [age, setAge] = useState<number>(55);
+  const [age, setAge] = useState(55);
   const [sex, setSex] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [primaryDiagnosis, setPrimaryDiagnosis] = useState('');
   const [acuity, setAcuity] = useState<PatientStatus>('Stable');
-  const [codeStatus, setCodeStatus] = useState<'Full Code' | 'DNR' | 'DNI' | 'Comfort Measures Only'>('Full Code');
+  const [codeStatus, setCodeStatus] = useState<Patient['codeStatus']>('Full Code');
   const [chiefComplaint, setChiefComplaint] = useState('');
   const [allergies, setAllergies] = useState('NKDA');
 
-  // Beds in selected unit
-  const unitBeds = useMemo(() => {
-    return beds.filter((b) => b.unitId === selectedUnitId);
-  }, [beds, selectedUnitId]);
-
   const selectedUnit = units.find((u) => u.id === selectedUnitId);
   const selectedBed = beds.find((b) => b.id === selectedBedId);
+  const unitBeds = useMemo(() => beds.filter((b) => b.unitId === selectedUnitId), [beds, selectedUnitId]);
 
   if (!isOpen) return null;
 
-  const handleSelectUnit = (unitId: string) => {
-    setSelectedUnitId(unitId);
-    setSelectedBedId(''); // reset bed selection
+  const selectUnit = (id: string) => {
+    setSelectedUnitId(id);
+    setSelectedBedId('');
     setStep('bed');
   };
 
-  const handleSelectBed = (bedId: string) => {
-    setSelectedBedId(bedId);
+  const selectBed = (id: string) => {
+    const bed = beds.find((b) => b.id === id);
+    if (!bed || bed.patientId) return;
+    setSelectedBedId(id);
     setStep('details');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !primaryDiagnosis.trim() || !selectedUnitId || !selectedBedId) {
-      showToast('Please provide all required patient and unit assignment details.', 'error');
+    if (!selectedUnitId || !selectedBedId) {
+      showToast('Select a Unit and an available Bed before creating the patient.', 'error');
+      return;
+    }
+    if (!fullName.trim() || !primaryDiagnosis.trim()) {
+      showToast('Patient name and diagnosis are required.', 'error');
+      return;
+    }
+    if (!selectedUnit || !selectedBed || selectedBed.patientId) {
+      showToast('The selected bed is no longer available. Please choose another bed.', 'error');
+      setStep('bed');
       return;
     }
 
+    const allergyList = allergies.split(',').map((s) => s.trim()).filter(Boolean);
     const patientData: Partial<Patient> = {
-      fullName: fullName.trim(),
-      age,
-      sex,
-      primaryDiagnosis: primaryDiagnosis.trim(),
-      status: acuity,
-      codeStatus,
-      unitId: selectedUnitId,
-      bedId: selectedBedId,
-      allergies: allergies.split(',').map((s) => s.trim()).filter(Boolean),
+      fullName: fullName.trim(), age, sex, primaryDiagnosis: primaryDiagnosis.trim(), status: acuity,
+      codeStatus, unitId: selectedUnitId, bedId: selectedBedId, allergies: allergyList,
       clinicalSummary: {
-        chiefComplaint: chiefComplaint || primaryDiagnosis,
-        hpi: `${fullName} is a ${age}yo ${sex} admitted to ${selectedUnit?.name || 'Unit'} Bed ${selectedBed?.bedNumber || ''} for ${primaryDiagnosis}.`,
-        pmh: [],
-        psh: [],
-        drugHistory: 'Under clinical reconciliation',
-        allergies: allergies.split(',').map((s) => s.trim()).filter(Boolean),
-        familyHistory: 'Non-contributory',
-        socialHistory: 'Non-smoker',
+        chiefComplaint: chiefComplaint.trim() || primaryDiagnosis.trim(),
+        hpi: `${fullName.trim()} is a ${age}-year-old ${sex} admitted to ${selectedUnit.name}, Bed ${selectedBed.bedNumber}, for ${primaryDiagnosis.trim()}.`,
+        pmh: [], psh: [], drugHistory: 'Under clinical reconciliation', allergies: allergyList,
+        familyHistory: 'Non-contributory', socialHistory: 'Not documented',
       },
     };
 
-    const newPatient = addPatient(patientData, selectedBedId);
-    if (newPatient) {
-      selectPatient(newPatient.id);
-    }
+    const created = addPatient(patientData, selectedBedId);
+    setCurrentPatientId(created.id);
+    setCurrentView('patient');
+    showToast(`${created.fullName} admitted to ${selectedUnit.name} — ${selectedBed.bedNumber}.`, 'success');
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="w-full max-w-2xl bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-6 max-h-[90vh] overflow-y-auto">
-        {/* Header with Step Indicator */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center font-bold">
-              <UserPlus className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Admit New Clinical Patient
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Step {step === 'unit' ? '1: Select Unit' : step === 'bed' ? '2: Select Bed' : '3: Patient Clinical Details'}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 p-5 shadow-2xl">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-500 flex items-center justify-center"><UserPlus className="w-5 h-5" /></div><div><h2 className="text-lg font-bold text-slate-900 dark:text-white">Admit New Clinical Patient</h2><p className="text-xs text-slate-500 dark:text-slate-400">Step {step === 'unit' ? '1 — Select Unit' : step === 'bed' ? '2 — Select Bed' : '3 — Patient Details'}</p></div></div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Step Progression Bar */}
-        <div className="grid grid-cols-3 gap-2">
-          <div
-            className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
-              step === 'unit'
-                ? 'bg-cyan-500 text-slate-950 border-cyan-500'
-                : selectedUnitId
-                ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
-                : 'bg-slate-50 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-[10px]">
-              1
-            </span>
-            <span className="truncate">1. Unit</span>
-            {selectedUnitId && step !== 'unit' && <Check className="w-3.5 h-3.5 ml-auto text-cyan-600 dark:text-cyan-400" />}
-          </div>
-
-          <div
-            className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
-              step === 'bed'
-                ? 'bg-cyan-500 text-slate-950 border-cyan-500'
-                : selectedBedId
-                ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
-                : 'bg-slate-50 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-[10px]">
-              2
-            </span>
-            <span className="truncate">2. Bed</span>
-            {selectedBedId && step === 'details' && <Check className="w-3.5 h-3.5 ml-auto text-cyan-600 dark:text-cyan-400" />}
-          </div>
-
-          <div
-            className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
-              step === 'details'
-                ? 'bg-cyan-500 text-slate-950 border-cyan-500'
-                : 'bg-slate-50 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-[10px]">
-              3
-            </span>
-            <span className="truncate">3. Patient File</span>
-          </div>
+        <div className="grid grid-cols-3 gap-2 my-5">
+          {['unit', 'bed', 'details'].map((s, i) => <div key={s} className={`rounded-xl border px-3 py-2 text-xs font-bold ${step === s ? 'bg-cyan-500 text-slate-950 border-cyan-500' : 'bg-slate-50 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800'}`}>{i + 1}. {s === 'unit' ? 'Unit' : s === 'bed' ? 'Bed' : 'Patient File'}{((s === 'unit' && selectedUnitId) || (s === 'bed' && selectedBedId)) && step !== s ? <Check className="inline ml-1 w-3 h-3" /> : null}</div>)}
         </div>
 
-        {/* STEP 1: Select Unit */}
-        {step === 'unit' && (
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Step 1: Choose Admitting Clinical Unit
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Select the target department or unit where the patient will be admitted:
-              </p>
-            </div>
+        {step === 'unit' && <div className="space-y-4"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Select admitting Unit</h3><p className="text-xs text-slate-500 dark:text-slate-400">No unit is preselected. Choose explicitly before continuing.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{units.map((unit) => { const available = beds.filter((b) => b.unitId === unit.id && !b.patientId).length; return <button key={unit.id} type="button" onClick={() => selectUnit(unit.id)} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-left hover:border-cyan-500 transition-colors"><div className="flex items-center justify-between"><div><div className="text-[10px] uppercase tracking-wider text-cyan-500 font-bold">{unit.type}</div><div className="text-sm font-bold text-slate-900 dark:text-white mt-1">{unit.name}</div></div><Building2 className="w-5 h-5 text-cyan-500" /></div><div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">{available} available bed(s)</div></button>; })}</div>{units.length === 0 && <div className="p-6 text-center text-xs text-slate-400">No clinical units configured. Add a unit first.</div>}</div>}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {units.map((unit) => {
-                const uBeds = beds.filter((b) => b.unitId === unit.id);
-                const occupiedCount = uBeds.filter((b) => b.patientId).length;
-                const availableCount = uBeds.length - occupiedCount;
-                const isSelected = selectedUnitId === unit.id;
+        {step === 'bed' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Select an available bed</h3><p className="text-xs text-slate-500">{selectedUnit?.name || 'Selected unit'}</p></div><button type="button" onClick={() => setStep('unit')} className="text-xs font-semibold text-cyan-500 flex items-center gap-1"><ArrowLeft className="w-3 h-3" /> Change Unit</button></div><div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">{unitBeds.map((bed) => { const occupied = Boolean(bed.patientId); const occupant = occupied ? patients.find((p) => p.id === bed.patientId) : undefined; return <button key={bed.id} type="button" disabled={occupied} onClick={() => selectBed(bed.id)} className={`p-3 rounded-2xl border text-left ${occupied ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-slate-50 dark:bg-slate-900/60'}`}><div className="flex justify-between"><span className="text-xs font-bold text-slate-900 dark:text-white">{bed.bedNumber}</span><BedDouble className="w-4 h-4 text-cyan-500" /></div><div className={`text-[11px] mt-2 font-semibold ${occupied ? 'text-rose-500' : 'text-emerald-500'}`}>{occupied ? `Occupied${occupant ? ` — ${occupant.fullName}` : ''}` : 'Available'}</div></button>; })}</div>{unitBeds.length === 0 && <div className="p-6 text-center text-xs text-slate-400 border border-dashed rounded-xl">No beds configured in this unit.</div>}</div>}
 
-                return (
-                  <button
-                    key={unit.id}
-                    onClick={() => handleSelectUnit(unit.id)}
-                    className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between space-y-3 ${
-                      isSelected
-                        ? 'border-cyan-500 bg-cyan-500/10 shadow-sm ring-2 ring-cyan-500/30'
-                        : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 hover:border-cyan-500/50 hover:bg-white dark:hover:bg-slate-800/80'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-                          {unit.type}
-                        </span>
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                          {unit.name}
-                        </h4>
-                      </div>
-                      <div className="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300">
-                        <Building2 className="w-4 h-4" />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800 text-xs">
-                      <span className="text-slate-500 dark:text-slate-400">
-                        {uBeds.length} Total Beds
-                      </span>
-                      <span
-                        className={`font-semibold px-2 py-0.5 rounded-full ${
-                          availableCount > 0
-                            ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
-                            : 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
-                        }`}
-                      >
-                        {availableCount} Available
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* STEP 2: Select Bed */}
-        {step === 'bed' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Step 2: Assign Bed in {selectedUnit?.name}
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Select an available bed to admit the patient:
-                </p>
-              </div>
-              <button
-                onClick={() => setStep('unit')}
-                className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Change Unit
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {unitBeds.map((bed) => {
-                const isOccupied = Boolean(bed.patientId);
-                const occupant = isOccupied ? patients.find((p) => p.id === bed.patientId) : null;
-                const isSelected = selectedBedId === bed.id;
-
-                return (
-                  <button
-                    key={bed.id}
-                    disabled={isOccupied}
-                    onClick={() => handleSelectBed(bed.id)}
-                    className={`p-3.5 rounded-2xl border text-left transition-all relative ${
-                      isSelected
-                        ? 'border-cyan-500 bg-cyan-500/10 ring-2 ring-cyan-500/30'
-                        : isOccupied
-                        ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/30 opacity-60 cursor-not-allowed'
-                        : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 hover:border-cyan-500/50 hover:bg-white dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Bed {bed.bedNumber}
-                      </span>
-                      <BedDouble
-                        className={`w-4 h-4 ${
-                          isOccupied ? 'text-slate-400' : 'text-cyan-500'
-                        }`}
-                      />
-                    </div>
-
-                    {isOccupied ? (
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-rose-500 font-bold block">Occupied</span>
-                        <p className="text-[11px] text-slate-500 truncate font-medium">
-                          {occupant?.fullName || 'Patient'}
-                        </p>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 block">
-                        Vacant (Available)
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {unitBeds.length === 0 && (
-              <div className="p-6 text-center text-slate-400 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-xs">
-                No beds configured in this unit yet.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* STEP 3: Patient Details Form */}
-        {step === 'details' && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-slate-400">Assigned Unit & Bed:</span>
-                <span className="font-bold text-cyan-600 dark:text-cyan-400">
-                  {selectedUnit?.name} — Bed {selectedBed?.bedNumber}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStep('bed')}
-                className="text-xs font-semibold text-slate-500 hover:text-cyan-500"
-              >
-                Change Bed
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Patient Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. John Doe"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Age & Sex
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={120}
-                    value={age}
-                    onChange={(e) => setAge(parseInt(e.target.value) || 0)}
-                    className="w-full px-2.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white"
-                  />
-                  <select
-                    value={sex}
-                    onChange={(e) => setSex(e.target.value as any)}
-                    className="w-full px-2 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white"
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Primary Admitting Diagnosis *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Acute STEMI, Cardiogenic Shock, Post-CABG, Acute Heart Failure"
-                value={primaryDiagnosis}
-                onChange={(e) => setPrimaryDiagnosis(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Acuity / Clinical Status
-                </label>
-                <select
-                  value={acuity}
-                  onChange={(e) => setAcuity(e.target.value as PatientStatus)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white"
-                >
-                  <option value="Stable">Stable</option>
-                  <option value="Unstable">Unstable</option>
-                  <option value="Critical">Critical</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Code Status
-                </label>
-                <select
-                  value={codeStatus}
-                  onChange={(e) => setCodeStatus(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white"
-                >
-                  <option value="Full Code">Full Code</option>
-                  <option value="DNR">DNR (Do Not Resuscitate)</option>
-                  <option value="DNI">DNI (Do Not Intubate)</option>
-                  <option value="Comfort Measures Only">Comfort Measures Only</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Chief Complaint / Presenting Problem
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Brief reason for admission, symptoms, onset..."
-                value={chiefComplaint}
-                onChange={(e) => setChiefComplaint(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Allergies
-              </label>
-              <input
-                type="text"
-                placeholder="NKDA, Penicillin, Contrast media..."
-                value={allergies}
-                onChange={(e) => setAllergies(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setStep('bed')}
-                className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white font-medium"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to Bed Selection
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-colors shadow-md shadow-cyan-500/20"
-                >
-                  Admit & Open Patient File
-                </button>
-              </div>
-            </div>
-          </form>
-        )}
+        {step === 'details' && <form onSubmit={submit} className="space-y-4"><div className="flex items-center justify-between rounded-xl bg-cyan-500/10 border border-cyan-500/20 p-3 text-xs"><span className="text-slate-500">Assignment</span><strong className="text-cyan-600 dark:text-cyan-400">{selectedUnit?.name} — {selectedBed?.bedNumber}</strong><button type="button" onClick={() => setStep('bed')} className="text-cyan-500">Change</button></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><label className="sm:col-span-2 text-xs font-semibold">Full Name<input required value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="text-xs font-semibold">Age<input type="number" min={0} max={120} value={age} onChange={(e) => setAge(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="text-xs font-semibold">Sex<select value={sex} onChange={(e) => setSex(e.target.value as Patient['sex'])} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Male</option><option>Female</option><option>Other</option></select></label><label className="sm:col-span-2 text-xs font-semibold">Diagnosis<input required value={primaryDiagnosis} onChange={(e) => setPrimaryDiagnosis(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="text-xs font-semibold">Status<select value={acuity} onChange={(e) => setAcuity(e.target.value as PatientStatus)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Stable</option><option>Unstable</option><option>Critical</option></select></label><label className="text-xs font-semibold">Code Status<select value={codeStatus} onChange={(e) => setCodeStatus(e.target.value as Patient['codeStatus'])} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Full Code</option><option>DNR</option><option>DNI</option><option>Comfort Measures Only</option></select></label><label className="sm:col-span-2 text-xs font-semibold">Chief Complaint<input value={chiefComplaint} onChange={(e) => setChiefComplaint(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="sm:col-span-3 text-xs font-semibold">Allergies (comma separated)<input value={allergies} onChange={(e) => setAllergies(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label></div><div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-500">Cancel</button><button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs">Create Patient & Open File</button></div></form>}
       </div>
     </div>
   );
