@@ -37,7 +37,16 @@ jobs:
         run: |
           cp google-services.json android/app/google-services.json
           python - <<'PY'
+          import json
           from pathlib import Path
+          cfg=json.loads(Path('google-services.json').read_text())
+          clients=cfg.get('client',[])
+          android=[c for c in clients if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.cardiovault.app']
+          if not android:
+              raise SystemExit('Firebase config does not contain the Android package com.cardiovault.app')
+          oauth=android[0].get('oauth_client',[])
+          if not any(o.get('client_type')==1 and o.get('android_info',{}).get('package_name')=='com.cardiovault.app' for o in oauth):
+              raise SystemExit('google-services.json has no Android OAuth client for com.cardiovault.app')
           p=Path('android/variables.gradle')
           s=p.read_text()
           if 'rgcfaIncludeGoogle' not in s:
@@ -54,6 +63,7 @@ jobs:
               s=s.replace('apply plugin:', "apply plugin: 'com.google.gms.google-services'\napply plugin:", 1)
           p.write_text(s)
           PY
+          npx cap update android
       - name: Prepare CardioVault launcher icon
         run: |
           sudo apt-get update
@@ -66,12 +76,74 @@ jobs:
           npx @capacitor/assets@latest generate --android
       - name: Sync Capacitor Android project
         run: npx cap sync android
-      - name: Show APK signing certificate
+      - name: Harden Android auth/network manifest
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          if 'android.permission.INTERNET' not in s:
+              s=s.replace('</manifest>', '    <uses-permission android:name="android.permission.INTERNET" />\n</manifest>')
+          if 'android:name=".MainActivity"' in s and 'android:launchMode="singleTask"' not in s:
+              s=s.replace('android:name=".MainActivity"', 'android:name=".MainActivity"\n            android:launchMode="singleTask"')
+          p.write_text(s)
+          PY
+      - name: Configure stable debug signing when provided
+        if: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_BASE64 != '' }}
+        env:
+          CARDIOVAULT_DEBUG_KEYSTORE_BASE64: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_BASE64 }}
+          CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_DEBUG_KEY_ALIAS: ${{ secrets.CARDIOVAULT_DEBUG_KEY_ALIAS }}
+          CARDIOVAULT_DEBUG_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_DEBUG_KEY_PASSWORD }}
+        run: |
+          echo "$CARDIOVAULT_DEBUG_KEYSTORE_BASE64" | base64 --decode > android/cardiovault-debug.keystore
+          cat >> android/app/build.gradle <<'GRADLE'
+          def cardiovaultDebugKeystore = rootProject.file('cardiovault-debug.keystore')
+          if (cardiovaultDebugKeystore.exists()) {
+              android {
+                  signingConfigs {
+                      cardiovaultDebug {
+                          storeFile cardiovaultDebugKeystore
+                          storePassword System.getenv('CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD')
+                          keyAlias System.getenv('CARDIOVAULT_DEBUG_KEY_ALIAS')
+                          keyPassword System.getenv('CARDIOVAULT_DEBUG_KEY_PASSWORD')
+                      }
+                  }
+                  buildTypes {
+                      debug { signingConfig signingConfigs.cardiovaultDebug }
+                  }
+              }
+          }
+          GRADLE
+      - name: Show Android/Firebase signing diagnostics
         working-directory: android
-        run: ./gradlew signingReport --no-daemon
+        run: |
+          echo '--- Firebase Android package ---'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('app/google-services.json').read_text())
+          for c in cfg.get('client',[]):
+              info=c.get('client_info',{}).get('android_client_info',{})
+              if info.get('package_name')=='com.cardiovault.app':
+                  print('package:', info.get('package_name'))
+                  for o in c.get('oauth_client',[]):
+                      ai=o.get('android_info',{})
+                      if ai:
+                          print('registered certificate SHA1:', ai.get('certificate_hash','').upper())
+          PY
+          echo '--- Gradle signing report ---'
+          ./gradlew signingReport --no-daemon
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
+      - name: Verify final APK certificate and network permission
+        working-directory: android
+        run: |
+          echo '--- Final APK certificate ---'
+          keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk | grep -E 'Owner:|SHA1:|SHA256:' || true
+          echo '--- INTERNET permission ---'
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml && echo 'INTERNET permission: OK' || (echo 'INTERNET permission: MISSING' && exit 1)
       - name: Upload CardioVault APK
         uses: actions/upload-artifact@v4
         with:
@@ -80,4 +152,4 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-# Android CI fixed: removed obsolete sdkmanager 'tools' package.
+# Android CI hardened for Firebase Google Sign-In, manifest/network checks, and stable signing support.
