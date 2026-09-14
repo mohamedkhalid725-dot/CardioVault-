@@ -1,341 +1,76 @@
-import React, { useState } from 'react';
-import {
-  Heart,
-  Activity,
-  Zap,
-  Gauge,
-  Layers,
-  Plus,
-  Shield,
-  FileCheck,
-  TrendingUp,
-} from 'lucide-react';
-import { Patient, CardiologyModule, EchoReport, CathReport } from '../../../types/clinical';
+import React, { useMemo, useState } from 'react';
+import { Activity, Heart, Plus, Trash2, Pencil, Zap, TrendingUp, Cpu } from 'lucide-react';
+import { BiomarkerRecord, CardiacDevice, CathRecord, EchoReport, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 
-interface CardiologySectionProps {
-  patient: Patient;
-}
+interface Props { patient: Patient; }
+const today = () => new Date().toISOString().split('T')[0];
+const timeNow = () => new Date().toTimeString().slice(0, 5);
 
-export const CardiologySection: React.FC<CardiologySectionProps> = ({ patient }) => {
+export const CardiologySection: React.FC<Props> = ({ patient }) => {
   const { updatePatient, showToast } = useApp();
-  const [subTab, setSubTab] = useState<'echo' | 'cath' | 'biomarkers' | 'devices' | 'scores'>('echo');
-  const [isEditingEcho, setIsEditingEcho] = useState(false);
+  const cardio = patient.cardiology || ({} as Patient['cardiology']);
+  const echo = cardio.echo || ({} as EchoReport);
+  const [tab, setTab] = useState<'echo' | 'cath' | 'biomarkers' | 'devices'>('echo');
+  const [editingEcho, setEditingEcho] = useState(false);
+  const [summary, setSummary] = useState(cardio.echoBriefSummary || '');
+  const [echoDraft, setEchoDraft] = useState<EchoReport>({ ...echo });
+  const biomarkers = Array.isArray(cardio.biomarkerRecords) ? cardio.biomarkerRecords : [];
+  const caths = Array.isArray(cardio.cathRecords) ? cardio.cathRecords : [];
+  const devices = Array.isArray(cardio.devicesList) ? cardio.devicesList : [];
 
-  const cardio = patient.cardiology;
-  const echo = cardio.echo;
-  const cath = cardio.cath;
-  const biomarkers = cardio.biomarkers;
+  const [biomarkerDraft, setBiomarkerDraft] = useState<BiomarkerRecord>({ id: '', name: 'Troponin', value: '', unit: 'ng/mL', date: today(), time: timeNow() });
+  const [deviceDraft, setDeviceDraft] = useState<CardiacDevice>({ id: '', type: 'Temporary Pacemaker', date: today(), status: 'Active', notes: '' });
+  const [cathDraft, setCathDraft] = useState<CathRecord>({ id: '', date: today(), indication: '', accessSite: 'Radial', findings: '', intervention: '', finalResult: '', complications: '', notes: '' });
+  const [editingBiomarkerId, setEditingBiomarkerId] = useState<string | null>(null);
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
 
-  const [ef, setEf] = useState(echo.ef);
-  const [tapse, setTapse] = useState(echo.tapse);
-  const [pasp, setPasp] = useState(echo.pasp);
-  const [rwmaSummary, setRwmaSummary] = useState(echo.rwmaSummary);
-  const [pericardium, setPericardium] = useState(echo.pericardialEffusion);
-
-  const handleSaveEcho = () => {
-    let lvFunction: EchoReport['lvFunction'] = 'Normal (≥50%)';
-    if (ef < 30) lvFunction = 'Severely Reduced (<30%)';
-    else if (ef < 40) lvFunction = 'Moderately Reduced (30-39%)';
-    else if (ef < 50) lvFunction = 'Mildly Reduced (40-49%)';
-
-    const updatedEcho: EchoReport = {
-      ...echo,
-      ef,
-      tapse,
-      pasp,
-      rwmaSummary,
-      pericardialEffusion: pericardium,
-      lvFunction,
-    };
-
-    updatePatient(patient.id, {
-      cardiology: {
-        ...cardio,
-        echo: updatedEcho,
-      },
-    });
-    setIsEditingEcho(false);
-    showToast('Echocardiography report saved', 'success');
+  const saveEcho = () => {
+    updatePatient(patient.id, { cardiology: { ...cardio, echo: echoDraft, echoBriefSummary: summary } });
+    setEditingEcho(false);
+    showToast('Echo report saved.', 'success');
   };
 
-  return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-150">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Heart className="w-5 h-5 text-rose-500" /> Comprehensive Cardiology Module
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Echocardiography, Coronary Catheterization (PCI), Biomarkers, and Mechanical Support
-          </p>
-        </div>
+  const saveBiomarker = () => {
+    if (!biomarkerDraft.name.trim() || String(biomarkerDraft.value).trim() === '') { showToast('Biomarker name and value are required.', 'error'); return; }
+    const record = { ...biomarkerDraft, id: biomarkerDraft.id || `biomarker-${Date.now()}` };
+    const next = editingBiomarkerId ? biomarkers.map((r) => r.id === editingBiomarkerId ? record : r) : [record, ...biomarkers];
+    updatePatient(patient.id, { cardiology: { ...cardio, biomarkerRecords: next } });
+    setBiomarkerDraft({ id: '', name: 'Troponin', value: '', unit: 'ng/mL', date: today(), time: timeNow() }); setEditingBiomarkerId(null); showToast('Biomarker record saved.', 'success');
+  };
 
-        {/* Acuity Status Tag */}
-        <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#111C2E] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
-          <span className="text-slate-400">Killip Class:</span>
-          <span className="font-bold text-rose-500">{cardio.killipClass}</span>
-          <span className="text-slate-400 ml-1">NYHA:</span>
-          <span className="font-bold text-cyan-500">{cardio.nyhaClass}</span>
-        </div>
-      </div>
+  const saveDevice = () => {
+    if (!deviceDraft.type.trim()) return;
+    const record = { ...deviceDraft, id: deviceDraft.id || `device-${Date.now()}` };
+    const next = editingDeviceId ? devices.map((d) => d.id === editingDeviceId ? record : d) : [record, ...devices];
+    updatePatient(patient.id, { cardiology: { ...cardio, devicesList: next } });
+    setDeviceDraft({ id: '', type: 'Temporary Pacemaker', date: today(), status: 'Active', notes: '' }); setEditingDeviceId(null); showToast('Cardiac device saved.', 'success');
+  };
 
-      {/* Sub Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto no-scrollbar">
-        <button
-          onClick={() => setSubTab('echo')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            subTab === 'echo'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm shadow-cyan-500/20'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          Echocardiography (TTE/TEE)
-        </button>
+  const saveCath = () => {
+    if (!cathDraft.findings.trim() && !cathDraft.intervention.trim()) { showToast('Enter angiography findings or intervention details.', 'error'); return; }
+    const record = { ...cathDraft, id: cathDraft.id || `cath-${Date.now()}` };
+    updatePatient(patient.id, { cardiology: { ...cardio, cathRecords: [record, ...caths] } });
+    setCathDraft({ id: '', date: today(), indication: '', accessSite: 'Radial', findings: '', intervention: '', finalResult: '', complications: '', notes: '' }); showToast('Coronary angiography record saved.', 'success');
+  };
 
-        <button
-          onClick={() => setSubTab('cath')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            subTab === 'cath'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm shadow-cyan-500/20'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          Coronary Angiography (PCI)
-        </button>
+  const card = 'bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm';
+  const input = 'w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white';
 
-        <button
-          onClick={() => setSubTab('biomarkers')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            subTab === 'biomarkers'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm shadow-cyan-500/20'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          Cardiac Biomarkers
-        </button>
+  return <div className="space-y-5 max-w-5xl mx-auto animate-in fade-in duration-150">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><Heart className="w-5 h-5 text-rose-500" /> Cardiology</h2><p className="text-xs text-slate-500 dark:text-slate-400">Echo, coronary angiography, cardiac biomarkers and devices.</p></div><div className="text-xs text-slate-500 dark:text-slate-400">Killip: <b>{cardio.killipClass || cardio.killip || '—'}</b> • NYHA: <b>{cardio.nyhaClass || cardio.nyha || '—'}</b></div></div>
+    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{([['echo','Echo / TEE'],['cath','Coronary Angiography'],['biomarkers','Cardiac Biomarkers'],['devices','Devices']] as const).map(([id,label]) => <button key={id} onClick={() => setTab(id)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap ${tab === id ? 'bg-cyan-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{label}</button>)}</div>
 
-        <button
-          onClick={() => setSubTab('devices')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            subTab === 'devices'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm shadow-cyan-500/20'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          Devices & Support (IABP / Impella)
-        </button>
-      </div>
+    {tab === 'echo' && <div className={card + ' space-y-4'}><div className="flex items-center justify-between"><h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2"><Activity className="w-4 h-4 text-cyan-500" /> Echocardiography</h3><button onClick={() => editingEcho ? saveEcho() : setEditingEcho(true)} className="px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold">{editingEcho ? 'Save Echo' : 'Edit Echo'}</button></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{([['LVEF','ef','%'],['PASP','pasp','mmHg'],['LV dimensions','lvDimensions',''],['RV function','rvFunction','']] as const).map(([label,key,unit]) => <div key={key} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800"><span className="text-[10px] text-slate-400 font-bold block">{label}</span>{editingEcho ? <input className={input + ' mt-1'} value={String((echoDraft as any)[key] ?? '')} onChange={(e) => setEchoDraft({ ...echoDraft, [key]: key === 'ef' || key === 'pasp' ? Number(e.target.value) : e.target.value })} /> : <div className="text-sm font-bold text-slate-900 dark:text-white mt-1">{String((echo as any)[key] ?? '—')} {unit}</div>}</div>)}</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800"><b className="text-xs text-slate-400 block mb-1">RWMA</b>{editingEcho ? <textarea className={input} rows={3} value={echoDraft.rwma || ''} onChange={(e) => setEchoDraft({ ...echoDraft, rwma: e.target.value })} /> : <p className="text-xs text-slate-700 dark:text-slate-300">{echo.rwma || 'Not documented.'}</p>}</div><div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800"><b className="text-xs text-slate-400 block mb-1">Other findings</b>{editingEcho ? <textarea className={input} rows={3} value={echoDraft.otherFindings || ''} onChange={(e) => setEchoDraft({ ...echoDraft, otherFindings: e.target.value })} /> : <p className="text-xs text-slate-700 dark:text-slate-300">{echo.otherFindings || 'Not documented.'}</p>}</div></div>
+      <div><label className="text-xs font-bold text-slate-400 block mb-1">Echo Brief Summary</label><textarea rows={4} value={summary} onChange={(e) => setSummary(e.target.value)} className={input} placeholder="Final free-text echo summary..." /><p className="text-[10px] text-slate-400 mt-1">Saved together with the Echo report.</p></div>
+    </div>}
 
-      {/* Echo SubTab */}
-      {subTab === 'echo' && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-rose-500" /> Transthoracic Echocardiogram (TTE)
-                </h3>
-                <span className="text-xs text-slate-400">{echo.date}</span>
-              </div>
-              <button
-                onClick={() => {
-                  if (isEditingEcho) handleSaveEcho();
-                  else setIsEditingEcho(true);
-                }}
-                className="text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:underline"
-              >
-                {isEditingEcho ? 'Save Echo Data' : 'Edit Parameters'}
-              </button>
-            </div>
+    {tab === 'cath' && <div className="space-y-4"><div className={card + ' space-y-4'}><div className="flex items-center gap-2"><Zap className="w-4 h-4 text-cyan-500" /><h3 className="font-bold text-slate-900 dark:text-white">Add Coronary Angiography Record</h3></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><label className="text-xs font-semibold">Date<input type="date" value={cathDraft.date} onChange={(e) => setCathDraft({ ...cathDraft, date: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Indication<input value={cathDraft.indication} onChange={(e) => setCathDraft({ ...cathDraft, indication: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Access site<input value={cathDraft.accessSite} onChange={(e) => setCathDraft({ ...cathDraft, accessSite: e.target.value })} className={input + ' mt-1'} /></label></div><label className="text-xs font-semibold">Findings<textarea rows={3} value={cathDraft.findings} onChange={(e) => setCathDraft({ ...cathDraft, findings: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Intervention / PCI<textarea rows={2} value={cathDraft.intervention} onChange={(e) => setCathDraft({ ...cathDraft, intervention: e.target.value })} className={input + ' mt-1'} /></label><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><label className="text-xs font-semibold">Final result<input value={cathDraft.finalResult} onChange={(e) => setCathDraft({ ...cathDraft, finalResult: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Complications<input value={cathDraft.complications || ''} onChange={(e) => setCathDraft({ ...cathDraft, complications: e.target.value })} className={input + ' mt-1'} /></label></div><button onClick={saveCath} className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-3.5 h-3.5 inline mr-1" />Save Record</button></div><div className="space-y-3">{caths.length === 0 ? <div className={card + ' text-center text-xs text-slate-400'}>No Coronary Angiography records yet.</div> : caths.map((r) => <div key={r.id} className={card + ' space-y-2'}><div className="flex justify-between"><div><b className="text-sm text-slate-900 dark:text-white">{r.date} • {r.accessSite}</b><p className="text-xs text-slate-400">{r.indication || 'No indication recorded'}</p></div><span className="text-xs font-bold text-emerald-500">{r.finalResult || 'Recorded'}</span></div><p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{r.findings || 'No findings documented.'}</p><p className="text-xs text-slate-500 dark:text-slate-400">PCI: {r.intervention || 'None documented'}</p></div>)}</div></div>}
 
-            {/* Key Metrics Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-400 block text-xs font-semibold">LV Ejection Fraction (LVEF)</span>
-                {isEditingEcho ? (
-                  <input
-                    type="number"
-                    value={ef}
-                    onChange={(e) => setEf(parseInt(e.target.value) || 50)}
-                    className="w-full mt-1 px-2 py-1 rounded bg-white dark:bg-slate-800 border text-sm font-bold text-cyan-500"
-                  />
-                ) : (
-                  <div className="text-2xl font-black text-cyan-500 mt-1">{echo.ef}%</div>
-                )}
-                <span className="text-[11px] text-slate-500">{echo.lvFunction}</span>
-              </div>
+    {tab === 'biomarkers' && <div className="space-y-4"><div className={card + ' space-y-3'}><div className="flex items-center gap-2"><TrendingUp className="w-4 h-4 text-rose-500" /><h3 className="font-bold text-slate-900 dark:text-white">Serial Cardiac Biomarkers</h3></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><label className="text-xs font-semibold">Name<input value={biomarkerDraft.name} onChange={(e) => setBiomarkerDraft({ ...biomarkerDraft, name: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Value<input value={String(biomarkerDraft.value)} onChange={(e) => setBiomarkerDraft({ ...biomarkerDraft, value: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Unit<input value={biomarkerDraft.unit} onChange={(e) => setBiomarkerDraft({ ...biomarkerDraft, unit: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Date<input type="date" value={biomarkerDraft.date} onChange={(e) => setBiomarkerDraft({ ...biomarkerDraft, date: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Time<input type="time" value={biomarkerDraft.time} onChange={(e) => setBiomarkerDraft({ ...biomarkerDraft, time: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Reference range<input value={biomarkerDraft.referenceRange || ''} onChange={(e) => setBiomarkerDraft({ ...biomarkerDraft, referenceRange: e.target.value })} className={input + ' mt-1'} /></label><label className="sm:col-span-3 text-xs font-semibold">Note<input value={biomarkerDraft.notes || ''} onChange={(e) => setBiomarkerDraft({ ...biomarkerDraft, notes: e.target.value })} className={input + ' mt-1'} /></label></div><button onClick={saveBiomarker} className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-3.5 h-3.5 inline mr-1" />{editingBiomarkerId ? 'Update Measurement' : 'Add Measurement'}</button></div><div className="space-y-2">{biomarkers.length === 0 ? <div className={card + ' text-center text-xs text-slate-400'}>No cardiac biomarker records yet.</div> : biomarkers.map((r) => <div key={r.id} className={card + ' flex items-start justify-between gap-3'}><div><b className="text-sm text-slate-900 dark:text-white">{r.name}: {r.value} {r.unit}</b><div className="text-xs text-slate-400">{r.date} {r.time}{r.referenceRange ? ` • Ref ${r.referenceRange}` : ''}</div>{r.notes && <p className="text-xs text-slate-500 mt-1">{r.notes}</p>}</div><div className="flex gap-1"><button onClick={() => { setBiomarkerDraft({ ...r }); setEditingBiomarkerId(r.id); }} className="p-2 text-cyan-500"><Pencil className="w-4 h-4" /></button><button onClick={() => { if (window.confirm('Delete this biomarker record?')) updatePatient(patient.id, { cardiology: { ...cardio, biomarkerRecords: biomarkers.filter((x) => x.id !== r.id) } }); }} className="p-2 text-rose-500"><Trash2 className="w-4 h-4" /></button></div></div>)}</div></div>}
 
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-400 block text-xs font-semibold">RV TAPSE</span>
-                {isEditingEcho ? (
-                  <input
-                    type="number"
-                    value={tapse}
-                    onChange={(e) => setTapse(parseInt(e.target.value) || 20)}
-                    className="w-full mt-1 px-2 py-1 rounded bg-white dark:bg-slate-800 border text-sm font-bold"
-                  />
-                ) : (
-                  <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                    {echo.tapse} <span className="text-xs font-normal text-slate-400">mm</span>
-                  </div>
-                )}
-                <span className="text-[11px] text-emerald-500">RV function preserved</span>
-              </div>
-
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-400 block text-xs font-semibold">PASP (Estimated RVSP)</span>
-                {isEditingEcho ? (
-                  <input
-                    type="number"
-                    value={pasp}
-                    onChange={(e) => setPasp(parseInt(e.target.value) || 28)}
-                    className="w-full mt-1 px-2 py-1 rounded bg-white dark:bg-slate-800 border text-sm font-bold"
-                  />
-                ) : (
-                  <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                    {echo.pasp} <span className="text-xs font-normal text-slate-400">mmHg</span>
-                  </div>
-                )}
-                <span className="text-[11px] text-slate-500">Normal pulmonary pressure</span>
-              </div>
-
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-400 block text-xs font-semibold">Pericardium</span>
-                <div className="text-sm font-bold text-slate-900 dark:text-white mt-2 truncate">
-                  {echo.pericardialEffusion}
-                </div>
-                <span className="text-[11px] text-emerald-500">No tamponade signs</span>
-              </div>
-            </div>
-
-            {/* Regional Wall Motion Abnormalities (RWMA) */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                Regional Wall Motion Abnormalities (RWMA)
-              </span>
-              {isEditingEcho ? (
-                <textarea
-                  rows={2}
-                  value={rwmaSummary}
-                  onChange={(e) => setRwmaSummary(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
-                />
-              ) : (
-                <p className="text-xs text-slate-700 dark:text-slate-300">{echo.rwmaSummary}</p>
-              )}
-            </div>
-
-            {/* Valvular Findings */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                Valvular Morphology & Doppler
-              </span>
-              <p className="text-xs text-slate-700 dark:text-slate-300">{echo.valvesSummary}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Cath / PCI SubTab */}
-      {subTab === 'cath' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Zap className="w-4 h-4 text-cyan-500" /> Coronary Angiogram & PCI Details
-              </h3>
-              <p className="text-xs text-slate-400">
-                {cath.date} • {cath.indication} • Access: {cath.accessSite}
-              </p>
-            </div>
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/30">
-              {cath.finalResult}
-            </span>
-          </div>
-
-          <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-              Coronary Anatomy & Lesion Assessment
-            </span>
-            <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-              {cath.findings}
-            </p>
-          </div>
-
-          <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-              Stenting & Intervention Performed
-            </span>
-            <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300 font-semibold">
-              {cath.intervention}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Biomarkers SubTab */}
-      {subTab === 'biomarkers' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-rose-500" /> Serial Cardiac Biomarkers
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-400 block text-xs font-semibold">High-Sensitivity Troponin</span>
-              <div className="text-xl font-bold text-rose-500 mt-1">{biomarkers.troponin}</div>
-              <span className="text-[11px] text-slate-400">Delta negative / resolving</span>
-            </div>
-
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-400 block text-xs font-semibold">NT-proBNP / BNP</span>
-              <div className="text-xl font-bold text-slate-900 dark:text-white mt-1">
-                {biomarkers.bnp}
-              </div>
-              <span className="text-[11px] text-slate-400">Post-stabilization target</span>
-            </div>
-
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-400 block text-xs font-semibold">CK-MB & D-Dimer</span>
-              <div className="text-sm font-bold text-slate-900 dark:text-white mt-2">
-                CK-MB: {biomarkers.ckmb}
-              </div>
-              <span className="text-[11px] text-slate-400">D-Dimer: {biomarkers.dDimer}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Devices & Support */}
-      {subTab === 'devices' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Gauge className="w-4 h-4 text-cyan-500" /> Pacemaker, ICD & Mechanical Circulatory Support
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                Pacemaker / ICD
-              </span>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white mt-1">
-                {cardio.pacemaker || 'None implanted'}
-              </p>
-            </div>
-
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                Mechanical Support (IABP / Impella / ECMO)
-              </span>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white mt-1">
-                {cardio.mechanicalSupport || 'None / Not currently indicated'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    {tab === 'devices' && <div className="space-y-4"><div className={card + ' space-y-3'}><div className="flex items-center gap-2"><Cpu className="w-4 h-4 text-cyan-500" /><h3 className="font-bold text-slate-900 dark:text-white">Cardiac Devices & Mechanical Support</h3></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><label className="text-xs font-semibold">Device Type<select value={deviceDraft.type} onChange={(e) => setDeviceDraft({ ...deviceDraft, type: e.target.value })} className={input + ' mt-1'}><option>Temporary Pacemaker</option><option>Permanent Pacemaker</option><option>ICD</option><option>CRT</option><option>IABP</option><option>Other</option></select></label><label className="text-xs font-semibold">Date<input type="date" value={deviceDraft.date} onChange={(e) => setDeviceDraft({ ...deviceDraft, date: e.target.value })} className={input + ' mt-1'} /></label><label className="text-xs font-semibold">Status<input value={deviceDraft.status} onChange={(e) => setDeviceDraft({ ...deviceDraft, status: e.target.value })} className={input + ' mt-1'} /></label></div><label className="text-xs font-semibold">Notes<textarea rows={2} value={deviceDraft.notes || ''} onChange={(e) => setDeviceDraft({ ...deviceDraft, notes: e.target.value })} className={input + ' mt-1'} /></label><button onClick={saveDevice} className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-3.5 h-3.5 inline mr-1" />{editingDeviceId ? 'Update Device' : 'Add Device'}</button></div><div className="space-y-2">{devices.length === 0 ? <div className={card + ' text-center text-xs text-slate-400'}>No cardiac devices recorded.</div> : devices.map((d) => <div key={d.id} className={card + ' flex items-start justify-between gap-3'}><div><b className="text-sm text-slate-900 dark:text-white">{d.type}</b><div className="text-xs text-slate-400">{d.date} • {d.status}</div>{d.notes && <p className="text-xs text-slate-500 mt-1">{d.notes}</p>}</div><div className="flex gap-1"><button onClick={() => { setDeviceDraft({ ...d }); setEditingDeviceId(d.id); }} className="p-2 text-cyan-500"><Pencil className="w-4 h-4" /></button><button onClick={() => { if (window.confirm('Delete this device?')) updatePatient(patient.id, { cardiology: { ...cardio, devicesList: devices.filter((x) => x.id !== d.id) } }); }} className="p-2 text-rose-500"><Trash2 className="w-4 h-4" /></button></div></div>)}</div></div>}
+  </div>;
 };
