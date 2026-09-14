@@ -22,7 +22,7 @@ export async function loadCurrentUserFromCloud(): Promise<{ uid: string; found: 
   try {
     const result = await FirebaseFirestore.getDocument({ reference: `physicians/${uid}` });
     const snapshot: any = result.snapshot as any;
-    const data: any = snapshot?.data || snapshot?.data?.() || {};
+    const data: any = typeof snapshot?.data === 'function' ? snapshot.data() : (snapshot?.data || {});
     if (data && Array.isArray(data.units) && Array.isArray(data.beds) && Array.isArray(data.patients)) {
       StorageService.saveUnits(data.units);
       StorageService.saveBeds(data.beds);
@@ -72,4 +72,10 @@ export function installCloudSyncBridge() {
   StorageService.saveUnits = (units) => { originalUnits(units); void saveCurrentUserToCloud(); };
   StorageService.saveBeds = (beds) => { originalBeds(beds); void saveCurrentUserToCloud(); };
   StorageService.savePatients = (patients) => { originalPatients(patients); void saveCurrentUserToCloud(); };
+  const originalGoogle = FirebaseAuthentication.signInWithGoogle.bind(FirebaseAuthentication);
+  FirebaseAuthentication.signInWithGoogle = async (options?: any) => {
+    const result = await originalGoogle(options);
+    await loadCurrentUserFromCloud();
+    return result;
+  };
 }
