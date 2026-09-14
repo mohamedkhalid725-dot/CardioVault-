@@ -66,16 +66,15 @@ export async function saveCurrentUserToCloud(): Promise<void> {
 export function installCloudSyncBridge() {
   if (installed) return;
   installed = true;
+
+  // Keep local-first persistence while mirroring clinical data to Firestore.
+  // Do NOT wrap signInWithGoogle itself: the native Google promise must resolve
+  // immediately after the account chooser completes. Cloud loading is performed
+  // explicitly by LoginScreen after a successful Google authentication.
   const originalUnits = StorageService.saveUnits.bind(StorageService);
   const originalBeds = StorageService.saveBeds.bind(StorageService);
   const originalPatients = StorageService.savePatients.bind(StorageService);
   StorageService.saveUnits = (units) => { originalUnits(units); void saveCurrentUserToCloud(); };
   StorageService.saveBeds = (beds) => { originalBeds(beds); void saveCurrentUserToCloud(); };
   StorageService.savePatients = (patients) => { originalPatients(patients); void saveCurrentUserToCloud(); };
-  const originalGoogle = FirebaseAuthentication.signInWithGoogle.bind(FirebaseAuthentication);
-  FirebaseAuthentication.signInWithGoogle = async (options?: any) => {
-    const result = await originalGoogle(options);
-    await loadCurrentUserFromCloud();
-    return result;
-  };
 }
