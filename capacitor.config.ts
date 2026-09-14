@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.cardiovault.app',
   appName: 'CardioVault',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https',
   },
