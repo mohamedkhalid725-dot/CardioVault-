@@ -4,7 +4,7 @@ import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { StorageService } from './storage';
 
 /**
- * CardioVault Cloud Sync v3
+ * CardioVault Cloud Sync v4
  * Every Firebase account owns an isolated namespace under physicians/{uid}.
  * The active local clinical workspace is cleared before restoring another UID.
  */
@@ -17,8 +17,9 @@ let syncRequested = false;
 const UID_KEY = 'cardiovault_google_uid';
 const LAST_SYNC_KEY = 'cardiovault_last_cloud_sync';
 const LAST_ERROR_KEY = 'cardiovault_last_cloud_sync_error';
+const LAST_ERROR_DETAIL_KEY = 'cardiovault_last_cloud_sync_error_detail';
 const ROOT = 'physicians';
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const currentUid = async (): Promise<string | null> => {
   if (!Capacitor.isNativePlatform()) return null;
@@ -33,6 +34,24 @@ const currentUid = async (): Promise<string | null> => {
 const setActiveUid = (uid: string) => localStorage.setItem(UID_KEY, uid);
 const rootPath = (uid: string) => `${ROOT}/${uid}`;
 const collectionPath = (uid: string, collection: string) => `${rootPath(uid)}/${collection}`;
+
+const errorText = (error: unknown): string => {
+  if (!error) return 'Unknown cloud error';
+  const value = error as any;
+  const code = String(value?.code || value?.errorCode || '').trim();
+  const message = String(value?.message || value?.errorMessage || error || '').trim();
+  return [code, message].filter(Boolean).join(': ').slice(0, 500) || 'Unknown cloud error';
+};
+
+const recordCloudError = (error: unknown) => {
+  localStorage.setItem(LAST_ERROR_KEY, new Date().toISOString());
+  localStorage.setItem(LAST_ERROR_DETAIL_KEY, errorText(error));
+};
+
+const ensureFirestoreNetwork = async () => {
+  if (!Capacitor.isNativePlatform()) return;
+  await FirebaseFirestore.enableNetwork();
+};
 
 const readSnapshotData = (snapshot: any): any => {
   try { return typeof snapshot?.data === 'function' ? snapshot.data() : (snapshot?.data || {}); } catch { return {}; }
@@ -58,7 +77,10 @@ async function withRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try { return await operation(); }
-    catch (error) { lastError = error; if (attempt < attempts - 1) await new Promise(resolve => setTimeout(resolve, 400 * 2 ** attempt)); }
+    catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) await new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt));
+    }
   }
   throw lastError;
 }
@@ -72,20 +94,42 @@ async function syncCollection(uid: string, collection: string, records: any[]): 
     currentIds.add(id);
     await withRetry(() => FirebaseFirestore.setDocument({
       reference: `${reference}/${id}`,
-      data: { ...normalizeEntity(record), id, ownerUid: uid, updatedAt: new Date().toISOString(), schemaVersion: SCHEMA_VERSION },
+      data: {
+        ...normalizeEntity(record),
+        id,
+        ownerUid: uid,
+        updatedAt: new Date().toISOString(),
+        schemaVersion: SCHEMA_VERSION,
+      },
       merge: true,
     }));
   }
-  const remote = await getCollectionDocuments(reference);
-  for (const item of remote) {
-    if (!currentIds.has(item.id)) await withRetry(() => FirebaseFirestore.deleteDocument({ reference: `${reference}/${item.id}` }));
+
+  // Only perform remote deletion after successful writes. A read failure must
+  // never turn a successful upload into a reported sync failure.
+  try {
+    const remote = await getCollectionDocuments(reference);
+    for (const item of remote) {
+      if (!currentIds.has(item.id)) {
+        await withRetry(() => FirebaseFirestore.deleteDocument({ reference: `${reference}/${item.id}` }));
+      }
+    }
+  } catch (error) {
+    recordCloudError(error);
+    console.warn(`Cloud remote cleanup skipped for ${collection}:`, error);
   }
 }
 
 async function writeMetadata(uid: string): Promise<void> {
+  const now = new Date().toISOString();
+  await withRetry(() => FirebaseFirestore.setDocument({
+    reference: rootPath(uid),
+    data: { ownerUid: uid, schemaVersion: SCHEMA_VERSION, lastClientSync: now, platform: Capacitor.getPlatform() },
+    merge: true,
+  }));
   await withRetry(() => FirebaseFirestore.setDocument({
     reference: `${rootPath(uid)}/metadata`,
-    data: { ownerUid: uid, schemaVersion: SCHEMA_VERSION, lastClientSync: new Date().toISOString(), platform: Capacitor.getPlatform() },
+    data: { ownerUid: uid, schemaVersion: SCHEMA_VERSION, lastClientSync: now, platform: Capacitor.getPlatform() },
     merge: true,
   }));
 }
@@ -109,14 +153,19 @@ async function syncLocalDatabase(uid: string): Promise<void> {
   syncing = true;
   syncRequested = false;
   try {
+    await ensureFirestoreNetwork();
+    const verifiedAgain = await currentUid();
+    if (!verifiedAgain || verifiedAgain !== uid) throw new Error('Authenticated account changed before cloud write.');
+
     await syncCollection(uid, 'units', StorageService.getUnits());
     await syncCollection(uid, 'beds', StorageService.getBeds());
     await syncCollection(uid, 'patients', StorageService.getPatients());
     await writeMetadata(uid);
     localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
     localStorage.removeItem(LAST_ERROR_KEY);
+    localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
   } catch (error) {
-    localStorage.setItem(LAST_ERROR_KEY, new Date().toISOString());
+    recordCloudError(error);
     throw error;
   } finally {
     syncing = false;
@@ -145,7 +194,7 @@ export async function loadCurrentUserFromCloud(): Promise<{ uid: string; found: 
   setActiveUid(uid);
   suppressSync = true;
   try {
-    // Never display the previous account while the new account is loading.
+    await ensureFirestoreNetwork();
     clearLocalClinicalData();
     const [units, beds, patients] = await Promise.all([
       getCollectionDocuments(collectionPath(uid, 'units')),
@@ -160,10 +209,10 @@ export async function loadCurrentUserFromCloud(): Promise<{ uid: string; found: 
       StorageService.savePatients(safePatients.map(item => ({ ...item.data, id: item.id })));
       localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
       localStorage.removeItem(LAST_ERROR_KEY);
+      localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
       return { uid, found: true };
     }
 
-    // Legacy snapshot is accepted only when it explicitly belongs to this UID.
     try {
       const legacyResult: any = await FirebaseFirestore.getDocument({ reference: rootPath(uid) });
       const legacy = readSnapshotData(legacyResult?.snapshot);
@@ -175,11 +224,10 @@ export async function loadCurrentUserFromCloud(): Promise<{ uid: string; found: 
       }
     } catch (error) { console.warn('Legacy cloud migration check failed:', error); }
 
-    // A brand-new account starts empty. Its data must never inherit another account.
     clearLocalClinicalData();
     return { uid, found: false };
   } catch (error) {
-    localStorage.setItem(LAST_ERROR_KEY, new Date().toISOString());
+    recordCloudError(error);
     clearLocalClinicalData();
     console.warn('Cloud database read failed; active workspace was isolated.', error);
     return { uid, found: false };
@@ -202,11 +250,12 @@ export async function syncCurrentUserNow(): Promise<boolean> {
   if (!uid) return false;
   setActiveUid(uid);
   try { await syncLocalDatabase(uid); return true; }
-  catch (error) { console.warn('Manual cloud sync failed:', error); return false; }
+  catch (error) { recordCloudError(error); console.warn('Manual cloud sync failed:', error); return false; }
 }
 
 export function getLastCloudSyncTime(): string { return localStorage.getItem(LAST_SYNC_KEY) || ''; }
 export function getLastCloudSyncErrorTime(): string { return localStorage.getItem(LAST_ERROR_KEY) || ''; }
+export function getLastCloudSyncErrorDetail(): string { return localStorage.getItem(LAST_ERROR_DETAIL_KEY) || ''; }
 
 export function installCloudSyncBridge() {
   if (installed) return;
