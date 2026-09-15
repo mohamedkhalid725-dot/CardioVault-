@@ -4,7 +4,7 @@ import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { StorageService } from './storage';
 
 /**
- * CardioVault Cloud Sync v5
+ * CardioVault Cloud Sync v6
  * Every Firebase account owns an isolated namespace under users/{uid}.
  * The existing Firestore project already uses users/{uid}/patients and settings,
  * so CardioVault keeps that account namespace and adds units/beds safely beside it.
@@ -20,7 +20,7 @@ const LAST_SYNC_KEY = 'cardiovault_last_cloud_sync';
 const LAST_ERROR_KEY = 'cardiovault_last_cloud_sync_error';
 const LAST_ERROR_DETAIL_KEY = 'cardiovault_last_cloud_sync_error_detail';
 const ROOT = 'users';
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const currentUid = async (): Promise<string | null> => {
   if (!Capacitor.isNativePlatform()) return null;
@@ -121,13 +121,11 @@ async function syncCollection(uid: string, collection: string, records: any[]): 
 
 async function writeMetadata(uid: string): Promise<void> {
   const now = new Date().toISOString();
+  // The account root is a document path: users/{uid} (2 segments).
+  // Do NOT write users/{uid}/metadata as a document reference because that is
+  // a collection path (3 segments). The existing settings collection remains untouched.
   await withRetry(() => FirebaseFirestore.setDocument({
     reference: rootPath(uid),
-    data: { ownerUid: uid, schemaVersion: SCHEMA_VERSION, lastClientSync: now, platform: Capacitor.getPlatform() },
-    merge: true,
-  }));
-  await withRetry(() => FirebaseFirestore.setDocument({
-    reference: `${rootPath(uid)}/metadata`,
     data: { ownerUid: uid, schemaVersion: SCHEMA_VERSION, lastClientSync: now, platform: Capacitor.getPlatform() },
     merge: true,
   }));
