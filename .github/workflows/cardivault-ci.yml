@@ -139,6 +139,10 @@ jobs:
           ./gradlew signingReport --no-daemon
       - name: Build debug APK
         working-directory: android
+        env:
+          CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_DEBUG_KEY_ALIAS: ${{ secrets.CARDIOVAULT_DEBUG_KEY_ALIAS }}
+          CARDIOVAULT_DEBUG_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_DEBUG_KEY_PASSWORD }}
         run: ./gradlew assembleDebug --no-daemon
       - name: Verify final APK certificate and network permission
         working-directory: android
