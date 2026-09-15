@@ -6,12 +6,11 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // CardioVault account root.
-    match /physicians/{uid} {
+    // CardioVault uses the existing users/{uid} account namespace.
+    match /users/{uid} {
       allow read, write: if isOwner(uid);
 
-      // Explicit rules for every clinical subcollection.
-      match /metadata/{documentId} {
+      match /patients/{documentId} {
         allow read, write: if isOwner(uid);
       }
       match /units/{documentId} {
@@ -20,7 +19,10 @@ service cloud.firestore {
       match /beds/{documentId} {
         allow read, write: if isOwner(uid);
       }
-      match /patients/{documentId} {
+      match /settings/{documentId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /metadata/{documentId} {
         allow read, write: if isOwner(uid);
       }
     }
