@@ -6,13 +6,21 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // Every CardioVault account owns a completely private namespace.
+    // CardioVault account root.
     match /physicians/{uid} {
       allow read, write: if isOwner(uid);
 
-      // Firestore rules do not automatically cascade from the parent document,
-      // so the nested clinical collections must be protected explicitly.
-      match /{document=**} {
+      // Explicit rules for every clinical subcollection.
+      match /metadata/{documentId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /units/{documentId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /beds/{documentId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /patients/{documentId} {
         allow read, write: if isOwner(uid);
       }
     }
