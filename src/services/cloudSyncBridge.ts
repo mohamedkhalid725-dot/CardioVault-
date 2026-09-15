@@ -4,9 +4,10 @@ import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { StorageService } from './storage';
 
 /**
- * CardioVault Cloud Sync v4
- * Every Firebase account owns an isolated namespace under physicians/{uid}.
- * The active local clinical workspace is cleared before restoring another UID.
+ * CardioVault Cloud Sync v5
+ * Every Firebase account owns an isolated namespace under users/{uid}.
+ * The existing Firestore project already uses users/{uid}/patients and settings,
+ * so CardioVault keeps that account namespace and adds units/beds safely beside it.
  */
 let installed = false;
 let syncing = false;
@@ -18,8 +19,8 @@ const UID_KEY = 'cardiovault_google_uid';
 const LAST_SYNC_KEY = 'cardiovault_last_cloud_sync';
 const LAST_ERROR_KEY = 'cardiovault_last_cloud_sync_error';
 const LAST_ERROR_DETAIL_KEY = 'cardiovault_last_cloud_sync_error_detail';
-const ROOT = 'physicians';
-const SCHEMA_VERSION = 4;
+const ROOT = 'users';
+const SCHEMA_VERSION = 5;
 
 const currentUid = async (): Promise<string | null> => {
   if (!Capacitor.isNativePlatform()) return null;
@@ -105,8 +106,6 @@ async function syncCollection(uid: string, collection: string, records: any[]): 
     }));
   }
 
-  // Only perform remote deletion after successful writes. A read failure must
-  // never turn a successful upload into a reported sync failure.
   try {
     const remote = await getCollectionDocuments(reference);
     for (const item of remote) {
@@ -212,17 +211,6 @@ export async function loadCurrentUserFromCloud(): Promise<{ uid: string; found: 
       localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
       return { uid, found: true };
     }
-
-    try {
-      const legacyResult: any = await FirebaseFirestore.getDocument({ reference: rootPath(uid) });
-      const legacy = readSnapshotData(legacyResult?.snapshot);
-      if (legacy?.ownerUid === uid && Array.isArray(legacy.units) && Array.isArray(legacy.beds) && Array.isArray(legacy.patients)) {
-        StorageService.saveUnits(legacy.units);
-        StorageService.saveBeds(legacy.beds);
-        StorageService.savePatients(legacy.patients);
-        return { uid, found: true };
-      }
-    } catch (error) { console.warn('Legacy cloud migration check failed:', error); }
 
     clearLocalClinicalData();
     return { uid, found: false };
