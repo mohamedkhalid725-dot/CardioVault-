@@ -3,7 +3,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function workspaceOwner(workspaceId) { return signedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid; }
+    function masterAccount() { return signedIn() && request.auth.token.email == 'mohamedkhalid725@gmail.com'; }
+    function workspaceOwner(workspaceId) { return signedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerEmail == 'mohamedkhalid725@gmail.com'; }
     function member(workspaceId) { return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
     function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true; }
@@ -17,18 +18,18 @@ service cloud.firestore {
 
     match /accessCodes/{hash} {
       allow read: if validAccessCode(hash);
-      allow create: if signedIn() && request.resource.data.workspaceId != null && workspaceOwner(request.resource.data.workspaceId);
-      allow update, delete: if signedIn() && resource.data.workspaceId != null && workspaceOwner(resource.data.workspaceId);
+      allow create: if masterAccount() && request.resource.data.workspaceId == 'cardiovault_master_workspace' && workspaceOwner(request.resource.data.workspaceId);
+      allow update, delete: if masterAccount() && resource.data.workspaceId == 'cardiovault_master_workspace' && workspaceOwner(resource.data.workspaceId);
     }
 
     match /workspaces/{workspaceId} {
-      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow create: if masterAccount() && workspaceId == 'cardiovault_master_workspace' && request.resource.data.ownerUid == request.auth.uid && request.resource.data.ownerEmail == 'mohamedkhalid725@gmail.com';
       allow read, update, delete: if workspaceOwner(workspaceId);
       allow read: if member(workspaceId);
 
       match /members/{uid} {
         allow read: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
-        allow create: if signedIn() && request.auth.uid == uid && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
+        allow create: if signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
         allow update, delete: if workspaceOwner(workspaceId);
       }
 
