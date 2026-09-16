@@ -23,6 +23,11 @@ jobs:
         run: npm run lint
       - name: Production web build
         run: npm run build
+      - name: Validate Firebase AI backend
+        working-directory: functions
+        run: |
+          npm install
+          node --check index.js
       - name: Setup Java 21
         uses: actions/setup-java@v5
         with:
