@@ -1,3 +1,4 @@
+# CI validation and Android APK build; Firestore rules deploy uses FIREBASE_SERVICE_ACCOUNT when configured.
 name: CardioVault CI + Android APK
 
 on:
