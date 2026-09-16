@@ -1,5 +1,5 @@
 import React,{useMemo,useState} from 'react';
-import { LayoutDashboard, Clock, Activity, HeartPulse, Stethoscope, Heart, Pill, Wind, Image as ImageIcon, FlaskConical, Syringe, Calculator, FileEdit, FileDown,Search,CheckCircle2,Circle } from 'lucide-react';
+import { LayoutDashboard, Clock, Activity, HeartPulse, Stethoscope, Heart, Pill, Wind, Image as ImageIcon, FlaskConical, Syringe, Calculator, FileEdit, FileDown,Search,CheckCircle2,Circle,BarChart3 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Patient,PatientSectionId } from '../../types/clinical';
 
@@ -17,11 +17,12 @@ export const PATIENT_SECTIONS: Array<{ id: PatientSectionId; order: number; labe
   { id:'procedure',order:11,label:'Procedure',description:'Procedures and interventions',icon:Syringe },
   { id:'calculators',order:12,label:'Calculators',description:'Clinical scores and calculations',icon:Calculator },
   { id:'progress',order:13,label:'Progress Note',description:'Dated clinical notes',icon:FileEdit },
-  { id:'pdf',order:14,label:'PDF',description:'Export selected clinical sections',icon:FileDown },
+  { id:'clinical-tools',order:14,label:'Clinical Dashboard & Tools',description:'Trends, therapy, records, audit and handover',icon:BarChart3 },
+  { id:'pdf',order:15,label:'PDF',description:'Export selected clinical sections',icon:FileDown },
 ];
 
 interface Props { onSelect?: (sectionId: PatientSectionId) => void; patient:Patient; }
-const hasData=(patient:Patient,id:PatientSectionId)=>{switch(id){case'overview':return true;case'history':return !!(patient.clinicalSummary?.chiefComplaint||patient.clinicalSummary?.hpi||patient.clinicalSummary?.pmh?.length);case'ecg':return !!patient.ecgRecords?.length;case'vitals':return !!(patient.vitalsHistory?.length||patient.fluidRecords?.length||patient.hemodynamicHistory?.length||patient.fluidIntakeHistory?.length||patient.urineOutputHistory?.length);case'examination':return !!JSON.stringify(patient.examination||{}).replace(/[{}\[\]":,]/g,'').trim();case'cardiology':return !!(patient.cardiology?.echo?.ef||patient.cardiology?.rhythm||patient.cardiology?.biomarkerRecords?.length||patient.cardiology?.cathRecords?.length);case'medication':return !!patient.medications?.length;case'icu':return !!(patient.ventilator?.mode||patient.ventilator?.abgHistory?.length);case'imaging':return !!patient.imaging?.length;case'labs':return !!(patient.labResults?.length||patient.labs?.length);case'procedure':return !!patient.procedures?.length;case'calculators':return !!patient.calculatorResults?.length;case'progress':return !!patient.progressNotes?.length;case'pdf':return true;default:return false;}};
+const hasData=(patient:Patient,id:PatientSectionId)=>{switch(id){case'overview':return true;case'history':return !!(patient.clinicalSummary?.chiefComplaint||patient.clinicalSummary?.hpi||patient.clinicalSummary?.pmh?.length);case'ecg':return !!patient.ecgRecords?.length;case'vitals':return !!(patient.vitalsHistory?.length||patient.fluidRecords?.length||patient.hemodynamicHistory?.length||patient.fluidIntakeHistory?.length||patient.urineOutputHistory?.length);case'examination':return !!JSON.stringify(patient.examination||{}).replace(/[{}\[\]":,]/g,'').trim();case'cardiology':return !!(patient.cardiology?.echo?.ef||patient.cardiology?.rhythm||patient.cardiology?.biomarkerRecords?.length||patient.cardiology?.cathRecords?.length);case'medication':return !!patient.medications?.length;case'icu':return !!(patient.ventilator?.mode||patient.ventilator?.abgHistory?.length);case'imaging':return !!patient.imaging?.length;case'labs':return !!(patient.labResults?.length||patient.labs?.length);case'procedure':return !!patient.procedures?.length;case'calculators':return !!patient.calculatorResults?.length;case'progress':return !!patient.progressNotes?.length;case'clinical-tools':return true;case'pdf':return true;default:return false;}};
 export const PatientFileNav: React.FC<Props> = ({ onSelect,patient }) => {
   const { setActivePatientSection } = useApp();const[query,setQuery]=useState('');
   const filtered=useMemo(()=>PATIENT_SECTIONS.filter(sec=>`${sec.label} ${sec.description}`.toLowerCase().includes(query.trim().toLowerCase())),[query]);
