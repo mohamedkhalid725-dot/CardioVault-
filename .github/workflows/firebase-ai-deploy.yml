@@ -1,0 +1,64 @@
+name: Deploy CardioVault AI Backend
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/firebase-ai-deploy.yml'
+
+jobs:
+  deploy-ai-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FIREBASE_PROJECT_ID: ccu-notebook
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Validate Functions source
+        working-directory: functions
+        run: node --check index.js
+
+      - name: Authenticate Firebase CLI
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          test -n "$FIREBASE_SERVICE_ACCOUNT_JSON" || { echo 'Missing FIREBASE_SERVICE_ACCOUNT_JSON GitHub secret'; exit 1; }
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Set Gemini API secret in Firebase
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          test -n "$GEMINI_API_KEY" || { echo 'Missing GEMINI_API_KEY GitHub secret'; exit 1; }
+          umask 077
+          printf '%s' "$GEMINI_API_KEY" > "$RUNNER_TEMP/gemini-api-key.txt"
+          firebase functions:secrets:set GEMINI_API_KEY --data-file "$RUNNER_TEMP/gemini-api-key.txt" --project "$FIREBASE_PROJECT_ID"
+          rm -f "$RUNNER_TEMP/gemini-api-key.txt"
+
+      - name: Deploy AI function
+        run: firebase deploy --only functions:analyzeClinicalPatient --project "$FIREBASE_PROJECT_ID"
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-service-account.json" "$RUNNER_TEMP/gemini-api-key.txt"
