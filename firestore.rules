@@ -6,9 +6,9 @@ service cloud.firestore {
     function workspaceOwner(workspaceId) { return signedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid; }
     function member(workspaceId) { return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
-    function unitMember(workspaceId,unitId) { return member(workspaceId) && memberData(workspaceId).unitId == unitId; }
-    function clinicalEditor(workspaceId,unitId) { return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor'; }
     function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true; }
+    function unitMember(workspaceId,unitId) { return member(workspaceId) && memberData(workspaceId).unitId == unitId && validAccessCode(memberData(workspaceId).accessCodeHash); }
+    function clinicalEditor(workspaceId,unitId) { return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor'; }
 
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
