@@ -5,7 +5,7 @@ import type {Patient,LabPanel,VitalRecord}from'../../../types/clinical';
 const Card:React.FC<{title:string;icon:React.ReactNode;children:React.ReactNode;className?:string}>=({title,icon,children,className=''})=><div className={`rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 shadow-sm ${className}`}><div className="flex items-center gap-2 mb-3"><span className="text-cyan-500">{icon}</span><h3 className="font-extrabold text-sm">{title}</h3></div>{children}</div>;
 const Metric:React.FC<{label:string;value:React.ReactNode;unit?:string;alert?:boolean;muted?:boolean}>=({label,value,unit,alert,muted})=><div className={`rounded-xl p-3 border ${alert?'border-rose-400/50 bg-rose-500/5':'border-slate-200 dark:border-slate-800'}`}><div className="text-[9px] uppercase tracking-wide font-bold text-slate-400">{label}</div><div className={`mt-1 text-base sm:text-lg font-black ${alert?'text-rose-500':''} ${muted?'text-slate-400':''}`}>{value}<span className="text-[10px] sm:text-xs font-bold text-slate-400">{unit?' '+unit:''}</span></div></div>;
 const valueOrDash=(v:any)=>v===undefined||v===null||v===''?'—':v;
-const latestByDate=<T extends Record<string,any>>(items:T[],key:string)=>items.length?items.slice().sort((a,b)=>new Date(String(b[key]||0)).getTime()-new Date(String(a[key]||0)).getTime())[0]:undefined;
+const latestByDate=<T extends object>(items:T[],key:keyof T)=>items.length?items.slice().sort((a,b)=>new Date(String(b[key]??0)).getTime()-new Date(String(a[key]??0)).getTime())[0]:undefined;
 const num=(v:any)=>{const n=Number(v);return Number.isFinite(n)?n:null;};
 
 export const ClinicalDashboardSection:React.FC<{patient:Patient}>=({patient})=>{
