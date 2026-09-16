@@ -7,7 +7,7 @@ type SectionDef={id:PatientSectionId;order:number;label:string;icon:React.FC<{cl
 type SectionGroup={title:string;subtitle:string;items:PatientSectionId[]};
 
 export const PATIENT_SECTIONS:SectionDef[]=[
-{id:'overview',order:1,label:'Overview',description:'Summary and current status',icon:LayoutDashboard},
+{id:'overview',order:1,label:'Overview',description:'Live clinical snapshot and current status',icon:LayoutDashboard},
 {id:'history',order:2,label:'History',description:'Clinical history and admission data',icon:Clock},
 {id:'ecg',order:3,label:'ECG',description:'Electrocardiography records',icon:Activity},
 {id:'vitals',order:4,label:'Vitals & Balance',description:'Vitals, fluids and hemodynamics',icon:HeartPulse},
@@ -20,7 +20,7 @@ export const PATIENT_SECTIONS:SectionDef[]=[
 {id:'procedure',order:11,label:'Procedures',description:'Procedures and interventions',icon:Syringe},
 {id:'calculators',order:12,label:'Calculators',description:'Clinical scores and calculations',icon:Calculator},
 {id:'progress',order:13,label:'Progress Notes',description:'Dated clinical notes',icon:FileEdit},
-{id:'clinical-tools',order:14,label:'Clinical Dashboard',description:'Trends, therapy, records and handover',icon:BarChart3},
+{id:'clinical-tools',order:14,label:'Clinical Tools & Workflow',description:'Decision support, audit and handover',icon:BarChart3},
 {id:'pdf',order:15,label:'PDF / Export',description:'Export selected clinical sections',icon:FileDown},
 ];
 
