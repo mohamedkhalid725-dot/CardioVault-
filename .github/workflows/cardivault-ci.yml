@@ -74,6 +74,7 @@ jobs:
           PY
           npx cap update android
       - name: Deploy Firestore rules
+        # Deploy after the GitHub deploy service account has Firebase Rules Admin permission.
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
