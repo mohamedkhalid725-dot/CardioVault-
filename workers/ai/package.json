@@ -1,0 +1,15 @@
+{
+  "name": "cardiovault-ai-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "typecheck": "node --check index.js"
+  },
+  "dependencies": {
+    "jose": "^6.1.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.81.0"
+  }
+}
