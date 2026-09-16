@@ -148,7 +148,6 @@ exports.analyzeClinicalPatient = onRequest(
         contents: buildPrompt(patient),
         config: {
           responseMimeType: 'application/json',
-          temperature: 0.1,
           maxOutputTokens: 5000,
         },
       });
