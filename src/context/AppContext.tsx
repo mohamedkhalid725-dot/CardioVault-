@@ -3,7 +3,7 @@ import {Bed,Patient,PatientSectionId,PatientStatus,PastAdmission,Unit} from '../
 import {StorageService} from '../services/storage';
 import {FirebaseAuthentication} from '@capacitor-firebase/authentication';
 import {Capacitor} from '@capacitor/core';
-import {clearActiveClinicalWorkspace,syncCurrentUserNow} from '../services/cloudSyncBridge';
+import {clearActiveClinicalWorkspace,loadCurrentUserFromCloud,syncCurrentUserNow} from '../services/cloudSyncBridge';
 
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
@@ -20,12 +20,71 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[activePatientSection,setActivePatientSection]=useState<PatientSectionId>('overview');
  const[units,setUnits]=useState<Unit[]>([]);const[beds,setBeds]=useState<Bed[]>([]);const[patients,setPatients]=useState<Patient[]>([]);
  const[isSearchOpen,setIsSearchOpen]=useState(false);const[isSyncing,setIsSyncing]=useState(false);const[lastSyncTime,setLastSyncTime]=useState('');const[toasts,setToasts]=useState<ToastInfo[]>([]);
- useEffect(()=>{const savedAuth=StorageService.getAuth();const u=StorageService.getUnits(),b=StorageService.getBeds(),p=StorageService.getPatients();setUnits(u);setBeds(b);setPatients(p);setThemeState(StorageService.getTheme());setAuth(x=>({...x,...savedAuth}));setCurrentUnitId(u[0]?.id||null);setCurrentPatientId(p.find(x=>!x.isArchived)?.id||null);if(savedAuth?.isAuthenticated)setCurrentView('home');},[]);
+
+ const hydrateClinicalState=()=>{
+   const u=StorageService.getUnits(),b=StorageService.getBeds(),p=StorageService.getPatients();
+   setUnits(u);setBeds(b);setPatients(p);setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));
+ };
+
+ useEffect(()=>{
+   let active=true;
+   const boot=async()=>{
+     const savedAuth=StorageService.getAuth();
+     setThemeState(StorageService.getTheme());
+     setAuth(x=>({...x,...savedAuth}));
+     hydrateClinicalState();
+     if(savedAuth?.isAuthenticated) setCurrentView('home');
+     if(savedAuth?.isAuthenticated && Capacitor.isNativePlatform()){
+       try{
+         const firebaseUser=(await FirebaseAuthentication.getCurrentUser()).user;
+         if(firebaseUser){
+           const cloud=await loadCurrentUserFromCloud();
+           if(active){
+             if(cloud?.found) hydrateClinicalState();
+             setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');
+             if(firebaseUser.email||firebaseUser.displayName){
+               const next={...savedAuth,userEmail:firebaseUser.email||savedAuth.userEmail,userName:firebaseUser.displayName||savedAuth.userName,isAuthenticated:true};
+               setAuth(next);StorageService.saveAuth(next);
+             }
+           }
+         }
+       }catch(error){console.warn('Firebase session restore failed:',error);}
+     }
+   };
+   void boot();
+   return()=>{active=false;};
+ },[]);
  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},[theme]);
  const showToast=(message:string,type:ToastInfo['type']='info')=>{const id=`toast-${Date.now()}-${Math.random()}`;setToasts(p=>[...p,{id,message,type}]);window.setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000);};
  const dismissToast=(id:string)=>setToasts(p=>p.filter(t=>t.id!==id));
  const setTheme=(t:'dark'|'light')=>{setThemeState(t);StorageService.saveTheme(t);};const toggleTheme=()=>setTheme(theme==='dark'?'light':'dark');
- const loginWithGoogle=()=>{const clientId=(import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string|undefined;if(!clientId){showToast('Google Sign-In is not configured. Add VITE_GOOGLE_CLIENT_ID in your environment/Secrets.','error');return;}const win=window as any;const finish=(response:any)=>{try{const payload=JSON.parse(atob(response.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));const a={...auth,isAuthenticated:true,isLocked:false,userEmail:payload.email||auth.userEmail,userName:payload.name||auth.userName};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');showToast('Signed in with Google successfully.','success');}catch{showToast('Google credential could not be processed.','error');}};const init=()=>{if(!win.google?.accounts?.id)return;win.google.accounts.id.initialize({client_id:clientId,callback:finish,ux_mode:'popup'});win.google.accounts.id.prompt((n:any)=>{if(n?.isNotDisplayed?.()||n?.isSkippedMoment?.())showToast('Google Sign-In was not displayed. Check the authorized JavaScript origins and client ID.','error');});};if(win.google?.accounts?.id){init();return;}const existing=document.getElementById('google-gsi-script');if(existing){existing.addEventListener('load',init,{once:true});return;}const script=document.createElement('script');script.id='google-gsi-script';script.src='https://accounts.google.com/gsi/client';script.async=true;script.defer=true;script.onload=init;script.onerror=()=>showToast('Unable to load Google Sign-In. Check your internet connection.','error');document.head.appendChild(script);};
+
+ const loginWithGoogle=async()=>{
+   if(Capacitor.isNativePlatform()){
+     try{
+       const result=await FirebaseAuthentication.signInWithGoogle();
+       const user=result.user;
+       if(!user?.uid) throw new Error('Google sign-in returned no Firebase user.');
+       const a={...auth,isAuthenticated:true,isLocked:false,userEmail:user.email||auth.userEmail,userName:user.displayName||auth.userName};
+       setAuth(a);StorageService.saveAuth(a);setCurrentView('home');
+       const cloud=await loadCurrentUserFromCloud();
+       if(cloud?.found){hydrateClinicalState();setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in and cloud data restored.','success');}
+       else{const synced=await syncCurrentUserNow();if(synced){setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in with Google and cloud sync is ready.','success');}else showToast('Signed in, but cloud sync needs attention. Check Settings → Cloud Sync Diagnostics.','warning');}
+     }catch(error:any){
+       console.error('Native Google/Firebase sign-in failed:',error);
+       const detail=String(error?.message||error?.code||'Google sign-in failed').slice(0,240);
+       showToast(`Google Sign-In failed: ${detail}`,'error');
+     }
+     return;
+   }
+   const clientId=(import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string|undefined;if(!clientId){showToast('Google Sign-In is not configured. Add VITE_GOOGLE_CLIENT_ID in your environment/Secrets.','error');return;}
+   const win=window as any;
+   const finish=(response:any)=>{try{const payload=JSON.parse(atob(response.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));const a={...auth,isAuthenticated:true,isLocked:false,userEmail:payload.email||auth.userEmail,userName:payload.name||auth.userName};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');showToast('Signed in with Google successfully.','success');}catch{showToast('Google credential could not be processed.','error');}};
+   const init=()=>{if(!win.google?.accounts?.id)return;win.google.accounts.id.initialize({client_id:clientId,callback:finish,ux_mode:'popup'});win.google.accounts.id.prompt((n:any)=>{if(n?.isNotDisplayed?.()||n?.isSkippedMoment?.())showToast('Google Sign-In was not displayed. Check the authorized JavaScript origins and client ID.','error');});};
+   if(win.google?.accounts?.id){init();return;}
+   const existing=document.getElementById('google-gsi-script');if(existing){existing.addEventListener('load',init,{once:true});return;}
+   const script=document.createElement('script');script.id='google-gsi-script';script.src='https://accounts.google.com/gsi/client';script.async=true;script.defer=true;script.onload=init;script.onerror=()=>showToast('Unable to load Google Sign-In. Check your internet connection.','error');document.head.appendChild(script);
+ };
  const loginWithEmail=(email:string)=>{const clean=email.trim().toLowerCase();const a={...auth,isAuthenticated:true,isLocked:false,userEmail:clean,userName:clean?clean.split('@')[0]:auth.userName};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');};
  const unlockWithPin=(pin:string)=>{const savedPin=String(StorageService.getAuth()?.pinCode||auth.pinCode||'');if(pin===savedPin||(!savedPin&&pin==='1234')){setAuth(p=>({...p,isLocked:false,pinCode:savedPin||'1234'}));return true;}showToast('Invalid PIN code.','error');return false;};
  const lockApp=()=>setAuth(p=>({...p,isLocked:true}));
@@ -43,8 +102,8 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const deleteUnit=(id:string)=>{if(units.length<=1){showToast('Cannot delete the last clinical unit.','error');return false;}const activeIds=new Set(patients.filter(p=>!p.isArchived&&p.unitId===id).map(p=>p.id));if(activeIds.size>0||beds.some(b=>b.unitId===id&&b.patientId&&activeIds.has(b.patientId))){showToast('Transfer or discharge active patients before deleting this unit.','error');return false;}commitUnits(units.filter(u=>u.id!==id));commitBeds(beds.filter(b=>b.unitId!==id));if(currentUnitId===id)setCurrentUnitId(units.find(u=>u.id!==id)?.id||null);return true;};
  const addBed=(unitId:string,bedNumber?:string)=>{const n=beds.filter(b=>b.unitId===unitId).length+1;const bed={id:`bed-${unitId}-${Date.now()}`,unitId,bedNumber:bedNumber||`Bed ${n}`,status:'Empty' as PatientStatus};commitBeds([...beds,bed]);commitUnits(units.map(u=>u.id===unitId?{...u,totalBeds:u.totalBeds+1}:u));return bed;};
  const removeBed=(id:string)=>{const bed=beds.find(b=>b.id===id);if(!bed||bed.patientId)return false;const count=beds.filter(b=>b.unitId===bed.unitId).length;if(count<=1)return false;commitBeds(beds.filter(b=>b.id!==id));commitUnits(units.map(u=>u.id===bed.unitId?{...u,totalBeds:Math.max(1,u.totalBeds-1)}:u));return true;};
- const syncNow=async()=>{setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok)throw new Error('No authenticated Firebase user or sync failed.');setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);showToast('Cloud sync failed. Check your connection and account.','error');}finally{setIsSyncing(false);}};
- const resetDatabase=()=>{StorageService.resetToDefaultSeed();const u=StorageService.getUnits(),b=StorageService.getBeds(),p=StorageService.getPatients();setUnits(u);setBeds(b);setPatients(p);setCurrentPatientId(p[0]?.id||null);showToast('Database reset to clinical sample.','warning');};
+ const syncNow=async()=>{setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);const message=String((error as any)?.message||error||'Cloud sync failed').slice(0,300);showToast(`Cloud sync failed: ${message}`,'error');}finally{setIsSyncing(false);}};
+ const resetDatabase=()=>{StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset to clinical sample.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
  return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,updateUnit,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase}}>{children}</AppContext.Provider>;
 };
