@@ -1,0 +1,1 @@
+Clinical tools suite covers dashboard, trends, therapy timeline, ABG/ECG/Echo history, change history, and handover generation.
