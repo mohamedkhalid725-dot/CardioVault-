@@ -1,7 +1,18 @@
 {
   "name": "CardioVault",
+  "version": "2.0.0",
   "description": "Personal Clinical Notebook & Multi-Unit Patient Management for ICU, CCU, and Cardiology physicians",
   "requestFramePermissions": ["camera"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "Patient File 2.0",
+    "Clinical Snapshot",
+    "Unified Clinical Timeline",
+    "Quick Clinical Actions",
+    "Multi-Unit Bed Census",
+    "Clinical Handover",
+    "Cloud Sync",
+    "Offline-first local data",
+    "Arabic-capable PDF reports",
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
-
