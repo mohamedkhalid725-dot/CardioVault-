@@ -2,79 +2,43 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-    function workspaceOwner(workspaceId) {
-      return signedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid;
-    }
-    function member(workspaceId) {
-      return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
-    }
-    function memberData(workspaceId) {
-      return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data;
-    }
-    function unitMember(workspaceId, unitId) {
-      return member(workspaceId) && memberData(workspaceId).unitId == unitId;
-    }
-    function clinicalEditor(workspaceId, unitId) {
-      return unitMember(workspaceId, unitId) && memberData(workspaceId).role == 'clinical_editor';
-    }
-    function validAccessCode(hash) {
-      return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true;
-    }
+    function signedIn() { return request.auth != null; }
+    function workspaceOwner(workspaceId) { return signedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid; }
+    function member(workspaceId) { return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
+    function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
+    function unitMember(workspaceId,unitId) { return member(workspaceId) && memberData(workspaceId).unitId == unitId; }
+    function clinicalEditor(workspaceId,unitId) { return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor'; }
+    function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true; }
 
-    // Legacy account namespace remains readable/writable only by its owner during migration.
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-      match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-      }
+      allow read, write: if signedIn() && request.auth.uid == uid;
+      match /{document=**} { allow read, write: if signedIn() && request.auth.uid == uid; }
     }
 
-    // A hashed access-code index is readable only when authenticated and active.
-    // The actual code is a high-entropy random secret and is never used as a document path.
     match /accessCodes/{hash} {
       allow read: if validAccessCode(hash);
-      allow create, update, delete: if signedIn() && request.resource.data.workspaceId != null && workspaceOwner(request.resource.data.workspaceId);
+      allow create: if signedIn() && request.resource.data.workspaceId != null && workspaceOwner(request.resource.data.workspaceId);
+      allow update, delete: if signedIn() && resource.data.workspaceId != null && workspaceOwner(resource.data.workspaceId);
     }
 
     match /workspaces/{workspaceId} {
-      allow read, write: if workspaceOwner(workspaceId);
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow read, update, delete: if workspaceOwner(workspaceId);
       allow read: if member(workspaceId);
 
       match /members/{uid} {
         allow read: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
-        allow create: if signedIn() && request.auth.uid == uid && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
+        allow create: if signedIn() && request.auth.uid == uid && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
         allow update, delete: if workspaceOwner(workspaceId);
       }
 
-      match /accessCodes/{hash} {
-        allow read, write: if workspaceOwner(workspaceId);
-      }
-
-      match /units/{unitId} {
-        allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId, unitId);
-        allow create, update, delete: if workspaceOwner(workspaceId);
-      }
-
-      match /beds/{bedId} {
-        allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId, resource.data.unitId);
-        allow create, update, delete: if workspaceOwner(workspaceId);
-      }
-
-      match /patients/{patientId} {
-        allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId, resource.data.unitId);
-        allow create, update, delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, request.resource.data.unitId);
-      }
-
-      match /metadata/{documentId} {
-        allow read, write: if workspaceOwner(workspaceId);
-      }
+      match /accessCodes/{hash} { allow read, write: if workspaceOwner(workspaceId); }
+      match /units/{unitId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow create, update, delete: if workspaceOwner(workspaceId); }
+      match /beds/{bedId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId); allow create, update, delete: if workspaceOwner(workspaceId); }
+      match /patients/{patientId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId); allow create, update, delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId); }
+      match /metadata/{documentId} { allow read, write: if workspaceOwner(workspaceId); }
     }
 
-    match /{document=**} {
-      allow read, write: if false;
-    }
+    match /{document=**} { allow read, write: if false; }
   }
 }
