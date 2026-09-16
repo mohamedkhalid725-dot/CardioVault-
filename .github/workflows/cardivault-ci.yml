@@ -72,14 +72,14 @@ jobs:
           p.write_text(s)
           PY
           npx cap update android
-      - name: Deploy Firestore rules
+      - name: Deploy Firestore rules (when CI credentials are configured)
         if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest deploy --only firestore:rules --project cardiovault --token "" --non-interactive --config firebase.json --debug=false || npx firebase-tools@latest deploy --only firestore:rules --project cardiovault --non-interactive --config firebase.json --debug=false
-        
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          npx firebase-tools@latest deploy --only firestore:rules --project ccu-notebook --non-interactive --config firebase.json
       - name: Prepare CardioVault launcher icon
         run: |
           sudo apt-get update
