@@ -1,353 +1,56 @@
-import React, { useState } from 'react';
-import {
-  Activity,
-  Heart,
-  Wind,
-  FlaskConical,
-  Pill,
-  Image as ImageIcon,
-  Syringe,
-  FileText,
-  AlertCircle,
-  Thermometer,
-  Brain,
-  Droplet,
-  ChevronRight,
-  TrendingUp,
-} from 'lucide-react';
+import React from 'react';
+import { Activity, AlertTriangle, Clock3, Droplet, FileText, FlaskConical, Heart, Pill, ShieldAlert, Wind } from 'lucide-react';
 import { Patient, PatientSectionId } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 
-interface OverviewSectionProps {
-  patient: Patient;
-}
+interface OverviewSectionProps { patient: Patient; }
+type EventItem={id:string;time:string;label:string;detail:string;section:PatientSectionId;icon:React.ElementType};
+const dash=(v:unknown)=>v===undefined||v===null||v===''?'—':String(v);
+const latest=<T,>(a?:T[])=>a&&a.length?a[0]:undefined;
+const stamp=(v?:string)=>v?v.replace('T',' '):'—';
 
-export const OverviewSection: React.FC<OverviewSectionProps> = ({ patient }) => {
-  const { setActivePatientSection } = useApp();
-  const [activeTab, setActiveTab] = useState<'summary' | 'status' | 'cardio' | 'icu' | 'labs' | 'meds'>('summary');
-
-  const latestVital = patient.vitalsHistory[0] || {
-    sbp: 120,
-    dbp: 70,
-    hr: 88,
-    rr: 16,
-    spo2: 98,
-    temp: 36.8,
-    gcsTotal: 13,
-    gcsEye: 3,
-    gcsVerbal: 4,
-    gcsMotor: 6,
-    rass: -1,
-  };
-
-  const latestABG = patient.ventilator.abgHistory[0];
-  const latestFluid = patient.fluidRecords[0];
-
-  const map = Math.round((2 * latestVital.dbp + latestVital.sbp) / 3);
-
-  const tabs = [
-    { id: 'summary', label: 'Clinical Summary', icon: FileText },
-    { id: 'status', label: 'Current Status', icon: Activity },
-    { id: 'cardio', label: 'Cardiology', icon: Heart, targetSection: 'cardiology' as PatientSectionId },
-    { id: 'icu', label: 'ICU', icon: Wind, targetSection: 'icu' as PatientSectionId },
-    { id: 'labs', label: 'Labs', icon: FlaskConical, targetSection: 'labs' as PatientSectionId },
-    { id: 'meds', label: 'Medications', icon: Pill, targetSection: 'medication' as PatientSectionId },
-  ];
-
-  return (
-    <div className="space-y-6 animate-in fade-in duration-150">
-      {/* Patient Demographic Bar (Reference 2 style) */}
-      <div className="bg-slate-50 dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4.5 text-xs text-slate-700 dark:text-slate-300 shadow-sm">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-          <div>
-            <span className="text-slate-400 block text-[11px]">Age & Sex</span>
-            <span className="font-bold text-slate-900 dark:text-white text-sm">
-              {patient.age} y / {patient.sex}
-            </span>
-          </div>
-          <div>
-            <span className="text-slate-400 block text-[11px]">Weight & Height</span>
-            <span className="font-bold text-slate-900 dark:text-white text-sm">
-              {patient.weight} kg • {patient.height} cm
-            </span>
-          </div>
-          <div>
-            <span className="text-slate-400 block text-[11px]">Admission Date</span>
-            <span className="font-bold text-slate-900 dark:text-white text-sm">
-              {patient.admissionDate}, {patient.admissionTime}
-            </span>
-          </div>
-          <div>
-            <span className="text-slate-400 block text-[11px]">Primary Diagnosis</span>
-            <span className="font-bold text-cyan-600 dark:text-cyan-400 text-sm truncate block" title={patient.primaryDiagnosis}>
-              {patient.primaryDiagnosis}
-            </span>
-          </div>
-          <div>
-            <span className="text-slate-400 block text-[11px]">Code Status</span>
-            <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
-              {patient.codeStatus}
-            </span>
-          </div>
-          <div>
-            <span className="text-slate-400 block text-[11px]">Allergies</span>
-            <span className="font-bold text-rose-500 text-sm truncate block" title={patient.allergies.join(', ')}>
-              {patient.allergies[0] || 'NKDA'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Grid: Sidebar quick navigation + Main cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Left Side Quick Menu (Matches Reference 2 Overview screen) */}
-        <div className="lg:col-span-1 space-y-1">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-2">
-            Overview Sections
-          </p>
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isSelected = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id as any);
-                  if (tab.targetSection) {
-                    setActivePatientSection(tab.targetSection);
-                  }
-                }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  isSelected
-                    ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 ${isSelected ? 'text-cyan-500' : 'text-slate-400'}`} />
-                  <span>{tab.label}</span>
-                </div>
-                <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right Content Area: Clinical Summary + Current Status Grid */}
-        <div className="lg:col-span-3 space-y-6">
-          {/* Clinical Summary Card (Reference 2) */}
-          <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <FileText className="w-4 h-4 text-cyan-500" /> Clinical Summary
-              </h3>
-              <button
-                onClick={() => setActivePatientSection('history')}
-                className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
-              >
-                Full History →
-              </button>
-            </div>
-
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Chief Complaint
-              </span>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800/80">
-                "{patient.clinicalSummary.chiefComplaint}"
-              </p>
-            </div>
-
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                History of Present Illness (HPI)
-              </span>
-              <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-                {patient.clinicalSummary.hpi}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold uppercase text-slate-400 block mb-1">
-                  Past Medical History
-                </span>
-                <ul className="text-xs space-y-0.5 text-slate-700 dark:text-slate-300">
-                  {patient.clinicalSummary.pmh.map((item, i) => (
-                    <li key={i} className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold uppercase text-slate-400 block mb-1">
-                  Home / Prior Drug History
-                </span>
-                <p className="text-xs text-slate-700 dark:text-slate-300 leading-normal">
-                  {patient.clinicalSummary.drugHistory}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Current Status Card (Exact Grid from Reference Image 2) */}
-          <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Activity className="w-4 h-4 text-cyan-500" /> Current Status
-              </h3>
-              <span className="text-[11px] text-slate-400 font-mono">
-                {latestVital.timestamp}
-              </span>
-            </div>
-
-            {/* 8 Metric Tiles Grid matching Reference Image 2:
-                BP: 120/70 (MAP 87)
-                HR: 88 bpm
-                SpO2: 98%
-                Temp: 36.8°C
-                GCS: E3 V4 M6 (13)
-                RASS: -1
-                Urine Output: 0.8 mL/kg/hr
-                Balance: +250 mL */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {/* BP */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">BP</span>
-                <div className="text-lg font-extrabold text-slate-900 dark:text-white mt-0.5">
-                  {latestVital.sbp}/{latestVital.dbp}
-                </div>
-                <span className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium">
-                  (MAP {map})
-                </span>
-              </div>
-
-              {/* HR */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">HR</span>
-                <div className="text-lg font-extrabold text-slate-900 dark:text-white mt-0.5">
-                  {latestVital.hr} <span className="text-xs font-normal text-slate-400">bpm</span>
-                </div>
-                <span className="text-[11px] text-emerald-500 font-medium">Sinus rhythm</span>
-              </div>
-
-              {/* SpO2 */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">SpO₂</span>
-                <div className="text-lg font-extrabold text-cyan-500 mt-0.5">
-                  {latestVital.spo2}%
-                </div>
-                <span className="text-[11px] text-slate-400">FiO₂ {patient.ventilator.fio2}%</span>
-              </div>
-
-              {/* Temp */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">Temp</span>
-                <div className="text-lg font-extrabold text-slate-900 dark:text-white mt-0.5">
-                  {latestVital.temp}°C
-                </div>
-                <span className="text-[11px] text-emerald-500">Normothermic</span>
-              </div>
-
-              {/* GCS */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">GCS</span>
-                <div className="text-sm font-bold text-slate-900 dark:text-white mt-1">
-                  E{latestVital.gcsEye} V{latestVital.gcsVerbal} M{latestVital.gcsMotor}
-                </div>
-                <span className="text-xs font-extrabold text-cyan-500">
-                  ({latestVital.gcsTotal}/15)
-                </span>
-              </div>
-
-              {/* RASS */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">RASS</span>
-                <div className="text-lg font-extrabold text-slate-900 dark:text-white mt-0.5">
-                  {latestVital.rass}
-                </div>
-                <span className="text-[11px] text-slate-400">Light sedation</span>
-              </div>
-
-              {/* Urine Output */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">Urine Output</span>
-                <div className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
-                  0.8 <span className="text-[10px] font-normal text-slate-400">mL/kg/hr</span>
-                </div>
-                <span className="text-[11px] text-emerald-500 font-medium">Adequate perfusion</span>
-              </div>
-
-              {/* Balance */}
-              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 block">Balance</span>
-                <div className="text-lg font-extrabold text-cyan-500 mt-0.5">
-                  +250 mL
-                </div>
-                <span className="text-[11px] text-slate-400">24-hour cumulative</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Subsystem Highlights */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Cardiology Snapshot */}
-            <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Heart className="w-3.5 h-3.5 text-rose-500" /> Cardiac Echo & Biomarkers
-                </h4>
-                <button
-                  onClick={() => setActivePatientSection('cardiology')}
-                  className="text-xs text-cyan-500 hover:underline"
-                >
-                  View details →
-                </button>
-              </div>
-              <div className="text-xs space-y-1 text-slate-700 dark:text-slate-300">
-                <p>
-                  <span className="font-semibold text-slate-900 dark:text-white">LVEF:</span> {patient.cardiology.echo.ef}% ({patient.cardiology.echo.lvFunction})
-                </p>
-                <p>
-                  <span className="font-semibold text-slate-900 dark:text-white">Troponin:</span> {patient.cardiology.biomarkers.troponin}
-                </p>
-                <p>
-                  <span className="font-semibold text-slate-900 dark:text-white">Rhythm:</span> {patient.cardiology.rhythm}
-                </p>
-              </div>
-            </div>
-
-            {/* ICU Snapshot */}
-            <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Wind className="w-3.5 h-3.5 text-sky-500" /> Ventilator & ABG
-                </h4>
-                <button
-                  onClick={() => setActivePatientSection('icu')}
-                  className="text-xs text-cyan-500 hover:underline"
-                >
-                  View details →
-                </button>
-              </div>
-              <div className="text-xs space-y-1 text-slate-700 dark:text-slate-300">
-                <p>
-                  <span className="font-semibold text-slate-900 dark:text-white">Mode:</span> {patient.ventilator.mode}
-                </p>
-                <p>
-                  <span className="font-semibold text-slate-900 dark:text-white">PEEP / FiO₂:</span> {patient.ventilator.peep} cmH₂O / {patient.ventilator.fio2}%
-                </p>
-                <p>
-                  <span className="font-semibold text-slate-900 dark:text-white">Latest ABG:</span> pH {latestABG?.ph || 7.39}, PaO₂ {latestABG?.pao2 || 96} (P/F: {latestABG?.pfRatio || 274})
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+export const OverviewSection:React.FC<OverviewSectionProps>=({patient})=>{
+ const{setActivePatientSection}=useApp();
+ const vital=latest(patient.vitalsHistory);const fluid=latest(patient.fluidRecords);const abg=latest(patient.ventilator?.abgHistory);const ecg=latest(patient.ecgRecords);const procedure=latest(patient.procedures);const progress=latest(patient.progressNotes);const lab=latest(patient.labs);const calculator=latest(patient.calculatorResults);
+ const open=(s:PatientSectionId)=>setActivePatientSection(s);
+ const map=vital?Math.round((vital.sbp+2*vital.dbp)/3):undefined;
+ const urine=fluid?.hourlyUrineRate??fluid?.urineOutput;const balance=fluid?.cumulativeBalance??fluid?.netBalance;const fio2=patient.ventilator?.fio2;
+ const events:EventItem[]=[
+  vital&&{id:`v-${vital.id}`,time:vital.timestamp,label:'Vitals updated',detail:`BP ${vital.sbp}/${vital.dbp} • HR ${vital.hr} • SpO₂ ${vital.spo2}%`,section:'vitals',icon:Activity},
+  lab&&{id:`l-${lab.date}`,time:lab.date,label:'Laboratory panel',detail:`Hb ${dash(lab.hb)} • Cr ${dash(lab.creatinine)} • K ${dash(lab.k)}`,section:'labs',icon:FlaskConical},
+  ecg&&{id:`e-${ecg.id}`,time:`${ecg.date} ${ecg.time}`,label:'ECG recorded',detail:`${dash(ecg.heartRate)} bpm • ${dash(ecg.rhythm)}`,section:'ecg',icon:Heart},
+  abg&&{id:`a-${abg.id}`,time:abg.timestamp,label:'ABG recorded',detail:`pH ${dash(abg.ph)} • PaCO₂ ${dash(abg.paco2)} • PaO₂ ${dash(abg.pao2)}`,section:'icu',icon:Wind},
+  procedure&&{id:`p-${procedure.id}`,time:`${procedure.date} ${procedure.time}`,label:'Procedure recorded',detail:dash(procedure.procedure||procedure.name||procedure.surgeryName),section:'procedure',icon:ShieldAlert},
+  progress&&{id:`n-${progress.id}`,time:`${progress.date} ${progress.time}`,label:'Progress note',detail:dash(progress.type||progress.clinicalStatus||progress.plan).slice(0,120),section:'progress',icon:FileText},
+  calculator&&{id:`c-${calculator.id}`,time:calculator.timestamp,label:'Calculator result',detail:`${calculator.name}: ${dash(calculator.score)}`,section:'calculators',icon:FlaskConical},
+ ].filter(Boolean) as EventItem[];
+ const safety=[
+  ['Allergies',patient.allergies?.length?patient.allergies.join(', '):'NKDA',patient.allergies?.length?'rose':'slate'],
+  ['Code status',dash(patient.codeStatus),'slate'],
+  ['Active problems',patient.secondaryDiagnoses?.length?`${patient.secondaryDiagnoses.length} recorded`:'None recorded','slate'],
+ ] as const;
+ const metrics:[string,string,string,PatientSectionId][]=[
+  ['BP',vital?`${vital.sbp}/${vital.dbp}`:'—',map?`MAP ${map}`:'Not documented','vitals'],
+  ['HR',vital?`${vital.hr} bpm`:'—',vital?stamp(vital.timestamp):'Not documented','vitals'],
+  ['SpO₂',vital?`${vital.spo2}%`:'—',fio2!==undefined?`FiO₂ ${fio2}%`:'FiO₂ —','vitals'],
+  ['RR',vital?`${vital.rr}/min`:'—',vital?stamp(vital.timestamp):'Not documented','vitals'],
+  ['Temp',vital?`${vital.temp} °C`:'—','Recorded value','vitals'],
+  ['GCS',vital?`${vital.gcsTotal}/15`:'—',vital?`E${vital.gcsEye} V${vital.gcsVerbal} M${vital.gcsMotor}`:'Not documented','vitals'],
+  ['RASS',vital?String(vital.rass):'—','Recorded value','icu'],
+  ['Fluid balance',balance!==undefined?`${balance>0?'+':''}${balance} mL`:'—',urine!==undefined?`Urine ${urine} mL/kg/hr`:'Urine —','vitals'],
+ ];
+ return <div className="space-y-4 animate-in fade-in duration-150">
+  <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] shadow-sm overflow-hidden">
+   <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-600 dark:text-cyan-400">Clinical Snapshot</p><h2 className="mt-1 text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white truncate">{patient.fullName}</h2><p className="text-xs text-slate-500 mt-1">MRN {dash(patient.mrn)} • {patient.age} y • {patient.sex} • {dash(patient.primaryDiagnosis)}</p></div><button onClick={()=>open('history')} className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold hover:border-cyan-500/40">Open history</button></div></div>
+   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-px bg-slate-200 dark:bg-slate-800">{metrics.map(([label,main,sub,target])=><button key={label} onClick={()=>open(target)} className="text-left p-3 bg-white dark:bg-[#111C2E] hover:bg-cyan-50/50 dark:hover:bg-cyan-950/20 transition-colors"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</span><span className="block mt-1 text-sm font-extrabold text-slate-900 dark:text-white">{main}</span><span className="block mt-0.5 text-[10px] text-slate-400 truncate">{sub}</span></button>)}</div>
+  </section>
+  <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4"><div className="flex items-center gap-2 mb-3"><ShieldAlert className="w-4 h-4 text-rose-500"/><h3 className="text-sm font-bold">Patient Safety Bar</h3><span className="text-[10px] text-slate-400">Recorded information</span></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-2">{safety.map(([label,value,tone])=><div key={label} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3"><span className="block text-[10px] uppercase tracking-wide text-slate-400 font-bold">{label}</span><span className={`block mt-1 text-xs font-bold ${tone==='rose'?'text-rose-500':'text-slate-800 dark:text-slate-200'}`}>{value}</span></div>)}</div></section>
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+   <section className="lg:col-span-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4"><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><Clock3 className="w-4 h-4 text-cyan-500"/><h3 className="text-sm font-bold">What Changed</h3></div><button onClick={()=>open('progress')} className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400">View notes</button></div>{events.length?<div className="space-y-2">{events.slice(0,6).map(e=>{const Icon=e.icon;return <button key={e.id} onClick={()=>open(e.section)} className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-cyan-500/30 text-left"><span className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-500 flex items-center justify-center shrink-0"><Icon className="w-4 h-4"/></span><span className="min-w-0 flex-1"><span className="block text-xs font-bold">{e.label}</span><span className="block text-[11px] text-slate-500 truncate">{e.detail}</span></span><span className="text-[10px] text-slate-400 shrink-0">{stamp(e.time)}</span></button>})}</div>:<div className="py-8 text-center text-xs text-slate-400">No recent clinical activity recorded.</div>}</section>
+   <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4"><div className="flex items-center gap-2 mb-3"><FileText className="w-4 h-4 text-cyan-500"/><h3 className="text-sm font-bold">Clinical Summary</h3></div><div className="space-y-3 text-xs"><div><span className="text-[10px] font-bold uppercase text-slate-400">Chief complaint</span><p className="mt-1 font-semibold">{dash(patient.clinicalSummary?.chiefComplaint)}</p></div><div><span className="text-[10px] font-bold uppercase text-slate-400">HPI</span><p className="mt-1 text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-5">{dash(patient.clinicalSummary?.hpi)}</p></div><button onClick={()=>open('history')} className="w-full py-2 rounded-xl border border-slate-200 dark:border-slate-800 font-bold hover:border-cyan-500/40">Open full history</button></div></section>
+  </div>
+  <section className="grid grid-cols-2 sm:grid-cols-4 gap-3"><button onClick={()=>open('labs')} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 text-left"><FlaskConical className="w-4 h-4 text-cyan-500"/><span className="block mt-2 text-xs font-bold">Labs</span><span className="text-[11px] text-slate-400">{patient.labs.length} panels recorded</span></button><button onClick={()=>open('cardiology')} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 text-left"><Heart className="w-4 h-4 text-rose-500"/><span className="block mt-2 text-xs font-bold">Cardiology</span><span className="text-[11px] text-slate-400">EF {dash(patient.cardiology?.echo?.ef)}</span></button><button onClick={()=>open('medication')} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 text-left"><Pill className="w-4 h-4 text-cyan-500"/><span className="block mt-2 text-xs font-bold">Medications</span><span className="text-[11px] text-slate-400">{patient.medications.length} records</span></button><button onClick={()=>open('icu')} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 text-left"><Wind className="w-4 h-4 text-cyan-500"/><span className="block mt-2 text-xs font-bold">ICU / ABG</span><span className="text-[11px] text-slate-400">{patient.ventilator?.abgHistory?.length||0} ABG records</span></button></section>
+  {patient.allergies?.length>0&&<div className="flex items-start gap-3 p-3 rounded-2xl border border-rose-500/25 bg-rose-500/5 text-xs"><AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5"/><div><span className="font-bold text-rose-600 dark:text-rose-400">Allergy information recorded</span><p className="text-slate-600 dark:text-slate-300 mt-0.5">{patient.allergies.join(', ')}</p></div></div>}
+  <div className="text-[10px] text-slate-400 flex items-center gap-1"><Droplet className="w-3 h-3"/> Snapshot values come only from recorded patient data. Missing data is shown as —.</div>
+ </div>;
 };
