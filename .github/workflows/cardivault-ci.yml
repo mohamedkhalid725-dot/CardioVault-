@@ -72,6 +72,14 @@ jobs:
           p.write_text(s)
           PY
           npx cap update android
+      - name: Deploy Firestore rules
+        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          npx firebase-tools@latest deploy --only firestore:rules --project cardiovault --token "" --non-interactive --config firebase.json --debug=false || npx firebase-tools@latest deploy --only firestore:rules --project cardiovault --non-interactive --config firebase.json --debug=false
+        
       - name: Prepare CardioVault launcher icon
         run: |
           sudo apt-get update
@@ -163,5 +171,3 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-
-# Android CI hardened for Firebase Google Sign-In, manifest/network checks, stable signing, and server-side Gemini clinical AI.
