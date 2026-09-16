@@ -13,7 +13,7 @@ const UID_KEY='cardiovault_google_uid';
 const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
 const LAST_ERROR_KEY='cardiovault_last_cloud_sync_error';
 const LAST_ERROR_DETAIL_KEY='cardiovault_last_cloud_sync_error_detail';
-const SCHEMA_VERSION=10;
+const SCHEMA_VERSION=11;
 
 const currentUid=async():Promise<string|null>=>{if(!Capacitor.isNativePlatform())return null;try{return(await FirebaseAuthentication.getCurrentUser()).user?.uid||null;}catch{return null;}};
 const recoverNativeGoogleSession=async():Promise<string|null>=>{if(!Capacitor.isNativePlatform())return null;try{const pending=await FirebaseAuthentication.getPendingAuthResult();if(pending?.user?.uid)return pending.user.uid;}catch{}try{const result=await FirebaseAuthentication.signInWithGoogle({useCredentialManager:true});if(result?.user?.uid)return result.user.uid;}catch(error){console.warn('Interactive Google session recovery failed:',error);}return currentUid();};
@@ -25,7 +25,6 @@ const readSnapshotData=(snapshot:any):any=>{try{return typeof snapshot?.data==='
 const readSnapshotId=(snapshot:any):string|null=>{const id=snapshot?.id||snapshot?.documentId||snapshot?.reference?.id;return typeof id==='string'&&id?id:null;};
 const firestoreSafe=(value:any,seen=new WeakSet<object>()):any=>{if(value===null||typeof value==='string'||typeof value==='boolean')return value;if(typeof value==='number')return Number.isFinite(value)?value:null;if(typeof value==='bigint')return value.toString();if(value instanceof Date)return value.toISOString();if(typeof value==='undefined'||typeof value==='function'||typeof value==='symbol')return null;if(typeof value!=='object')return null;if(seen.has(value))return null;seen.add(value);if(Array.isArray(value))return value.map(item=>firestoreSafe(item,seen));const out:Record<string,any>={};for(const[key,child]of Object.entries(value)){out[key]=firestoreSafe(child,seen);}return out;};
 async function getCollectionDocuments(reference:string):Promise<Array<{id:string;data:any}>>{const result:any=await FirebaseFirestore.getCollection({reference});const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];return snapshots.map((snapshot:any)=>({id:readSnapshotId(snapshot)||'',data:readSnapshotData(snapshot)})).filter(x=>!!x.id);}
-async function getDocument(reference:string):Promise<any|null>{try{const result:any=await FirebaseFirestore.getDocument({reference});return readSnapshotData(result?.snapshot)||null;}catch{return null;}}
 async function withRetry<T>(operation:()=>Promise<T>,attempts=3):Promise<T>{let last:unknown;for(let i=0;i<attempts;i++){try{return await operation();}catch(error){last=error;if(i<attempts-1)await new Promise(r=>setTimeout(r,500*2**i));}}throw last;}
 const workspacePath=(workspaceId:string,collection:string)=>`workspaces/${workspaceId}/${collection}`;
 function clearLocalClinicalData(){const previous=suppressSync;suppressSync=true;try{StorageService.saveUnits([]);StorageService.saveBeds([]);StorageService.savePatients([]);}finally{suppressSync=previous;}}
@@ -47,9 +46,10 @@ async function resolveAccess():Promise<WorkspaceAccessState|null>{
   return await ensureOwnerWorkspace();
 }
 
-async function syncCollection(workspaceId:string,collection:string,records:any[],filter:(record:any)=>boolean):Promise<void>{
+async function syncCollection(workspaceId:string,collection:string,records:any[],filter:(record:any)=>boolean,allowRemoteDelete:boolean):Promise<void>{
   const reference=workspacePath(workspaceId,collection);const currentIds=new Set<string>();
   for(const record of records){if(!record?.id||!filter(record))continue;const id=String(record.id);currentIds.add(id);const safe=firestoreSafe(record)||{};await withRetry(()=>FirebaseFirestore.setDocument({reference:`${reference}/${id}`,data:{...safe,id,updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},merge:true}));}
+  if(!allowRemoteDelete)return;
   const remote=await getCollectionDocuments(reference);for(const item of remote){if(filter(item.data)&&!currentIds.has(item.id))await withRetry(()=>FirebaseFirestore.deleteDocument({reference:`${reference}/${item.id}`}));}
 }
 async function writeMetadata(workspaceId:string,uid:string,access:WorkspaceAccessState){await withRetry(()=>FirebaseFirestore.setDocument({reference:`workspaces/${workspaceId}/metadata/cloud`,data:{workspaceId,ownerUid:access.role==='owner'?uid:undefined,lastClientSync:new Date().toISOString(),schemaVersion:SCHEMA_VERSION,role:access.role,unitId:access.unitId||null,platform:Capacitor.getPlatform()},merge:true}));}
@@ -59,15 +59,15 @@ async function syncLocalDatabase(uid:string):Promise<void>{
   const access=await resolveAccess();if(!access)throw new Error('No CardioVault Workspace is assigned to this account. Enter a Unit Access Code.');
   if(access.role==='view_only')return;
   if(syncing||suppressSync){syncRequested=true;return;}syncing=true;syncRequested=false;
-  try{await ensureFirestoreNetwork();const filterUnit=(record:any)=>access.role==='owner'||String(record?.unitId||'')===String(access.unitId||'');
-    await syncCollection(access.workspaceId,'units',StorageService.getUnits(),record=>access.role==='owner'||String(record?.id||'')===String(access.unitId||''));
-    await syncCollection(access.workspaceId,'beds',StorageService.getBeds(),filterUnit);
-    await syncCollection(access.workspaceId,'patients',StorageService.getPatients(),filterUnit);
+  try{await ensureFirestoreNetwork();const filterUnit=(record:any)=>access.role==='owner'||String(record?.unitId||'')===String(access.unitId||'');const owner=access.role==='owner';
+    await syncCollection(access.workspaceId,'units',StorageService.getUnits(),record=>access.role==='owner'||String(record?.id||'')===String(access.unitId||''),owner);
+    await syncCollection(access.workspaceId,'beds',StorageService.getBeds(),filterUnit,owner);
+    await syncCollection(access.workspaceId,'patients',StorageService.getPatients(),filterUnit,owner);
     if(access.role==='owner')await writeMetadata(access.workspaceId,uid,access);
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());clearCloudError();
-  }catch(error){recordCloudError(error);throw error;}finally{syncing=false;if(syncRequested){syncRequested=false;scheduleSync(500);}}
+  }catch(error){recordCloudError(error);throw error;}finally{syncing=false;if(syncRequested){syncRequested=false;scheduleSync(100);}}
 }
-function scheduleSync(delay=900){if(suppressSync||!Capacitor.isNativePlatform())return;if(syncTimer)clearTimeout(syncTimer);syncTimer=setTimeout(()=>{syncTimer=null;void(async()=>{const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);try{await syncLocalDatabase(uid);}catch(error){console.warn('Cloud sync failed; local data remains available and will retry.',error);}})();},delay);}
+function scheduleSync(delay=100){if(suppressSync||!Capacitor.isNativePlatform())return;if(syncTimer)clearTimeout(syncTimer);syncTimer=setTimeout(()=>{syncTimer=null;void(async()=>{const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);try{await syncLocalDatabase(uid);}catch(error){console.warn('Automatic cloud sync failed; changes will be retried on the next local save or manual sync.',error);}})();},delay);}
 
 export async function loadCurrentUserFromCloud():Promise<{uid:string;found:boolean;access?:WorkspaceAccessState|null}|null>{
   const uid=await currentUid();if(!uid)return null;localStorage.setItem(UID_KEY,uid);suppressSync=true;
@@ -81,13 +81,12 @@ export async function loadCurrentUserFromCloud():Promise<{uid:string;found:boole
     if(!access)return{uid,found:false,access:null};
     const base=workspacePath(access.workspaceId,'');
     const [allUnits,allBeds,allPatients]=await Promise.all([getCollectionDocuments(`${base}units`),getCollectionDocuments(`${base}beds`),getCollectionDocuments(`${base}patients`)]);
-    const units=allUnits.map(x=>({...x.data,id:x.id}).id&&({...x.data,id:x.id}));
-    const beds=allBeds.map(x=>({...x.data,id:x.id}));const patients=allPatients.map(x=>({...x.data,id:x.id}));
+    const units=allUnits.map(x=>({...x.data,id:x.id}));const beds=allBeds.map(x=>({...x.data,id:x.id}));const patients=allPatients.map(x=>({...x.data,id:x.id}));
     const scoped=access.role==='owner'?{units,beds,patients}:{units:units.filter((u:any)=>u.id===access.unitId),beds:beds.filter((b:any)=>b.unitId===access.unitId),patients:patients.filter((p:any)=>p.unitId===access.unitId)};
     const found=!!(scoped.units.length||scoped.beds.length||scoped.patients.length);setLocalData(scoped.units,scoped.beds,scoped.patients);localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());clearCloudError();return{uid,found,access};
-  }catch(error){recordCloudError(error);console.warn('Cloud database read failed; local workspace was preserved.',error);return{uid,found:false,access:null};}finally{suppressSync=false;}
+  }catch(error){recordCloudError(error);console.warn('Cloud database read failed.',error);return{uid,found:false,access:null};}finally{suppressSync=false;}
 }
-export async function saveCurrentUserToCloud():Promise<void>{if(!Capacitor.isNativePlatform())return;const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);scheduleSync(250);}
+export async function saveCurrentUserToCloud():Promise<void>{if(!Capacitor.isNativePlatform())return;const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);scheduleSync(100);}
 export async function syncCurrentUserNow():Promise<boolean>{if(!Capacitor.isNativePlatform())return false;let uid=await currentUid();if(!uid)uid=await recoverNativeGoogleSession();if(!uid){recordCloudError(new Error('No native Firebase user is signed in.'));return false;}localStorage.setItem(UID_KEY,uid);try{const access=await resolveAccess();if(!access){recordCloudError(new Error('No Workspace is assigned to this account. Enter a Unit Access Code.'));return false;}await syncLocalDatabase(uid);return true;}catch(error){recordCloudError(error);console.warn('Manual cloud sync failed:',error);return false;}}
 export function getLastCloudSyncTime(){return localStorage.getItem(LAST_SYNC_KEY)||'';}
 export function getLastCloudSyncErrorTime(){return localStorage.getItem(LAST_ERROR_KEY)||'';}
