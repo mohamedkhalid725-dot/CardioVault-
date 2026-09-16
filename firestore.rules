@@ -5,7 +5,7 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function masterAccount() { return signedIn() && request.auth.token.email == 'mohamedkhalid725@gmail.com'; }
     function masterWorkspace(workspaceId) { return workspaceId == 'cardiovault_master_workspace'; }
-    function workspaceOwner(workspaceId) { return masterAccount() && masterWorkspace(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerEmail == 'mohamedkhalid725@gmail.com'; }
+    function workspaceOwner(workspaceId) { return masterAccount() && masterWorkspace(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid; }
     function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
     function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true && get(/databases/$(database)/documents/accessCodes/$(hash)).data.workspaceId == 'cardiovault_master_workspace'; }
