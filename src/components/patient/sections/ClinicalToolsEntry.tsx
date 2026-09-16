@@ -1,0 +1,1 @@
+import React from'react';import{ClinicalToolsSection}from'./ClinicalToolsSection';import type{Patient}from'../../../types/clinical';export const ClinicalToolsEntry:React.FC<{patient:Patient}>=({patient})=><ClinicalToolsSection patient={patient}/>;
