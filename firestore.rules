@@ -4,10 +4,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function masterAccount() { return signedIn() && request.auth.token.email == 'mohamedkhalid725@gmail.com'; }
-    function workspaceOwner(workspaceId) { return signedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerEmail == 'mohamedkhalid725@gmail.com'; }
-    function member(workspaceId) { return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
+    function masterWorkspace(workspaceId) { return workspaceId == 'cardiovault_master_workspace'; }
+    function workspaceOwner(workspaceId) { return masterAccount() && masterWorkspace(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerEmail == 'mohamedkhalid725@gmail.com'; }
+    function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
-    function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true; }
+    function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true && get(/databases/$(database)/documents/accessCodes/$(hash)).data.workspaceId == 'cardiovault_master_workspace'; }
     function unitMember(workspaceId,unitId) { return member(workspaceId) && memberData(workspaceId).unitId == unitId && validAccessCode(memberData(workspaceId).accessCodeHash); }
     function clinicalEditor(workspaceId,unitId) { return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor'; }
 
@@ -17,27 +18,33 @@ service cloud.firestore {
     }
 
     match /accessCodes/{hash} {
-      allow read: if validAccessCode(hash);
-      allow create: if masterAccount() && request.resource.data.workspaceId == 'cardiovault_master_workspace' && workspaceOwner(request.resource.data.workspaceId);
-      allow update, delete: if masterAccount() && resource.data.workspaceId == 'cardiovault_master_workspace' && workspaceOwner(resource.data.workspaceId);
+      allow get: if validAccessCode(hash);
+      allow create: if workspaceOwner(request.resource.data.workspaceId) && request.resource.data.workspaceId == 'cardiovault_master_workspace';
+      allow update, delete: if workspaceOwner(resource.data.workspaceId) && resource.data.workspaceId == 'cardiovault_master_workspace';
     }
 
     match /workspaces/{workspaceId} {
       allow create: if masterAccount() && workspaceId == 'cardiovault_master_workspace' && request.resource.data.ownerUid == request.auth.uid && request.resource.data.ownerEmail == 'mohamedkhalid725@gmail.com';
-      allow read, update, delete: if workspaceOwner(workspaceId);
-      allow read: if member(workspaceId);
+      allow get, update, delete: if workspaceOwner(workspaceId);
+      allow get: if member(workspaceId);
 
       match /members/{uid} {
-        allow read: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
+        allow get: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
         allow create: if signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
         allow update, delete: if workspaceOwner(workspaceId);
       }
 
       match /accessCodes/{hash} { allow read, write: if workspaceOwner(workspaceId); }
-      match /units/{unitId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow create, update, delete: if workspaceOwner(workspaceId); }
-      match /beds/{bedId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId); allow create, update, delete: if workspaceOwner(workspaceId); }
+      match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
+      match /beds/{bedId} {
+        allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow list: if workspaceOwner(workspaceId) || (member(workspaceId) && request.query.limit != 0);
+        allow create, delete: if workspaceOwner(workspaceId);
+        allow update: if workspaceOwner(workspaceId) || (clinicalEditor(workspaceId,resource.data.unitId) && request.resource.data.unitId == resource.data.unitId);
+      }
       match /patients/{patientId} {
-        allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow list: if workspaceOwner(workspaceId) || (member(workspaceId) && request.query.limit != 0);
         allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
