@@ -35,7 +35,11 @@ service cloud.firestore {
       match /accessCodes/{hash} { allow read, write: if workspaceOwner(workspaceId); }
       match /units/{unitId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow create, update, delete: if workspaceOwner(workspaceId); }
       match /beds/{bedId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId); allow create, update, delete: if workspaceOwner(workspaceId); }
-      match /patients/{patientId} { allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId); allow create, update, delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId); }
+      match /patients/{patientId} {
+        allow read: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
+        allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
+      }
       match /metadata/{documentId} { allow read, write: if workspaceOwner(workspaceId); }
     }
 
