@@ -38,13 +38,13 @@ service cloud.firestore {
       match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
       match /beds/{bedId} {
         allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow list: if workspaceOwner(workspaceId) || (member(workspaceId) && request.query.limit != 0);
+        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
         allow create, delete: if workspaceOwner(workspaceId);
         allow update: if workspaceOwner(workspaceId) || (clinicalEditor(workspaceId,resource.data.unitId) && request.resource.data.unitId == resource.data.unitId);
       }
       match /patients/{patientId} {
         allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow list: if workspaceOwner(workspaceId) || (member(workspaceId) && request.query.limit != 0);
+        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
         allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
