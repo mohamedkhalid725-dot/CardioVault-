@@ -1,134 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { Search, X, ChevronRight } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
-import type { Patient } from '../../types/clinical';
+import React,{useEffect,useMemo,useState}from'react';
+import {Search,X,ChevronRight}from'lucide-react';
+import {useApp}from'../../context/AppContext';
+import {PATIENT_SECTIONS}from'../patient/PatientFileNav';
+import type {Patient}from'../../types/clinical';
 
-export const SearchModal: React.FC = () => {
-  const {
-    isSearchOpen,
-    setIsSearchOpen,
-    patients,
-    units,
-    setCurrentPatientId,
-    setCurrentView,
-    setCurrentUnitId,
-    setActivePatientSection,
-  } = useApp();
-  const [query, setQuery] = useState('');
+const SEARCH_FIELDS:Record<string,string[]>={overview:['fullName','mrn','primaryDiagnosis','secondaryDiagnoses','allergies','codeStatus','clinicalSummary'],history:['clinicalSummary','cardiovascularHistory','pastAdmissions'],vitals:['vitalsHistory','fluidRecords','hemodynamicHistory','fluidIntakeHistory','urineOutputHistory'],ecg:['ecgRecords'],examination:['examination'],cardiology:['cardiology'],medication:['medications'],icu:['ventilator'],imaging:['imaging'],labs:['labs','labResults'],procedure:['procedures'],calculators:['calculatorResults'],progress:['progressNotes'],'clinical-tools':['clinicalTools','clinicalToolsHistory'],pdf:['fullName','mrn','primaryDiagnosis','clinicalSummary','vitalsHistory','ecgRecords','cardiology','medications','ventilator','imaging','labs','procedures','calculatorResults','progressNotes']};
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setIsSearchOpen(true);
-      } else if (e.key === 'Escape') {
-        setIsSearchOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setIsSearchOpen]);
-
-  if (!isSearchOpen) return null;
-
-  const q = query.trim().toLowerCase();
-  const matchedPatients = q
-    ? patients.filter((p) => {
-        const unit = units.find((u) => u.id === p.unitId);
-        const searchable = [
-          p.fullName,
-          p.mrn,
-          p.primaryDiagnosis,
-          p.status,
-          p.sex,
-          p.codeStatus,
-          p.unitId,
-          unit?.name,
-          p.bedId,
-          p.clinicalSummary?.chiefComplaint,
-          p.clinicalSummary?.hpi,
-          ...(p.secondaryDiagnoses || []),
-        ];
-        return searchable.filter(Boolean).join(' ').toLowerCase().includes(q);
-      })
-    : patients.slice(0, 8);
-
-  const handleSelect = (p: Patient) => {
-    setCurrentPatientId(p.id);
-    setCurrentUnitId(p.unitId);
-    setActivePatientSection('overview');
-    setCurrentView('patient');
-    setIsSearchOpen(false);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 sm:pt-28 px-4 bg-black/70 backdrop-blur-sm">
-      <div className="fixed inset-0" onClick={() => setIsSearchOpen(false)} />
-      <div className="w-full max-w-xl bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative z-10">
-        <div className="flex items-center px-4 py-3.5 border-b border-slate-200 dark:border-slate-800 gap-3">
-          <Search className="w-5 h-5 text-cyan-500 shrink-0" />
-          <input
-            type="text"
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, MRN, diagnosis, unit, bed, status..."
-            className="w-full bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
-          />
-          <button onClick={() => setIsSearchOpen(false)} className="p-1 rounded-lg text-slate-400">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="max-h-96 overflow-y-auto p-2 divide-y divide-slate-100 dark:divide-slate-800/60">
-          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            {q ? `Search Results (${matchedPatients.length})` : 'Recent Inpatients'}
-          </div>
-          {matchedPatients.map((p) => {
-            const unit = units.find((u) => u.id === p.unitId);
-            return (
-              <button
-                key={p.id}
-                onClick={() => handleSelect(p)}
-                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/60 text-left"
-              >
-                <div>
-                  <h4 className="text-sm font-bold">{p.fullName}</h4>
-                  <p className="text-xs text-slate-400">
-                    MRN: {p.mrn} • {p.age}y {p.sex} • {unit?.name || p.unitId} • Bed {p.bedId || '—'}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    {p.primaryDiagnosis || 'No diagnosis'}
-                    {p.secondaryDiagnoses?.length ? ` • ${p.secondaryDiagnoses.slice(0, 2).join(', ')}` : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                      p.status === 'Critical'
-                        ? 'bg-rose-500/15 text-rose-500'
-                        : p.status === 'Unstable'
-                          ? 'bg-amber-500/15 text-amber-500'
-                          : 'bg-emerald-500/15 text-emerald-500'
-                    }`}
-                  >
-                    {p.status}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </div>
-              </button>
-            );
-          })}
-          {matchedPatients.length === 0 && (
-            <div className="p-8 text-center text-xs text-slate-400">No matching clinical records found.</div>
-          )}
-        </div>
-
-        <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 flex justify-between">
-          <span>Ctrl/Cmd + K to search</span>
-          <span>ESC to close</span>
-        </div>
-      </div>
-    </div>
-  );
-};
+export const SearchModal:React.FC=()=>{const{isSearchOpen,setIsSearchOpen,patients,units,currentPatient,currentView,setCurrentPatientId,setCurrentView,setCurrentUnitId,setActivePatientSection}=useApp();const[query,setQuery]=useState('');useEffect(()=>{const handleKeyDown=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setIsSearchOpen(true);}else if(e.key==='Escape')setIsSearchOpen(false);};window.addEventListener('keydown',handleKeyDown);return()=>window.removeEventListener('keydown',handleKeyDown);},[setIsSearchOpen]);useEffect(()=>{if(!isSearchOpen)setQuery('');},[isSearchOpen]);if(!isSearchOpen)return null;const q=query.trim().toLowerCase();const inPatient=currentView==='patient'&&!!currentPatient;
+ const patientSectionResults=useMemo(()=>{if(!inPatient||!q||!currentPatient)return[];const p:any=currentPatient;return PATIENT_SECTIONS.filter(section=>(SEARCH_FIELDS[section.id]||[]).some(key=>{const value=p[key];return value!==undefined&&value!==null&&JSON.stringify(value).toLowerCase().includes(q);}));},[inPatient,q,currentPatient]);
+ const matchedPatients=q?patients.filter(p=>{const unit=units.find(u=>u.id===p.unitId);const searchable=[p.fullName,p.mrn,p.primaryDiagnosis,p.status,p.sex,p.codeStatus,p.unitId,unit?.name,p.bedId,p.clinicalSummary?.chiefComplaint,p.clinicalSummary?.hpi,...(p.secondaryDiagnoses||[])];return searchable.filter(Boolean).join(' ').toLowerCase().includes(q);}):patients.slice(0,8);
+ const handleSelect=(p:Patient)=>{setCurrentPatientId(p.id);setCurrentUnitId(p.unitId);setActivePatientSection('overview');setCurrentView('patient');setIsSearchOpen(false);};
+ const handleSectionSelect=(sectionId:any)=>{setActivePatientSection(sectionId);setIsSearchOpen(false);};
+ return <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 sm:pt-28 px-4 bg-black/70 backdrop-blur-sm"><div className="fixed inset-0" onClick={()=>setIsSearchOpen(false)}/><div className="w-full max-w-xl bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative z-10"><div className="flex items-center px-4 py-3.5 border-b border-slate-200 dark:border-slate-800 gap-3"><Search className="w-5 h-5 text-cyan-500 shrink-0"/><input type="text" autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder={inPatient?'Search notes, labs, medications, ECG, diagnosis and all saved data...':'Search name, MRN, diagnosis, unit, bed, status...'} className="w-full bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"/><button onClick={()=>setIsSearchOpen(false)} className="p-1 rounded-lg text-slate-400"><X className="w-5 h-5"/></button></div>
+ <div className="max-h-96 overflow-y-auto p-2 divide-y divide-slate-100 dark:divide-slate-800/60">
+ {inPatient?<><div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-cyan-500">Search This Patient File</div>{q?patientSectionResults.map(section=><button key={section.id} onClick={()=>handleSectionSelect(section.id)} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/60 text-left"><div><h4 className="text-sm font-bold">{section.label}</h4><p className="text-[11px] text-slate-400 mt-0.5">Matching saved data in this patient's {section.label.toLowerCase()} section</p></div><ChevronRight className="w-4 h-4 text-slate-400"/></button>):<div className="p-6 text-center text-xs text-slate-400">Type a term to search only inside {currentPatient?.fullName||'this patient'}'s clinical file.</div>}{q&&!patientSectionResults.length&&<div className="p-8 text-center text-xs text-slate-400">No matching data found in this patient file.</div>}</>:<><div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">{q?`Search Results (${matchedPatients.length})`:'Recent Inpatients'}</div>{matchedPatients.map(p=>{const unit=units.find(u=>u.id===p.unitId);return <button key={p.id} onClick={()=>handleSelect(p)} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/60 text-left"><div><h4 className="text-sm font-bold">{p.fullName}</h4><p className="text-xs text-slate-400">MRN: {p.mrn} • {p.age}y {p.sex} • {unit?.name||p.unitId} • Bed {p.bedId||'—'}</p><p className="text-[11px] text-slate-500 mt-0.5">{p.primaryDiagnosis||'No diagnosis'}{p.secondaryDiagnoses?.length?` • ${p.secondaryDiagnoses.slice(0,2).join(', ')}`:''}</p></div><div className="flex items-center gap-2"><span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${p.status==='Critical'?'bg-rose-500/15 text-rose-500':p.status==='Unstable'?'bg-amber-500/15 text-amber-500':'bg-emerald-500/15 text-emerald-500'}`}>{p.status}</span><ChevronRight className="w-4 h-4 text-slate-400"/></div></button>})}{matchedPatients.length===0&&<div className="p-8 text-center text-xs text-slate-400">No matching clinical records found.</div>}</>}
+ </div><div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 flex justify-between"><span>Ctrl/Cmd + K to search</span><span>ESC to close</span></div></div></div>;};
