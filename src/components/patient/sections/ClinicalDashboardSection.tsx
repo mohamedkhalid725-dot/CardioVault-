@@ -1,91 +1,30 @@
-import React, { useMemo, useState } from 'react';
-import { Activity, AlertTriangle, BarChart3, Clock3, Droplets, HeartPulse, Info } from 'lucide-react';
-import type { Patient } from '../../../types/clinical';
+import React,{useMemo}from'react';
+import {Activity,AlertTriangle,BarChart3,Clock3,Droplets,HeartPulse,Info,UserRound,CalendarDays,ShieldCheck}from'lucide-react';
+import type {Patient,LabPanel,VitalRecord}from'../../../types/clinical';
 
-type AnyRecord = Record<string, any>;
-const asRecord = (v: any): AnyRecord => (v && typeof v === 'object' ? v : {});
-const arr = (...xs: any[]) => xs.flatMap(x => Array.isArray(x) ? x : []);
-const num = (v: any) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
-const dateOf = (x: any) => x?.date || x?.timestamp || x?.createdAt || x?.recordedAt || x?.datetime || x?.time || '';
-const labelOf = (x: any) => x?.name || x?.label || x?.test || x?.parameter || x?.type || '';
-const valueOf = (x: any) => x?.value ?? x?.result ?? x?.reading ?? x?.measurement ?? x?.dose ?? '';
-const latestBy = (items: any[], matcher: (x: any) => boolean) => items.filter(matcher).sort((a, b) => new Date(dateOf(b) || 0).getTime() - new Date(dateOf(a) || 0).getTime())[0];
-const field = (p: AnyRecord, names: string[]) => { for (const n of names) { const v = p[n]; if (v !== undefined && v !== null && v !== '') return v; } return null; };
+const Card:React.FC<{title:string;icon:React.ReactNode;children:React.ReactNode;className?:string}>=({title,icon,children,className=''})=><div className={`rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 shadow-sm ${className}`}><div className="flex items-center gap-2 mb-3"><span className="text-cyan-500">{icon}</span><h3 className="font-extrabold text-sm">{title}</h3></div>{children}</div>;
+const Metric:React.FC<{label:string;value:React.ReactNode;unit?:string;alert?:boolean;muted?:boolean}>=({label,value,unit,alert,muted})=><div className={`rounded-xl p-3 border ${alert?'border-rose-400/50 bg-rose-500/5':'border-slate-200 dark:border-slate-800'}`}><div className="text-[9px] uppercase tracking-wide font-bold text-slate-400">{label}</div><div className={`mt-1 text-base sm:text-lg font-black ${alert?'text-rose-500':''} ${muted?'text-slate-400':''}`}>{value}<span className="text-[10px] sm:text-xs font-bold text-slate-400">{unit?' '+unit:''}</span></div></div>;
+const valueOrDash=(v:any)=>v===undefined||v===null||v===''?'—':v;
+const latestByDate=<T extends Record<string,any>>(items:T[],key:string)=>items.length?items.slice().sort((a,b)=>new Date(String(b[key]||0)).getTime()-new Date(String(a[key]||0)).getTime())[0]:undefined;
+const num=(v:any)=>{const n=Number(v);return Number.isFinite(n)?n:null;};
 
-const Card: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
-  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 shadow-sm">
-    <div className="flex items-center gap-2 mb-3"><span className="text-cyan-500">{icon}</span><h3 className="font-extrabold text-sm">{title}</h3></div>{children}
-  </div>
-);
-
-const Metric: React.FC<{ label: string; value: any; unit?: string; sub?: string; alert?: boolean }> = ({ label, value, unit, sub, alert }) => (
-  <div className={`rounded-xl p-3 border ${alert ? 'border-rose-400/50 bg-rose-500/5' : 'border-slate-200 dark:border-slate-800'}`}>
-    <div className="text-[10px] uppercase tracking-wide font-bold text-slate-400">{label}</div>
-    <div className={`mt-1 text-lg font-black ${alert ? 'text-rose-500' : ''}`}>{value ?? '—'} {unit && <span className="text-xs font-bold text-slate-400">{unit}</span>}</div>
-    {sub && <div className="text-[10px] text-slate-400 mt-0.5">{sub}</div>}
-  </div>
-);
-
-const Trend: React.FC<{ title: string; items: any[] }> = ({ title, items }) => {
-  const pts = items.map(x => ({ d: dateOf(x), v: num(valueOf(x)) })).filter(x => x.v !== null).slice(-12);
-  const max = Math.max(...pts.map(x => x.v as number), 1);
-  const min = Math.min(...pts.map(x => x.v as number), 0);
-  return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
-      <div className="flex justify-between text-xs font-bold mb-2"><span>{title}</span><span className="text-slate-400">{pts.length} points</span></div>
-      {pts.length < 2 ? <div className="text-xs text-slate-400 py-5 text-center">Not enough history for a trend.</div> : (
-        <div className="h-20 flex items-end gap-1">
-          {pts.map((p, i) => {
-            const h = Math.max(8, ((p.v! - min) / Math.max(1, max - min)) * 100);
-            return <div key={i} title={`${p.v} • ${p.d || ''}`} className="flex-1 flex items-end h-full"><div className="w-full bg-cyan-500 rounded-t-md opacity-80" style={{ height: `${h}%` }} /></div>;
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-export const ClinicalDashboardSection: React.FC<{ patient: Patient }> = ({ patient }) => {
-  const p = asRecord(patient);
-  const [windowSize, setWindowSize] = useState(24);
-  const vitals = arr(p.vitals, p.vitalSigns, p.vitalsHistory, p.vitalHistory);
-  const labs = arr(p.labs, p.labResults, p.laboratoryResults, p.labsHistory);
-  const meds = arr(p.medications, p.medicationHistory);
-  const inf = arr(p.infusions, p.infusionHistory, p.vasopressors);
-  const abg = arr(p.abg, p.abgResults, p.abgHistory);
-  const ecg = arr(p.ecg, p.ecgHistory);
-  const echo = arr(p.echo, p.echoHistory);
-  const last = (names: string[]) => field(p, names) ?? latestBy(vitals, x => names.some(n => String(labelOf(x)).toLowerCase().includes(n.toLowerCase())));
-  const hr = field(p, ['heartRate', 'hr']) ?? valueOf(last(['heart rate', 'hr']));
-  const spo2 = field(p, ['spo2', 'oxygenSaturation']) ?? valueOf(last(['spo2', 'oxygen saturation']));
-  const temp = field(p, ['temperature', 'temp']) ?? valueOf(last(['temperature', 'temp']));
-  const sbp = field(p, ['systolicBP', 'systolic', 'sbp']) ?? valueOf(last(['systolic', 'sbp']));
-  const dbp = field(p, ['diastolicBP', 'diastolic', 'dbp']) ?? valueOf(last(['diastolic', 'dbp']));
-  const ef = field(p, ['ef', 'ejectionFraction']) ?? valueOf(latestBy(echo, x => /ef|ejection/i.test(labelOf(x))));
-  const trop = field(p, ['troponin', 'troponinI', 'troponinT']) ?? valueOf(latestBy(labs, x => /troponin/i.test(labelOf(x))));
-  const cr = field(p, ['creatinine']) ?? valueOf(latestBy(labs, x => /creatinine/i.test(labelOf(x))));
-  const hb = field(p, ['hb', 'hemoglobin']) ?? valueOf(latestBy(labs, x => /hemoglobin|^hb$/i.test(labelOf(x))));
-  const k = field(p, ['potassium', 'k']) ?? valueOf(latestBy(labs, x => /^k$|potassium/i.test(labelOf(x))));
-  const lact = field(p, ['lactate']) ?? valueOf(latestBy(labs, x => /lactate/i.test(labelOf(x))));
-  const flags = useMemo(() => {
-    const f: { label: string; value: any }[] = [];
-    const nhr = num(hr), ns = num(spo2), nk = num(k), nl = num(lact), ncr = num(cr);
-    if (ns !== null && ns < 90) f.push({ label: 'Low SpO₂', value: ns });
-    if (nhr !== null && (nhr < 50 || nhr > 120)) f.push({ label: 'Heart rate outside 50–120', value: nhr });
-    if (nk !== null && (nk < 3.5 || nk > 5.5)) f.push({ label: 'Potassium outside 3.5–5.5', value: nk });
-    if (nl !== null && nl >= 2) f.push({ label: 'Lactate ≥ 2', value: nl });
-    if (ncr !== null && ncr >= 2) f.push({ label: 'Creatinine ≥ 2', value: ncr });
-    return f;
-  }, [hr, spo2, k, lact, cr]);
-  const cut = (items: any[]) => items.filter(x => !dateOf(x) || Date.now() - new Date(dateOf(x)).getTime() <= windowSize * 3600000);
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-black">Clinical Dashboard</h2><p className="text-xs text-slate-400">Rapid overview of documented patient data. Review clinical context before acting.</p></div><div className="flex rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">{[24, 48, 168].map(n => <button key={n} onClick={() => setWindowSize(n)} className={`px-2.5 py-2 text-[10px] font-bold ${windowSize === n ? 'bg-cyan-500 text-white' : 'bg-white dark:bg-[#111C2E]'}`}>{n === 168 ? '7d' : `${n}h`}</button>)}</div></div>
-      <Card title="Vitals" icon={<HeartPulse className="w-4 h-4" />}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="BP" value={sbp && dbp ? `${sbp}/${dbp}` : field(p, ['bloodPressure', 'bp'])} unit="mmHg" /><Metric label="HR" value={hr} unit="bpm" alert={num(hr) !== null && (num(hr)! < 50 || num(hr)! > 120)} /><Metric label="SpO₂" value={spo2} unit="%" alert={num(spo2) !== null && num(spo2)! < 90} /><Metric label="Temp" value={temp} unit="°C" /></div></Card>
-      <Card title="Key Labs & Cardiology" icon={<Activity className="w-4 h-4" />}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="Creatinine" value={cr} unit="mg/dL" /><Metric label="Hb" value={hb} unit="g/dL" /><Metric label="K" value={k} unit="mmol/L" /><Metric label="Troponin" value={trop} /><Metric label="Lactate" value={lact} unit="mmol/L" /><Metric label="EF" value={ef} unit="%" /></div></Card>
-      <div className="grid lg:grid-cols-2 gap-4"><Card title="Clinical Flags" icon={<AlertTriangle className="w-4 h-4" />}>{flags.length ? <div className="space-y-2">{flags.map((f, i) => <div key={i} className="flex items-center justify-between rounded-xl bg-rose-500/10 border border-rose-400/30 px-3 py-2 text-xs"><span className="font-bold text-rose-600 dark:text-rose-300">{f.label}</span><span className="font-black">{f.value}</span></div>)}</div> : <div className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">No configured threshold flags from the documented values.</div>}</Card><Card title="Current Therapy" icon={<Droplets className="w-4 h-4" />}><div className="space-y-2">{meds.slice(-5).reverse().map((m, i) => <div key={i} className="flex justify-between text-xs border-b border-slate-100 dark:border-slate-800 pb-2"><span className="font-bold">{labelOf(m) || m?.drug || m?.medication || 'Medication'}</span><span className="text-slate-400">{m?.dose || m?.route || valueOf(m) || '—'}</span></div>)}{!meds.length && <div className="text-xs text-slate-400">No medication history detected.</div>}{inf.length > 0 && <div className="pt-2 text-[10px] font-bold text-cyan-500">Infusions documented: {inf.length}</div>}</div></Card></div>
-      <Card title="Trends" icon={<BarChart3 className="w-4 h-4" />}><div className="grid md:grid-cols-2 gap-3"><Trend title="Heart Rate" items={cut(vitals.filter(x => /hr|heart rate/i.test(labelOf(x))))} /><Trend title="SpO₂" items={cut(vitals.filter(x => /spo2|oxygen saturation/i.test(labelOf(x))))} /><Trend title="Creatinine" items={cut(labs.filter(x => /creatinine/i.test(labelOf(x))))} /><Trend title="Hemoglobin" items={cut(labs.filter(x => /hemoglobin|^hb$/i.test(labelOf(x))))} /></div></Card>
-      <Card title="Recent Clinical Records" icon={<Clock3 className="w-4 h-4" />}><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs"><Metric label="ABG records" value={abg.length} /><Metric label="ECG records" value={ecg.length} /><Metric label="Echo records" value={echo.length} /><Metric label="Procedures" value={arr(p.procedures, p.procedureHistory).length} /></div><div className="mt-3 text-[10px] text-slate-400 flex items-center gap-1"><Info className="w-3 h-3" />Dashboard values are extracted from available patient fields and recorded histories; missing data remains blank.</div></Card>
-    </div>
-  );
+export const ClinicalDashboardSection:React.FC<{patient:Patient}>=({patient})=>{
+ const latestVital=useMemo(()=>latestByDate<VitalRecord>(patient.vitalsHistory||[],'timestamp'),[patient.vitalsHistory]);
+ const latestLab=useMemo(()=>latestByDate<LabPanel>(patient.labs||[],'date'),[patient.labs]);
+ const activeMeds=(patient.medications||[]).filter(m=>m.status!=='Discontinued');
+ const activeProcedures=patient.procedures||[];
+ const lastProgress=latestByDate(patient.progressNotes||[],'updatedAt')||latestByDate(patient.progressNotes||[],'date');
+ const lastEcg=latestByDate(patient.ecgRecords||[],'date');
+ const lastAbg=latestByDate(patient.ventilator?.abgHistory||[],'timestamp');
+ const lastImaging=latestByDate(patient.imaging||[],'date');
+ const flags=useMemo(()=>{const f:{label:string;value:any}[]=[];const hr=num(latestVital?.hr),spo2=num(latestVital?.spo2),k=num(latestLab?.k),lact=num(latestLab?.lactate);if(spo2!==null&&spo2<90)f.push({label:'Low SpO₂',value:`${spo2}%`});if(hr!==null&&(hr<50||hr>120))f.push({label:'Heart rate outside 50–120',value:`${hr} bpm`});if(k!==null&&(k<3.5||k>5.5))f.push({label:'Potassium outside 3.5–5.5',value:`${k} mmol/L`});if(lact!==null&&lact>=2)f.push({label:'Lactate ≥ 2',value:`${lact} mmol/L`});return f;},[latestVital,latestLab]);
+ const documentedCount=[patient.clinicalSummary,patient.examination,patient.cardiology,patient.ventilator,patient.vitalsHistory?.length,patient.labs?.length,patient.ecgRecords?.length,patient.imaging?.length,patient.medications?.length,patient.procedures?.length,patient.progressNotes?.length].filter(v=>Array.isArray(v)?v.length>0:!!v).length;
+ return <div className="space-y-4">
+  <Card title="Patient Overview" icon={<UserRound className="w-4 h-4"/>} className="overflow-hidden"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"><div className="sm:col-span-2 rounded-xl bg-gradient-to-br from-cyan-500/10 to-sky-500/5 border border-cyan-500/15 p-4"><div className="text-[10px] uppercase tracking-wider font-black text-cyan-600 dark:text-cyan-400">Selected patient</div><div className="mt-1 text-xl font-black truncate">{valueOrDash(patient.fullName)}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">MRN {valueOrDash(patient.mrn)} • {valueOrDash(patient.age)}y • {valueOrDash(patient.sex)}</div></div><div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3"><div className="text-[9px] uppercase font-bold text-slate-400">Admission</div><div className="mt-1 text-sm font-black">{valueOrDash(patient.admissionDate)}</div><div className="text-[10px] text-slate-400">{valueOrDash(patient.admissionTime)}</div></div><div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3"><div className="text-[9px] uppercase font-bold text-slate-400">Code status</div><div className="mt-1 text-sm font-black">{valueOrDash(patient.codeStatus)}</div></div></div><div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3"><div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3"><div className="text-[9px] uppercase font-bold text-slate-400">Primary diagnosis</div><div className="mt-1 text-sm font-bold">{valueOrDash(patient.primaryDiagnosis)}</div>{patient.secondaryDiagnoses?.length>0&&<div className="mt-2 text-[10px] text-slate-500">Secondary: {patient.secondaryDiagnoses.join(' • ')}</div>}</div><div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3"><div className="text-[9px] uppercase font-bold text-slate-400">Allergies</div><div className="mt-1 text-sm font-bold">{patient.allergies?.length?patient.allergies.join(' • '):'Not documented / NKDA not specified'}</div></div></div><div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-slate-400"><span className="inline-flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-cyan-500"/>{documentedCount} clinical areas documented</span><span>•</span><span>Vitals {patient.vitalsHistory?.length||0}</span><span>•</span><span>Labs {patient.labs?.length||0}</span><span>•</span><span>ECG {patient.ecgRecords?.length||0}</span><span>•</span><span>Notes {patient.progressNotes?.length||0}</span></div></Card>
+  <div className="flex items-end justify-between gap-3"><div><h2 className="text-xl font-black">Clinical Snapshot</h2><p className="text-xs text-slate-400">Live values from the selected patient file. Nothing is populated unless it is documented.</p></div></div>
+  <Card title="Latest Vitals" icon={<HeartPulse className="w-4 h-4"/>}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="BP" value={latestVital?(latestVital.sbp!==undefined&&latestVital.dbp!==undefined?`${latestVital.sbp}/${latestVital.dbp}`:'—'):'—'} unit="mmHg"/><Metric label="HR" value={valueOrDash(latestVital?.hr)} unit="bpm" alert={num(latestVital?.hr)!==null&&(num(latestVital?.hr)!<50||num(latestVital?.hr)!>120)}/><Metric label="SpO₂" value={valueOrDash(latestVital?.spo2)} unit="%" alert={num(latestVital?.spo2)!==null&&num(latestVital?.spo2)!<90}/><Metric label="Temp" value={valueOrDash(latestVital?.temp)} unit="°C"/></div>{latestVital?.timestamp&&<div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1"><Clock3 className="w-3 h-3"/>Latest documented vital: {new Date(latestVital.timestamp).toLocaleString()}</div>}</Card>
+  <Card title="Latest Labs & Cardiology" icon={<Activity className="w-4 h-4"/>}><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"><Metric label="Creatinine" value={valueOrDash(latestLab?.creatinine)} unit="mg/dL"/><Metric label="Hb" value={valueOrDash(latestLab?.hb)} unit="g/dL"/><Metric label="K" value={valueOrDash(latestLab?.k)} unit="mmol/L"/><Metric label="Troponin" value={valueOrDash(latestLab?.troponin)}/><Metric label="Lactate" value={valueOrDash(latestLab?.lactate)} unit="mmol/L"/><Metric label="EF" value={valueOrDash(patient.cardiology?.echo?.ef)} unit="%"/></div>{latestLab?.date&&<div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1"><CalendarDays className="w-3 h-3"/>Latest lab panel: {latestLab.date}</div>}</Card>
+  <div className="grid lg:grid-cols-2 gap-4"><Card title="Clinical Flags" icon={<AlertTriangle className="w-4 h-4"/>}>{flags.length?<div className="space-y-2">{flags.map((f,i)=><div key={i} className="flex items-center justify-between rounded-xl bg-rose-500/10 border border-rose-400/30 px-3 py-2 text-xs"><span className="font-bold text-rose-600 dark:text-rose-300">{f.label}</span><span className="font-black">{f.value}</span></div>)}</div>:<div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 text-xs text-slate-400">No active threshold flags from the latest documented vitals/labs.</div>}</Card><Card title="Current Therapy" icon={<Droplets className="w-4 h-4"/>}>{activeMeds.length?<div className="space-y-2">{activeMeds.slice(-6).reverse().map((m,i)=><div key={m.id||i} className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-2 last:border-0 last:pb-0"><div className="min-w-0"><div className="font-bold text-xs truncate">{m.name||m.drug||'Medication'}</div><div className="text-[10px] text-slate-400 truncate">{m.route||'—'} • {m.frequency||'—'}</div></div><span className="text-[10px] text-slate-500 shrink-0">{m.dose||'—'}</span></div>)}</div>:<div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 text-xs text-slate-400">No active medications documented.</div>}</Card></div>
+  <Card title="Recent Clinical Activity" icon={<BarChart3 className="w-4 h-4"/>}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="Progress notes" value={patient.progressNotes?.length||0}/><Metric label="ECG records" value={patient.ecgRecords?.length||0}/><Metric label="ABG records" value={patient.ventilator?.abgHistory?.length||0}/><Metric label="Procedures" value={activeProcedures.length}/></div><div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]"><div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3"><b>Latest note</b><div className="text-slate-400 mt-1">{lastProgress?(lastProgress.date||lastProgress.updatedAt||'Documented'):'Not documented'}</div></div><div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3"><b>Latest ECG</b><div className="text-slate-400 mt-1">{lastEcg?(lastEcg.date||'Documented'):'Not documented'}</div></div><div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3"><b>Latest imaging</b><div className="text-slate-400 mt-1">{lastImaging?(lastImaging.date||lastImaging.type||'Documented'):'Not documented'}</div></div></div>{lastAbg?.timestamp&&<div className="mt-3 text-[10px] text-slate-400 flex items-center gap-1"><Info className="w-3 h-3"/>Latest ABG: {new Date(lastAbg.timestamp).toLocaleString()}</div>}</Card>
+ </div>;
 };
