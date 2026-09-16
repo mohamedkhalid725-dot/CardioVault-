@@ -8,7 +8,6 @@ on:
 
 env:
   HAS_CARDIOVAULT_DEBUG_KEYSTORE: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_BASE64 }}
-  VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
 jobs:
   validate:
@@ -160,4 +159,4 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-# Android CI hardened for Firebase Google Sign-In, manifest/network checks, stable signing, and optional Gemini clinical AI.
+# Android CI hardened for Firebase Google Sign-In, manifest/network checks, stable signing, and server-side Gemini clinical AI.
