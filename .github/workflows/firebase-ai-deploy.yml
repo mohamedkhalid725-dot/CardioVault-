@@ -30,7 +30,3 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/ai
           wranglerVersion: '4'
-          secrets: |
-            GEMINI_API_KEY
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
