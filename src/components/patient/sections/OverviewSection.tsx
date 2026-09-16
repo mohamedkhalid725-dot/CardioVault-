@@ -6,12 +6,12 @@ import { useApp } from '../../../context/AppContext';
 interface OverviewSectionProps { patient: Patient; }
 type EventItem={id:string;time:string;label:string;detail:string;section:PatientSectionId;icon:React.ElementType};
 const dash=(v:unknown)=>v===undefined||v===null||v===''?'—':String(v);
-const latest=<T,>(a?:T[])=>a&&a.length?a[0]:undefined;
+const latest=(a?:unknown[])=>a&&a.length?(a[0] as any):undefined;
 const stamp=(v?:string)=>v?v.replace('T',' '):'—';
 
 export const OverviewSection:React.FC<OverviewSectionProps>=({patient})=>{
  const{setActivePatientSection}=useApp();
- const vital=latest(patient.vitalsHistory);const fluid=latest(patient.fluidRecords);const abg=latest(patient.ventilator?.abgHistory);const ecg=latest(patient.ecgRecords);const procedure=latest(patient.procedures);const progress=latest(patient.progressNotes);const lab=latest(patient.labs);const calculator=latest(patient.calculatorResults);
+ const vital=latest(patient.vitalsHistory as unknown[]);const fluid=latest(patient.fluidRecords as unknown[]);const abg=latest(patient.ventilator?.abgHistory as unknown[]);const ecg=latest(patient.ecgRecords as unknown[]);const procedure=latest(patient.procedures as unknown[]);const progress=latest(patient.progressNotes as unknown[]);const lab=latest(patient.labs as unknown[]);const calculator=latest(patient.calculatorResults as unknown[]);
  const open=(s:PatientSectionId)=>setActivePatientSection(s);
  const map=vital?Math.round((vital.sbp+2*vital.dbp)/3):undefined;
  const urine=fluid?.hourlyUrineRate??fluid?.urineOutput;const balance=fluid?.cumulativeBalance??fluid?.netBalance;const fio2=patient.ventilator?.fio2;
