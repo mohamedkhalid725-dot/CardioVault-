@@ -1,11 +1,15 @@
 import { jsPDF } from 'jspdf';
 
 const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
-const originalText = (jsPDF as any).API.text;
+const API = (jsPDF as any).API;
+// jsPDF 4.x keeps the original implementation in __private__.text as well as API.text.
+// Some bundled builds expose the former but not the latter at module initialization time.
+const originalText = API?.__private__?.text || API?.text;
 
 function drawArabicText(this: any, value: string | string[], x: number, y: number, options?: any, transform?: any) {
+  const fallback = () => typeof originalText === 'function' ? originalText.call(this, value, x, y, options, transform) : this;
   const lines = Array.isArray(value) ? value.map(String) : String(value).split('\n');
-  if (!lines.some(line => ARABIC_RE.test(line))) return originalText.call(this, value, x, y, options, transform);
+  if (!lines.some(line => ARABIC_RE.test(line))) return fallback();
 
   const fontSizePt = Number(this.internal?.getFontSize?.() || 10);
   const scale = 3;
@@ -15,14 +19,14 @@ function drawArabicText(this: any, value: string | string[], x: number, y: numbe
   const fontFamily = 'Arial, Tahoma, sans-serif';
   const canvas = document.createElement('canvas');
   const measure = canvas.getContext('2d');
-  if (!measure) return originalText.call(this, value, x, y, options, transform);
+  if (!measure) return fallback();
   measure.font = `${fontWeight} ${fontSizePt * pxPerPt}px ${fontFamily}`;
   const widths = lines.map(line => Math.ceil(measure.measureText(line).width) + 12);
   const widthPx = Math.max(32, Math.max(...widths));
   canvas.width = widthPx * scale;
   canvas.height = Math.max(1, lines.length * linePx * scale);
   const ctx = canvas.getContext('2d');
-  if (!ctx) return originalText.call(this, value, x, y, options, transform);
+  if (!ctx) return fallback();
   ctx.scale(scale, scale);
   ctx.font = `${fontWeight} ${fontSizePt * pxPerPt}px ${fontFamily}`;
   const color = this.getTextColor?.() || '#000000';
@@ -42,4 +46,7 @@ function drawArabicText(this: any, value: string | string[], x: number, y: numbe
   return this;
 }
 
-(jsPDF as any).API.text = drawArabicText;
+if (API && typeof originalText === 'function') {
+  API.text = drawArabicText;
+  if (API.__private__) API.__private__.text = drawArabicText;
+}
