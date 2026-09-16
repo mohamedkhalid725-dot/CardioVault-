@@ -6,6 +6,7 @@ import { Directory, Filesystem } from '@capacitor/filesystem';
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 type SectionKey = 'overview'|'history'|'vitals'|'ecg'|'examination'|'cardiology'|'medications'|'icu'|'imaging'|'labs'|'procedures'|'calculators'|'progress';
 const sectionIds: SectionKey[] = ['overview','history','vitals','ecg','examination','cardiology','medications','icu','imaging','labs','procedures','calculators','progress'];
@@ -20,8 +21,9 @@ async function imageToPng(src:string){
 
 async function renderPdfPages(base64:string):Promise<string[]>{
  const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+ pdfjs.GlobalWorkerOptions.workerSrc=pdfWorkerUrl;
  const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
- const pdf=await pdfjs.getDocument({data:bytes,disableWorker:true}).promise;
+ const pdf=await pdfjs.getDocument({data:bytes}).promise;
  const pages:string[]=[];
  for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber+=1){
    const page=await pdf.getPage(pageNumber);
