@@ -1,31 +1,91 @@
-import React,{useMemo,useState}from'react';
-import{Activity,AlertTriangle,ArrowDown,ArrowUp,BarChart3,Clock3,Droplets,HeartPulse,Info,Stethoscope}from'lucide-react';
-import type{Patient}from'../../../types/clinical';
+import React, { useMemo, useState } from 'react';
+import { Activity, AlertTriangle, BarChart3, Clock3, Droplets, HeartPulse, Info } from 'lucide-react';
+import type { Patient } from '../../../types/clinical';
 
-type AnyRecord=Record<string,any>;
-const asRecord=(v:any):AnyRecord=>v&&typeof v==='object'?v:{};
-const arr=(...xs:any[])=>xs.flatMap(x=>Array.isArray(x)?x:[]);
-const num=(v:any)=>{const n=Number(String(v??'').replace(',','.'));return Number.isFinite(n)?n:null};
-const dateOf=(x:any)=>x?.date||x?.timestamp||x?.createdAt||x?.recordedAt||x?.datetime||x?.time||'';
-const labelOf=(x:any)=>x?.name||x?.label||x?.test||x?.parameter||x?.type||'';
-const valueOf=(x:any)=>x?.value??x?.result??x?.reading??x?.measurement??x?.dose??'';
-const latestBy=(items:any[], matcher:(x:any)=>boolean)=>items.filter(matcher).sort((a,b)=>new Date(dateOf(b)||0).getTime()-new Date(dateOf(a)||0).getTime())[0];
-const field=(p:AnyRecord,names:string[])=>{for(const n of names){const v=p[n];if(v!==undefined&&v!==null&&v!=='')return v}return null};
+type AnyRecord = Record<string, any>;
+const asRecord = (v: any): AnyRecord => (v && typeof v === 'object' ? v : {});
+const arr = (...xs: any[]) => xs.flatMap(x => Array.isArray(x) ? x : []);
+const num = (v: any) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
+const dateOf = (x: any) => x?.date || x?.timestamp || x?.createdAt || x?.recordedAt || x?.datetime || x?.time || '';
+const labelOf = (x: any) => x?.name || x?.label || x?.test || x?.parameter || x?.type || '';
+const valueOf = (x: any) => x?.value ?? x?.result ?? x?.reading ?? x?.measurement ?? x?.dose ?? '';
+const latestBy = (items: any[], matcher: (x: any) => boolean) => items.filter(matcher).sort((a, b) => new Date(dateOf(b) || 0).getTime() - new Date(dateOf(a) || 0).getTime())[0];
+const field = (p: AnyRecord, names: string[]) => { for (const n of names) { const v = p[n]; if (v !== undefined && v !== null && v !== '') return v; } return null; };
 
-const Card:React.FC<{title:string;icon:React.ReactNode;children:React.ReactNode}>=({title,icon,children})=><div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 shadow-sm"><div className="flex items-center gap-2 mb-3"><span className="text-cyan-500">{icon}</span><h3 className="font-extrabold text-sm">{title}</h3></div>{children}</div>;
-const Metric:React.FC<{label:string;value:any;unit?:string;sub?:string;alert?:boolean}>=({label,value,unit,sub,alert})=><div className={`rounded-xl p-3 border ${alert?'border-rose-400/50 bg-rose-500/5':'border-slate-200 dark:border-slate-800'}`}><div className="text-[10px] uppercase tracking-wide font-bold text-slate-400">{label}</div><div className={`mt-1 text-lg font-black ${alert?'text-rose-500':''}`}>{value??'—'} {unit&&<span className="text-xs font-bold text-slate-400">{unit}</span>}</div>{sub&&<div className="text-[10px] text-slate-400 mt-0.5">{sub}</div>}</div>;
-const Trend:React.FC<{title:string;items:any[];color?:string}>=({title,items,color='bg-cyan-500'})=>{const pts=items.map(x=>({d:dateOf(x),v:num(valueOf(x))})).filter(x=>x.v!==null).slice(-12);const max=Math.max(...pts.map(x=>x.v as number),1),min=Math.min(...pts.map(x=>x.v as number),0);return <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3"><div className="flex justify-between text-xs font-bold mb-2"><span>{title}</span><span className="text-slate-400">{pts.length} points</span></div>{pts.length<2?<div className="text-xs text-slate-400 py-5 text-center">Not enough history for a trend.</div>:<div className="h-20 flex items-end gap-1">{pts.map((p,i)=>{const h=Math.max(8,((p.v! - min)/Math.max(1,max-min))*100);return <div key={i} title={`${p.v} • ${p.d||''}`} className="flex-1 flex items-end h-full"><div className={`w-full ${color} rounded-t-md opacity-80`} style={{height:`${h}%`}}/></div>})}</div>}</div>};
+const Card: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
+  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-4 shadow-sm">
+    <div className="flex items-center gap-2 mb-3"><span className="text-cyan-500">{icon}</span><h3 className="font-extrabold text-sm">{title}</h3></div>{children}
+  </div>
+);
 
-export const ClinicalDashboardSection:React.FC<{patient:Patient}>=({patient})=>{const p=patient as AnyRecord;const[windowSize,setWindowSize]=useState(24);const vitals=arr(p.vitals,p.vitalSigns,p.vitalsHistory,p.vitalHistory);const labs=arr(p.labs,p.labResults,p.laboratoryResults,p.labsHistory);const meds=arr(p.medications,p.medicationHistory);const inf=arr(p.infusions,p.infusionHistory,p.vasopressors);const abg=arr(p.abg,p.abgResults,p.abgHistory);const ecg=arr(p.ecg,p.ecgHistory);const echo=arr(p.echo,p.echoHistory);
- const last=(names:string[])=>field(p,names)||latestBy(vitals,x=>names.some(n=>String(labelOf(x)).toLowerCase().includes(n.toLowerCase())));
- const hr=field(p,['heartRate','hr'])??valueOf(last(['heart rate','hr']));const spo2=field(p,['spo2','oxygenSaturation'])??valueOf(last(['spo2','oxygen saturation']));const temp=field(p,['temperature','temp'])??valueOf(last(['temperature','temp']));const sbp=field(p,['systolicBP','systolic','sbp'])??valueOf(last(['systolic','sbp']));const dbp=field(p,['diastolicBP','diastolic','dbp'])??valueOf(last(['diastolic','dbp']));const map=field(p,['map','meanArterialPressure']);
- const ef=field(p,['ef','ejectionFraction'])??valueOf(latestBy(echo,x=>/ef|ejection/i.test(labelOf(x))));const trop=field(p,['troponin','troponinI','troponinT'])??valueOf(latestBy(labs,x=>/troponin/i.test(labelOf(x))));const cr=field(p,['creatinine'])??valueOf(latestBy(labs,x=>/creatinine/i.test(labelOf(x))));const hb=field(p,['hb','hemoglobin'])??valueOf(latestBy(labs,x=>/hemoglobin|^hb$/i.test(labelOf(x))));const k=field(p,['potassium','k'])??valueOf(latestBy(labs,x=>/^k$|potassium/i.test(labelOf(x))));const lact=field(p,['lactate'])??valueOf(latestBy(labs,x=>/lactate/i.test(labelOf(x))));
- const flags=useMemo(()=>{const f:{label:string;value:any}[]=[];const nhr=num(hr),ns=num(spo2),nk=num(k),nl=num(lact),ncr=num(cr);if(ns!==null&&ns<90)f.push({label:'Low SpO₂',value:ns});if(nhr!==null&&(nhr<50||nhr>120))f.push({label:'Heart rate outside 50–120',value:nhr});if(nk!==null&&(nk<3.5||nk>5.5))f.push({label:'Potassium outside 3.5–5.5',value:nk});if(nl!==null&&nl>=2)f.push({label:'Lactate ≥ 2',value:nl});if(ncr!==null&&ncr>=2)f.push({label:'Creatinine ≥ 2',value:ncr});return f},[hr,spo2,k,lact,cr]);
- const cut=(items:any[])=>items.filter(x=>{if(!dateOf(x))return true;return Date.now()-new Date(dateOf(x)).getTime()<=windowSize*3600000});
- return <div className="space-y-4"><div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-black">Clinical Dashboard</h2><p className="text-xs text-slate-400">Rapid overview of documented patient data. Review clinical context before acting.</p></div><div className="flex rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">{[24,48,168].map(n=><button key={n} onClick={()=>setWindowSize(n)} className={`px-2.5 py-2 text-[10px] font-bold ${windowSize===n?'bg-cyan-500 text-white':'bg-white dark:bg-[#111C2E]'}`}>{n===168?'7d':`${n}h`}</button>)}</div></div>
- <Card title="Vitals" icon={<HeartPulse className="w-4 h-4"/>}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="BP" value={sbp&&dbp?`${sbp}/${dbp}`:field(p,['bloodPressure','bp'])} unit="mmHg"/><Metric label="HR" value={hr} unit="bpm" alert={num(hr)!==null&&(num(hr)!==null&&(num(hr)!<50||num(hr)!>120))}/><Metric label="SpO₂" value={spo2} unit="%" alert={num(spo2)!==null&&num(spo2)!<90}/><Metric label="Temp" value={temp} unit="°C"/></div></Card>
- <Card title="Key Labs & Cardiology" icon={<Activity className="w-4 h-4"/>}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="Creatinine" value={cr} unit="mg/dL"/><Metric label="Hb" value={hb} unit="g/dL"/><Metric label="K" value={k} unit="mmol/L"/><Metric label="Troponin" value={trop}/><Metric label="Lactate" value={lact} unit="mmol/L"/><Metric label="EF" value={ef} unit="%"/></div></Card>
- <div className="grid lg:grid-cols-2 gap-4"><Card title="Clinical Flags" icon={<AlertTriangle className="w-4 h-4"/>}>{flags.length?<div className="space-y-2">{flags.map((f,i)=><div key={i} className="flex items-center justify-between rounded-xl bg-rose-500/10 border border-rose-400/30 px-3 py-2 text-xs"><span className="font-bold text-rose-600 dark:text-rose-300">{f.label}</span><span className="font-black">{f.value}</span></div>)}</div>:<div className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">No configured threshold flags from the documented values.</div>}</Card><Card title="Current Therapy" icon={<Droplets className="w-4 h-4"/>}><div className="space-y-2">{meds.slice(-5).reverse().map((m,i)=><div key={i} className="flex justify-between text-xs border-b border-slate-100 dark:border-slate-800 pb-2"><span className="font-bold">{labelOf(m)||m?.drug||m?.medication||'Medication'}</span><span className="text-slate-400">{m?.dose||m?.route||valueOf(m)||'—'}</span></div>)}{!meds.length&&<div className="text-xs text-slate-400">No medication history detected.</div>}{inf.length>0&&<div className="pt-2 text-[10px] font-bold text-cyan-500">Infusions documented: {inf.length}</div>}</div></Card></div>
- <Card title="Trends" icon={<BarChart3 className="w-4 h-4"/>}><div className="grid md:grid-cols-2 gap-3"><Trend title="Heart Rate" items={cut(vitals.filter(x=>/hr|heart rate/i.test(labelOf(x)))}/>}<Trend title="SpO₂" items={cut(vitals.filter(x=>/spo2|oxygen saturation/i.test(labelOf(x)))}/>}<Trend title="Creatinine" items={cut(labs.filter(x=>/creatinine/i.test(labelOf(x)))}/>}<Trend title="Hemoglobin" items={cut(labs.filter(x=>/hemoglobin|^hb$/i.test(labelOf(x)))}/>}</div></Card>
- <Card title="Recent Clinical Records" icon={<Clock3 className="w-4 h-4"/>}><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs"><Metric label="ABG records" value={abg.length}/><Metric label="ECG records" value={ecg.length}/><Metric label="Echo records" value={echo.length}/><Metric label="Procedures" value={arr(p.procedures,p.procedureHistory).length}/></div><div className="mt-3 text-[10px] text-slate-400 flex items-center gap-1"><Info className="w-3 h-3"/>Dashboard values are extracted from available patient fields and recorded histories; missing data remains blank.</div></Card>
- </div>};
+const Metric: React.FC<{ label: string; value: any; unit?: string; sub?: string; alert?: boolean }> = ({ label, value, unit, sub, alert }) => (
+  <div className={`rounded-xl p-3 border ${alert ? 'border-rose-400/50 bg-rose-500/5' : 'border-slate-200 dark:border-slate-800'}`}>
+    <div className="text-[10px] uppercase tracking-wide font-bold text-slate-400">{label}</div>
+    <div className={`mt-1 text-lg font-black ${alert ? 'text-rose-500' : ''}`}>{value ?? '—'} {unit && <span className="text-xs font-bold text-slate-400">{unit}</span>}</div>
+    {sub && <div className="text-[10px] text-slate-400 mt-0.5">{sub}</div>}
+  </div>
+);
+
+const Trend: React.FC<{ title: string; items: any[] }> = ({ title, items }) => {
+  const pts = items.map(x => ({ d: dateOf(x), v: num(valueOf(x)) })).filter(x => x.v !== null).slice(-12);
+  const max = Math.max(...pts.map(x => x.v as number), 1);
+  const min = Math.min(...pts.map(x => x.v as number), 0);
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+      <div className="flex justify-between text-xs font-bold mb-2"><span>{title}</span><span className="text-slate-400">{pts.length} points</span></div>
+      {pts.length < 2 ? <div className="text-xs text-slate-400 py-5 text-center">Not enough history for a trend.</div> : (
+        <div className="h-20 flex items-end gap-1">
+          {pts.map((p, i) => {
+            const h = Math.max(8, ((p.v! - min) / Math.max(1, max - min)) * 100);
+            return <div key={i} title={`${p.v} • ${p.d || ''}`} className="flex-1 flex items-end h-full"><div className="w-full bg-cyan-500 rounded-t-md opacity-80" style={{ height: `${h}%` }} /></div>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const ClinicalDashboardSection: React.FC<{ patient: Patient }> = ({ patient }) => {
+  const p = asRecord(patient);
+  const [windowSize, setWindowSize] = useState(24);
+  const vitals = arr(p.vitals, p.vitalSigns, p.vitalsHistory, p.vitalHistory);
+  const labs = arr(p.labs, p.labResults, p.laboratoryResults, p.labsHistory);
+  const meds = arr(p.medications, p.medicationHistory);
+  const inf = arr(p.infusions, p.infusionHistory, p.vasopressors);
+  const abg = arr(p.abg, p.abgResults, p.abgHistory);
+  const ecg = arr(p.ecg, p.ecgHistory);
+  const echo = arr(p.echo, p.echoHistory);
+  const last = (names: string[]) => field(p, names) ?? latestBy(vitals, x => names.some(n => String(labelOf(x)).toLowerCase().includes(n.toLowerCase())));
+  const hr = field(p, ['heartRate', 'hr']) ?? valueOf(last(['heart rate', 'hr']));
+  const spo2 = field(p, ['spo2', 'oxygenSaturation']) ?? valueOf(last(['spo2', 'oxygen saturation']));
+  const temp = field(p, ['temperature', 'temp']) ?? valueOf(last(['temperature', 'temp']));
+  const sbp = field(p, ['systolicBP', 'systolic', 'sbp']) ?? valueOf(last(['systolic', 'sbp']));
+  const dbp = field(p, ['diastolicBP', 'diastolic', 'dbp']) ?? valueOf(last(['diastolic', 'dbp']));
+  const ef = field(p, ['ef', 'ejectionFraction']) ?? valueOf(latestBy(echo, x => /ef|ejection/i.test(labelOf(x))));
+  const trop = field(p, ['troponin', 'troponinI', 'troponinT']) ?? valueOf(latestBy(labs, x => /troponin/i.test(labelOf(x))));
+  const cr = field(p, ['creatinine']) ?? valueOf(latestBy(labs, x => /creatinine/i.test(labelOf(x))));
+  const hb = field(p, ['hb', 'hemoglobin']) ?? valueOf(latestBy(labs, x => /hemoglobin|^hb$/i.test(labelOf(x))));
+  const k = field(p, ['potassium', 'k']) ?? valueOf(latestBy(labs, x => /^k$|potassium/i.test(labelOf(x))));
+  const lact = field(p, ['lactate']) ?? valueOf(latestBy(labs, x => /lactate/i.test(labelOf(x))));
+  const flags = useMemo(() => {
+    const f: { label: string; value: any }[] = [];
+    const nhr = num(hr), ns = num(spo2), nk = num(k), nl = num(lact), ncr = num(cr);
+    if (ns !== null && ns < 90) f.push({ label: 'Low SpO₂', value: ns });
+    if (nhr !== null && (nhr < 50 || nhr > 120)) f.push({ label: 'Heart rate outside 50–120', value: nhr });
+    if (nk !== null && (nk < 3.5 || nk > 5.5)) f.push({ label: 'Potassium outside 3.5–5.5', value: nk });
+    if (nl !== null && nl >= 2) f.push({ label: 'Lactate ≥ 2', value: nl });
+    if (ncr !== null && ncr >= 2) f.push({ label: 'Creatinine ≥ 2', value: ncr });
+    return f;
+  }, [hr, spo2, k, lact, cr]);
+  const cut = (items: any[]) => items.filter(x => !dateOf(x) || Date.now() - new Date(dateOf(x)).getTime() <= windowSize * 3600000);
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-black">Clinical Dashboard</h2><p className="text-xs text-slate-400">Rapid overview of documented patient data. Review clinical context before acting.</p></div><div className="flex rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">{[24, 48, 168].map(n => <button key={n} onClick={() => setWindowSize(n)} className={`px-2.5 py-2 text-[10px] font-bold ${windowSize === n ? 'bg-cyan-500 text-white' : 'bg-white dark:bg-[#111C2E]'}`}>{n === 168 ? '7d' : `${n}h`}</button>)}</div></div>
+      <Card title="Vitals" icon={<HeartPulse className="w-4 h-4" />}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="BP" value={sbp && dbp ? `${sbp}/${dbp}` : field(p, ['bloodPressure', 'bp'])} unit="mmHg" /><Metric label="HR" value={hr} unit="bpm" alert={num(hr) !== null && (num(hr)! < 50 || num(hr)! > 120)} /><Metric label="SpO₂" value={spo2} unit="%" alert={num(spo2) !== null && num(spo2)! < 90} /><Metric label="Temp" value={temp} unit="°C" /></div></Card>
+      <Card title="Key Labs & Cardiology" icon={<Activity className="w-4 h-4" />}><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><Metric label="Creatinine" value={cr} unit="mg/dL" /><Metric label="Hb" value={hb} unit="g/dL" /><Metric label="K" value={k} unit="mmol/L" /><Metric label="Troponin" value={trop} /><Metric label="Lactate" value={lact} unit="mmol/L" /><Metric label="EF" value={ef} unit="%" /></div></Card>
+      <div className="grid lg:grid-cols-2 gap-4"><Card title="Clinical Flags" icon={<AlertTriangle className="w-4 h-4" />}>{flags.length ? <div className="space-y-2">{flags.map((f, i) => <div key={i} className="flex items-center justify-between rounded-xl bg-rose-500/10 border border-rose-400/30 px-3 py-2 text-xs"><span className="font-bold text-rose-600 dark:text-rose-300">{f.label}</span><span className="font-black">{f.value}</span></div>)}</div> : <div className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">No configured threshold flags from the documented values.</div>}</Card><Card title="Current Therapy" icon={<Droplets className="w-4 h-4" />}><div className="space-y-2">{meds.slice(-5).reverse().map((m, i) => <div key={i} className="flex justify-between text-xs border-b border-slate-100 dark:border-slate-800 pb-2"><span className="font-bold">{labelOf(m) || m?.drug || m?.medication || 'Medication'}</span><span className="text-slate-400">{m?.dose || m?.route || valueOf(m) || '—'}</span></div>)}{!meds.length && <div className="text-xs text-slate-400">No medication history detected.</div>}{inf.length > 0 && <div className="pt-2 text-[10px] font-bold text-cyan-500">Infusions documented: {inf.length}</div>}</div></Card></div>
+      <Card title="Trends" icon={<BarChart3 className="w-4 h-4" />}><div className="grid md:grid-cols-2 gap-3"><Trend title="Heart Rate" items={cut(vitals.filter(x => /hr|heart rate/i.test(labelOf(x)))} /><Trend title="SpO₂" items={cut(vitals.filter(x => /spo2|oxygen saturation/i.test(labelOf(x)))} /><Trend title="Creatinine" items={cut(labs.filter(x => /creatinine/i.test(labelOf(x)))} /><Trend title="Hemoglobin" items={cut(labs.filter(x => /hemoglobin|^hb$/i.test(labelOf(x)))} /></div></Card>
+      <Card title="Recent Clinical Records" icon={<Clock3 className="w-4 h-4" />}><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs"><Metric label="ABG records" value={abg.length} /><Metric label="ECG records" value={ecg.length} /><Metric label="Echo records" value={echo.length} /><Metric label="Procedures" value={arr(p.procedures, p.procedureHistory).length} /></div><div className="mt-3 text-[10px] text-slate-400 flex items-center gap-1"><Info className="w-3 h-3" />Dashboard values are extracted from available patient fields and recorded histories; missing data remains blank.</div></Card>
+    </div>
+  );
+};
