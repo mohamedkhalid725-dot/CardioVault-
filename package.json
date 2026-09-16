@@ -10,15 +10,18 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "cap:add": "npx cap add android",
-    "cap:sync": "npx cap sync android",
-    "android:debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug"
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npx cap sync",
+    "cap:sync:ios": "npx cap sync ios",
+    "android:debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "ios:prepare": "npm run build && npx cap sync ios"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.4",
     "@capacitor/app": "^7.1.0",
     "@capacitor/core": "^7.4.4",
     "@capacitor/filesystem": "7.1.8",
-    "@capacitor-firebase/authentication": "7.5.0",
+    "@capacitor/firebase/authentication": "7.5.0",
     "@capacitor-firebase/firestore": "7.3.0",
     "@capawesome/capacitor-file-picker": "7.2.0",
     "@tailwindcss/vite": "^4.1.14",
