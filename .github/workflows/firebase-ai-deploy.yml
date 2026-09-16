@@ -62,3 +62,5 @@ jobs:
       - name: Cleanup credentials
         if: always()
         run: rm -f "$RUNNER_TEMP/firebase-service-account.json" "$RUNNER_TEMP/gemini-api-key.txt"
+
+# Deployment trigger: run automatically after the repository secrets are configured.
