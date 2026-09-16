@@ -3,7 +3,7 @@ import {Bed,Patient,PatientSectionId,PatientStatus,PastAdmission,Unit} from '../
 import {StorageService} from '../services/storage';
 import {FirebaseAuthentication} from '@capacitor-firebase/authentication';
 import {Capacitor} from '@capacitor/core';
-import {clearActiveClinicalWorkspace,loadCurrentUserFromCloud,syncCurrentUserNow} from '../services/cloudSyncBridge';
+import {clearActiveClinicalWorkspace,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow} from '../services/cloudSyncBridge';
 
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
@@ -21,74 +21,25 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[units,setUnits]=useState<Unit[]>([]);const[beds,setBeds]=useState<Bed[]>([]);const[patients,setPatients]=useState<Patient[]>([]);
  const[isSearchOpen,setIsSearchOpen]=useState(false);const[isSyncing,setIsSyncing]=useState(false);const[lastSyncTime,setLastSyncTime]=useState('');const[toasts,setToasts]=useState<ToastInfo[]>([]);
 
- const hydrateClinicalState=()=>{
-   const u=StorageService.getUnits(),b=StorageService.getBeds(),p=StorageService.getPatients();
-   setUnits(u);setBeds(b);setPatients(p);setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));
- };
+ const hydrateClinicalState=()=>{const u=StorageService.getUnits(),b=StorageService.getBeds(),p=StorageService.getPatients();setUnits(u);setBeds(b);setPatients(p);setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));};
 
- useEffect(()=>{
-   let active=true;
-   const boot=async()=>{
-     const savedAuth=StorageService.getAuth();
-     setThemeState(StorageService.getTheme());
-     setAuth(x=>({...x,...savedAuth}));
-     hydrateClinicalState();
-     if(savedAuth?.isAuthenticated) setCurrentView('home');
-     if(savedAuth?.isAuthenticated && Capacitor.isNativePlatform()){
-       try{
-         const firebaseUser=(await FirebaseAuthentication.getCurrentUser()).user;
-         if(firebaseUser){
-           const cloud=await loadCurrentUserFromCloud();
-           if(active){
-             if(cloud?.found) hydrateClinicalState();
-             setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');
-             if(firebaseUser.email||firebaseUser.displayName){
-               const next={...savedAuth,userEmail:firebaseUser.email||savedAuth.userEmail,userName:firebaseUser.displayName||savedAuth.userName,isAuthenticated:true};
-               setAuth(next);StorageService.saveAuth(next);
-             }
-           }
-         }
-       }catch(error){console.warn('Firebase session restore failed:',error);}
-     }
-   };
-   void boot();
-   return()=>{active=false;};
- },[]);
+ useEffect(()=>{let active=true;installCloudSyncBridge();const boot=async()=>{const savedAuth=StorageService.getAuth();setThemeState(StorageService.getTheme());
+   if(!Capacitor.isNativePlatform()){setAuth({...savedAuth,isAuthenticated:false,isLocked:false});setCurrentView('login');return;}
+   let firebaseUser:any=null;try{firebaseUser=(await FirebaseAuthentication.getCurrentUser()).user||null;}catch{}
+   if(!firebaseUser?.uid){clearActiveClinicalWorkspace();const signedOut={...savedAuth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(signedOut);StorageService.saveAuth(signedOut);setCurrentView('login');return;}
+   const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:firebaseUser.email||savedAuth.userEmail,userName:firebaseUser.displayName||savedAuth.userName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');
+   try{const cloud=await loadCurrentUserFromCloud();if(!active)return;if(cloud?.found)hydrateClinicalState();setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');}catch(error){console.warn('Cloud session restore failed:',error);}
+ };void boot();return()=>{active=false;};},[]);
  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},[theme]);
  const showToast=(message:string,type:ToastInfo['type']='info')=>{const id=`toast-${Date.now()}-${Math.random()}`;setToasts(p=>[...p,{id,message,type}]);window.setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000);};
  const dismissToast=(id:string)=>setToasts(p=>p.filter(t=>t.id!==id));
  const setTheme=(t:'dark'|'light')=>{setThemeState(t);StorageService.saveTheme(t);};const toggleTheme=()=>setTheme(theme==='dark'?'light':'dark');
 
- const loginWithGoogle=async()=>{
-   if(Capacitor.isNativePlatform()){
-     try{
-       const result=await FirebaseAuthentication.signInWithGoogle();
-       const user=result.user;
-       if(!user?.uid) throw new Error('Google sign-in returned no Firebase user.');
-       const a={...auth,isAuthenticated:true,isLocked:false,userEmail:user.email||auth.userEmail,userName:user.displayName||auth.userName};
-       setAuth(a);StorageService.saveAuth(a);setCurrentView('home');
-       const cloud=await loadCurrentUserFromCloud();
-       if(cloud?.found){hydrateClinicalState();setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in and cloud data restored.','success');}
-       else{const synced=await syncCurrentUserNow();if(synced){setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in with Google and cloud sync is ready.','success');}else showToast('Signed in, but cloud sync needs attention. Check Settings → Cloud Sync Diagnostics.','warning');}
-     }catch(error:any){
-       console.error('Native Google/Firebase sign-in failed:',error);
-       const detail=String(error?.message||error?.code||'Google sign-in failed').slice(0,240);
-       showToast(`Google Sign-In failed: ${detail}`,'error');
-     }
-     return;
-   }
-   const clientId=(import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string|undefined;if(!clientId){showToast('Google Sign-In is not configured. Add VITE_GOOGLE_CLIENT_ID in your environment/Secrets.','error');return;}
-   const win=window as any;
-   const finish=(response:any)=>{try{const payload=JSON.parse(atob(response.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));const a={...auth,isAuthenticated:true,isLocked:false,userEmail:payload.email||auth.userEmail,userName:payload.name||auth.userName};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');showToast('Signed in with Google successfully.','success');}catch{showToast('Google credential could not be processed.','error');}};
-   const init=()=>{if(!win.google?.accounts?.id)return;win.google.accounts.id.initialize({client_id:clientId,callback:finish,ux_mode:'popup'});win.google.accounts.id.prompt((n:any)=>{if(n?.isNotDisplayed?.()||n?.isSkippedMoment?.())showToast('Google Sign-In was not displayed. Check the authorized JavaScript origins and client ID.','error');});};
-   if(win.google?.accounts?.id){init();return;}
-   const existing=document.getElementById('google-gsi-script');if(existing){existing.addEventListener('load',init,{once:true});return;}
-   const script=document.createElement('script');script.id='google-gsi-script';script.src='https://accounts.google.com/gsi/client';script.async=true;script.defer=true;script.onload=init;script.onerror=()=>showToast('Unable to load Google Sign-In. Check your internet connection.','error');document.head.appendChild(script);
- };
- const loginWithEmail=(email:string)=>{const clean=email.trim().toLowerCase();const a={...auth,isAuthenticated:true,isLocked:false,userEmail:clean,userName:clean?clean.split('@')[0]:auth.userName};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');};
- const unlockWithPin=(pin:string)=>{const savedPin=String(StorageService.getAuth()?.pinCode||auth.pinCode||'');if(pin===savedPin||(!savedPin&&pin==='1234')){setAuth(p=>({...p,isLocked:false,pinCode:savedPin||'1234'}));return true;}showToast('Invalid PIN code.','error');return false;};
- const lockApp=()=>setAuth(p=>({...p,isLocked:true}));
- const logout=()=>{if(Capacitor.isNativePlatform()){void FirebaseAuthentication.signOut().catch(error=>console.warn('Native Firebase sign-out failed:',error));}localStorage.removeItem('cardiovault_google_uid');clearActiveClinicalWorkspace();setUnits([]);setBeds([]);setPatients([]);setCurrentUnitId(null);setCurrentPatientId(null);const a={...auth,isAuthenticated:false,isLocked:false};setAuth(a);StorageService.saveAuth(a);setCurrentView('login');};
+ const loginWithGoogle=async()=>{if(!Capacitor.isNativePlatform()){showToast('CardioVault requires a native Firebase session.','error');return;}try{const result=await FirebaseAuthentication.signInWithGoogle();const user=result.user;if(!user?.uid)throw new Error('Google sign-in returned no Firebase user.');const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:user.email||auth.userEmail,userName:user.displayName||auth.userName};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');const cloud=await loadCurrentUserFromCloud();if(cloud?.found){hydrateClinicalState();setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in and cloud data restored.','success');}else{const synced=await syncCurrentUserNow();if(synced){setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in with Google and automatic cloud sync is ready.','success');}else showToast('Signed in, but the cloud workspace needs attention.','warning');}}catch(error:any){console.error('Native Google/Firebase sign-in failed:',error);showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');}};
+ const loginWithEmail=(email:string)=>{const clean=email.trim().toLowerCase();if(!clean)return;const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:clean,userName:auth.userName||clean.split('@')[0]};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');};
+ const unlockWithPin=(_pin:string)=>{showToast('PIN / Offline access has been disabled. Sign in with your Firebase account.','warning');return false;};
+ const lockApp=()=>{showToast('Offline lock screen is disabled. Use Sign Out to end the session.','info');};
+ const logout=()=>{if(Capacitor.isNativePlatform()){void FirebaseAuthentication.signOut().catch(error=>console.warn('Native Firebase sign-out failed:',error));}localStorage.removeItem('cardiovault_google_uid');clearActiveClinicalWorkspace();setUnits([]);setBeds([]);setPatients([]);setCurrentUnitId(null);setCurrentPatientId(null);const a={...auth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(a);StorageService.saveAuth(a);setCurrentView('login');};
  const getPatientById=(id:string)=>patients.find(p=>p.id===id);const getBedsByUnit=(id:string)=>beds.filter(b=>b.unitId===id);const getUnitById=(id:string)=>units.find(u=>u.id===id);const archivedPatients=patients.filter(p=>p.isArchived);
  const commitPatients=(next:Patient[])=>{setPatients(next);StorageService.savePatients(next);};const commitBeds=(next:Bed[])=>{setBeds(next);StorageService.saveBeds(next);};const commitUnits=(next:Unit[])=>{setUnits(next);StorageService.saveUnits(next);};
  const addPatient=(data:Partial<Patient>,targetBedId?:string):Patient=>{const unitId=data.unitId||'';const bedId=targetBedId||data.bedId||'';if(!unitId||!bedId)throw new Error('Patient admission requires an explicit unit and bed.');const bed=beds.find(b=>b.id===bedId&&b.unitId===unitId);if(!bed)throw new Error('Selected bed does not belong to the selected unit.');if(bed.patientId)throw new Error('Selected bed is already occupied.');const stamp=new Date();const date=stamp.toISOString().split('T')[0];const time=stamp.toTimeString().slice(0,5);const id=`patient-${Date.now()}`;const allergies=data.allergies||['NKDA'];const p:Patient={id,mrn:data.mrn||`MRN-${Math.floor(100000+Math.random()*900000)}`,fullName:data.fullName||'New Patient',age:data.age??0,sex:data.sex||'Other',weight:data.weight??0,height:data.height??0,photoUrl:data.photoUrl,unitId,bedId,status:data.status||'Stable',admissionDate:data.admissionDate||date,admissionTime:data.admissionTime||time,primaryDiagnosis:data.primaryDiagnosis||'Clinical Admission',secondaryDiagnoses:data.secondaryDiagnoses||[],allergies,codeStatus:data.codeStatus||'Full Code',isArchived:false,pastAdmissions:[],clinicalSummary:data.clinicalSummary||{chiefComplaint:'',hpi:'',pmh:[],psh:[],drugHistory:'',allergies,familyHistory:'',socialHistory:''},cardiovascularHistory:data.cardiovascularHistory||{hypertension:false,diabetes:false,dyslipidemia:false,cad:false,previousMI:false,heartFailure:false,arrhythmias:false,valvularDisease:false,previousPCI:false,previousCABG:false,previousStroke:false,pvd:false,smoking:false,alcohol:false,previousAdmissions:'',previousICU:'',other:''},vitalsHistory:data.vitalsHistory||[],fluidRecords:data.fluidRecords||[],hemodynamicHistory:data.hemodynamicHistory||[],fluidIntakeHistory:data.fluidIntakeHistory||[],urineOutputHistory:data.urineOutputHistory||[],examination:data.examination||{general:{appearance:'',consciousness:'',distress:'',hydration:'',pallor:false,cyanosis:false,jaundice:false,edema:''},cardiovascular:{jvp:'',heartSounds:'',murmurs:'',peripheralPulses:'',edema:'',perfusion:''},respiratory:{chestExam:'',airEntry:'',addedSounds:'',workOfBreathing:''},abdomen:{inspection:'',palpation:'',tenderness:'',organomegaly:'',ascites:''},neurological:{consciousness:'',gcs:'',pupils:'',motor:'',sensory:'',reflexes:''},extremities:{pulses:'',edema:'',temp:'',perfusion:''},customFields:[]},ecgRecords:data.ecgRecords||[],cardiology:data.cardiology||{rhythm:'',heartRate:0,bp:'',heartFailureStatus:'',nyha:'',killip:'',congestion:'',perfusion:'',echoBriefSummary:'',echo:{ef:0,lvDimensions:'',lvFunction:'',rvFunction:'',rwma:'',la:'',ra:'',mr:'',ar:'',as:'',ms:'',tr:'',pr:'',pasp:0,ivc:'',pericardium:'',otherFindings:''},biomarkers:{troponin:'',ckmb:'',bnp:'',ntProBnp:''},coronary:{cath:'',coronaryFindings:'',pci:'',stent:'',cabg:''},antithrombotic:{antiplatelet:'',anticoagulation:'',thrombolysis:''},cathRecords:[],biomarkerRecords:[],devicesList:[],hemodynamicsList:[]},medications:data.medications||[],ventilator:data.ventilator||{mode:'',fio2:21,peep:0,tidalVolume:0,rr:0,pressureSupport:0,inspiratoryPressure:0,ieRatio:'',peakPressure:0,plateauPressure:0,meanAirwayPressure:0,spo2:0,etco2:0,compliance:0,resistance:0,abgHistory:[]},imaging:data.imaging||[],labs:data.labs||[],procedures:data.procedures||[],calculatorResults:data.calculatorResults||[],progressNotes:data.progressNotes||[]};commitPatients([p,...patients]);commitBeds(beds.map(b=>b.id===bedId?{...b,patientId:id,status:p.status}:b));setCurrentPatientId(id);showToast(`${p.fullName} admitted successfully.`,'success');return p;};
