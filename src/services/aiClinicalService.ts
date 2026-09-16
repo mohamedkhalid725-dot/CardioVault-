@@ -10,8 +10,8 @@ export interface AIClinicalResult {
   confidence:'low'|'moderate'|'high';
 }
 
-const DEFAULT_AI_ENDPOINT='https://us-central1-ccu-notebook.cloudfunctions.net/analyzeClinicalPatient';
-const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_ENDPOINT||DEFAULT_AI_ENDPOINT).trim();
+// The endpoint is supplied at build time. The Gemini API key never belongs in the app.
+const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_ENDPOINT||'').trim();
 
 export const isAIBackendConfigured=()=>Boolean(getAIEndpoint());
 
@@ -32,7 +32,7 @@ async function getFirebaseIdToken():Promise<string>{
 
 export async function analyzePatientWithAI(patient:Patient):Promise<AIClinicalResult>{
   const endpoint=getAIEndpoint();
-  if(!endpoint)throw new Error('CardioVault AI backend is not configured.');
+  if(!endpoint)throw new Error('CardioVault AI backend is not configured yet.');
   const token=await getFirebaseIdToken();
   let response:Response;
   try{
