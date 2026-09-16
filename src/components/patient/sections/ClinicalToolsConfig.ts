@@ -1,0 +1,1 @@
+export const CLINICAL_TOOLS_SUITE_VERSION='1.0.0';
