@@ -4,7 +4,11 @@ import {useApp}from'../../context/AppContext';
 
 export const DashboardClinicalCenter:React.FC=()=>{
  const{patients,beds,units,setCurrentPatientId,setCurrentView,setIsSearchOpen,isSyncing,lastSyncTime,syncNow}=useApp();
- const active=patients.filter(p=>!p.isArchived);const occupied=beds.filter(b=>b.patientId).length;const empty=Math.max(0,beds.length-occupied);const critical=active.filter(p=>p.status==='Critical').length;const unstable=active.filter(p=>p.status==='Unstable').length;
+ const active=patients.filter(p=>!p.isArchived);
+ const occupied=beds.filter(b=>!!b.patientId&&active.some(p=>p.id===b.patientId)).length;
+ const empty=Math.max(0,beds.length-occupied);
+ const critical=active.filter(p=>p.status==='Critical').length;
+ const unstable=active.filter(p=>p.status==='Unstable').length;
  const recent=useMemo(()=>{try{const ids:string[]=JSON.parse(localStorage.getItem('cardiovault_recent_patients_v1')||'[]');return ids.map(id=>patients.find(p=>p.id===id)).filter(Boolean).slice(0,5) as typeof patients;}catch{return []}},[patients]);
  const syncLabel=isSyncing?'Syncing…':lastSyncTime?'Synced':'Local / not synced this session';
  return <div className="space-y-3">
@@ -13,6 +17,6 @@ export const DashboardClinicalCenter:React.FC=()=>{
    <div className="rounded-2xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 p-4"><div className="flex items-center justify-between gap-3 mb-3"><div><h2 className="text-sm font-black flex items-center gap-2"><Clock3 className="w-4 h-4 text-cyan-500"/>Recently opened patients</h2><p className="text-[10px] text-slate-400 mt-0.5">Fast access to your latest clinical records.</p></div><button onClick={()=>setCurrentView('patients')} className="text-[10px] font-bold text-cyan-500">All patients <ArrowRight className="inline w-3 h-3"/></button></div>{recent.length?<div className="grid sm:grid-cols-2 gap-2">{recent.map(p=><button key={p.id} onClick={()=>{setCurrentPatientId(p.id);setCurrentView('patient')}} className="text-left rounded-xl border border-slate-200 dark:border-slate-800 p-3 hover:border-cyan-500/50 transition-colors"><div className="font-bold text-xs truncate">{p.fullName||'Unnamed Patient'}</div><div className="text-[10px] text-slate-400 mt-1">{p.mrn||'—'} • Bed {beds.find(b=>b.id===p.bedId)?.bedNumber||'—'}</div><div className="text-[10px] text-slate-500 mt-1 truncate">{p.primaryDiagnosis||'No diagnosis documented'}</div></button>)}</div>:<div className="text-xs text-slate-400 py-4">No recently opened patients yet.</div>}</div>
    <div className="rounded-2xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 p-4"><h2 className="text-sm font-black flex items-center gap-2 mb-3"><Activity className="w-4 h-4 text-cyan-500"/>Quick clinical actions</h2><div className="grid grid-cols-2 gap-2"><button onClick={()=>setIsSearchOpen(true)} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-left text-xs font-bold"><Search className="w-4 h-4 text-cyan-500 mb-2"/>Search patient</button><button onClick={()=>setCurrentView('handover')} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-left text-xs font-bold"><FileText className="w-4 h-4 text-emerald-500 mb-2"/>Handover</button><button onClick={()=>setCurrentView('calculators')} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-left text-xs font-bold"><Plus className="w-4 h-4 text-violet-500 mb-2"/>Calculators</button><button onClick={()=>setCurrentView('settings')} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-left text-xs font-bold"><LockKeyhole className="w-4 h-4 text-amber-500 mb-2"/>Security & Sync</button></div></div>
   </div>
-  <div className="text-[10px] text-slate-400 flex items-center gap-1"><Users className="w-3 h-3"/>{units.length} units • {active.length} active records • dashboard uses stored data only.</div>
+  <div className="text-[10px] text-slate-400 flex items-center gap-1"><Users className="w-3 h-3"/>{units.length} units • {active.length} active records • {occupied} occupied / {empty} empty beds.</div>
  </div>;
 };
