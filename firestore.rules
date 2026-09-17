@@ -18,8 +18,9 @@ service cloud.firestore {
     }
 
     match /accessCodes/{hash} {
-      // The Master may check whether a custom code already exists before creating it.
-      allow get: if workspaceOwner('cardiovault_master_workspace') || validAccessCode(hash);
+      // Access codes are looked up by their SHA-256 hash. Only signed-in users may
+      // read an active master-workspace code so the redemption flow can validate it.
+      allow get: if signedIn() && resource.data.active == true && resource.data.workspaceId == 'cardiovault_master_workspace';
       allow create: if workspaceOwner(request.resource.data.workspaceId) && request.resource.data.workspaceId == 'cardiovault_master_workspace';
       allow update, delete: if workspaceOwner(resource.data.workspaceId) && resource.data.workspaceId == 'cardiovault_master_workspace';
     }
@@ -45,7 +46,7 @@ service cloud.firestore {
       }
       match /patients/{patientId} {
         allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,request.resource.data.unitId);
         allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
