@@ -46,7 +46,7 @@ service cloud.firestore {
       }
       match /patients/{patientId} {
         allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,request.resource.data.unitId);
+        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
         allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
