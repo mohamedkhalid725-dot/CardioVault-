@@ -1,0 +1,70 @@
+name: CardioVault iOS Prepare
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'capacitor.config.ts'
+      - 'src/**'
+      - 'public/**'
+      - '.github/workflows/ios-prepare.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ios-prepare:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Capacitor iOS platform
+        run: npm install @capacitor/ios@7.4.4 --save-exact
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Production web build
+        run: npm run build
+
+      - name: Add and sync iOS platform
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: iOS toolchain diagnostics
+        run: |
+          xcodebuild -version
+          pod --version
+          xcrun simctl list runtimes
+
+      - name: Validate iOS project compilation
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build/ios \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Upload generated iOS project
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioVault-ios-project
+          path: ios/
+          if-no-files-found: error
+          retention-days: 14
