@@ -1,102 +1,24 @@
-import React, { useMemo, useState } from 'react';
-import { X, Building2, BedDouble, UserPlus, ArrowLeft, Check } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
-import { Patient, PatientStatus } from '../../types/clinical';
+import React,{useMemo,useState}from'react';
+import {X,Building2,BedDouble,UserPlus,ArrowLeft,Check}from'lucide-react';
+import {useApp}from'../../context/AppContext';
+import {Patient,PatientStatus}from'../../types/clinical';
 
-interface AddPatientModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  defaultUnitId?: string;
-  defaultBedId?: string;
-}
+interface AddPatientModalProps{isOpen:boolean;onClose:()=>void;defaultUnitId?:string;defaultBedId?:string;}
 
-export const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, defaultUnitId, defaultBedId }) => {
-  const { units, beds, patients, addPatient, showToast, setCurrentPatientId, setCurrentView } = useApp();
-  const initialStep = defaultUnitId && defaultBedId ? 'details' : defaultUnitId ? 'bed' : 'unit';
-  const [step, setStep] = useState<'unit' | 'bed' | 'details'>(initialStep);
-  const [selectedUnitId, setSelectedUnitId] = useState(defaultUnitId || '');
-  const [selectedBedId, setSelectedBedId] = useState(defaultBedId || '');
-  const [fullName, setFullName] = useState('');
-  const [age, setAge] = useState(55);
-  const [sex, setSex] = useState<'Male' | 'Female' | 'Other'>('Male');
-  const [primaryDiagnosis, setPrimaryDiagnosis] = useState('');
-  const [acuity, setAcuity] = useState<PatientStatus>('Stable');
-  const [codeStatus, setCodeStatus] = useState<Patient['codeStatus']>('Full Code');
-  const [chiefComplaint, setChiefComplaint] = useState('');
-  const [allergies, setAllergies] = useState('NKDA');
-
-  const selectedUnit = units.find((u) => u.id === selectedUnitId);
-  const selectedBed = beds.find((b) => b.id === selectedBedId);
-  const unitBeds = useMemo(() => beds.filter((b) => b.unitId === selectedUnitId), [beds, selectedUnitId]);
-
-  if (!isOpen) return null;
-
-  const selectUnit = (id: string) => {
-    setSelectedUnitId(id);
-    setSelectedBedId('');
-    setStep('bed');
-  };
-
-  const selectBed = (id: string) => {
-    const bed = beds.find((b) => b.id === id);
-    if (!bed || bed.patientId) return;
-    setSelectedBedId(id);
-    setStep('details');
-  };
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedUnitId || !selectedBedId) {
-      showToast('Select a Unit and an available Bed before creating the patient.', 'error');
-      return;
-    }
-    if (!fullName.trim() || !primaryDiagnosis.trim()) {
-      showToast('Patient name and diagnosis are required.', 'error');
-      return;
-    }
-    if (!selectedUnit || !selectedBed || selectedBed.patientId) {
-      showToast('The selected bed is no longer available. Please choose another bed.', 'error');
-      setStep('bed');
-      return;
-    }
-
-    const allergyList = allergies.split(',').map((s) => s.trim()).filter(Boolean);
-    const patientData: Partial<Patient> = {
-      fullName: fullName.trim(), age, sex, primaryDiagnosis: primaryDiagnosis.trim(), status: acuity,
-      codeStatus, unitId: selectedUnitId, bedId: selectedBedId, allergies: allergyList,
-      clinicalSummary: {
-        chiefComplaint: chiefComplaint.trim() || primaryDiagnosis.trim(),
-        hpi: `${fullName.trim()} is a ${age}-year-old ${sex} admitted to ${selectedUnit.name}, Bed ${selectedBed.bedNumber}, for ${primaryDiagnosis.trim()}.`,
-        pmh: [], psh: [], drugHistory: 'Under clinical reconciliation', allergies: allergyList,
-        familyHistory: 'Non-contributory', socialHistory: 'Not documented',
-      },
-    };
-
-    const created = addPatient(patientData, selectedBedId);
-    setCurrentPatientId(created.id);
-    setCurrentView('patient');
-    showToast(`${created.fullName} admitted to ${selectedUnit.name} — ${selectedBed.bedNumber}.`, 'success');
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 p-5 shadow-2xl">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-500 flex items-center justify-center"><UserPlus className="w-5 h-5" /></div><div><h2 className="text-lg font-bold text-slate-900 dark:text-white">Admit New Clinical Patient</h2><p className="text-xs text-slate-500 dark:text-slate-400">Step {step === 'unit' ? '1 — Select Unit' : step === 'bed' ? '2 — Select Bed' : '3 — Patient Details'}</p></div></div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-5 h-5" /></button>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 my-5">
-          {['unit', 'bed', 'details'].map((s, i) => <div key={s} className={`rounded-xl border px-3 py-2 text-xs font-bold ${step === s ? 'bg-cyan-500 text-slate-950 border-cyan-500' : 'bg-slate-50 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800'}`}>{i + 1}. {s === 'unit' ? 'Unit' : s === 'bed' ? 'Bed' : 'Patient File'}{((s === 'unit' && selectedUnitId) || (s === 'bed' && selectedBedId)) && step !== s ? <Check className="inline ml-1 w-3 h-3" /> : null}</div>)}
-        </div>
-
-        {step === 'unit' && <div className="space-y-4"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Select admitting Unit</h3><p className="text-xs text-slate-500 dark:text-slate-400">No unit is preselected. Choose explicitly before continuing.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{units.map((unit) => { const available = beds.filter((b) => b.unitId === unit.id && !b.patientId).length; return <button key={unit.id} type="button" onClick={() => selectUnit(unit.id)} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-left hover:border-cyan-500 transition-colors"><div className="flex items-center justify-between"><div><div className="text-[10px] uppercase tracking-wider text-cyan-500 font-bold">{unit.type}</div><div className="text-sm font-bold text-slate-900 dark:text-white mt-1">{unit.name}</div></div><Building2 className="w-5 h-5 text-cyan-500" /></div><div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">{available} available bed(s)</div></button>; })}</div>{units.length === 0 && <div className="p-6 text-center text-xs text-slate-400">No clinical units configured. Add a unit first.</div>}</div>}
-
-        {step === 'bed' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Select an available bed</h3><p className="text-xs text-slate-500">{selectedUnit?.name || 'Selected unit'}</p></div><button type="button" onClick={() => setStep('unit')} className="text-xs font-semibold text-cyan-500 flex items-center gap-1"><ArrowLeft className="w-3 h-3" /> Change Unit</button></div><div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">{unitBeds.map((bed) => { const occupied = Boolean(bed.patientId); const occupant = occupied ? patients.find((p) => p.id === bed.patientId) : undefined; return <button key={bed.id} type="button" disabled={occupied} onClick={() => selectBed(bed.id)} className={`p-3 rounded-2xl border text-left ${occupied ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-slate-50 dark:bg-slate-900/60'}`}><div className="flex justify-between"><span className="text-xs font-bold text-slate-900 dark:text-white">{bed.bedNumber}</span><BedDouble className="w-4 h-4 text-cyan-500" /></div><div className={`text-[11px] mt-2 font-semibold ${occupied ? 'text-rose-500' : 'text-emerald-500'}`}>{occupied ? `Occupied${occupant ? ` — ${occupant.fullName}` : ''}` : 'Available'}</div></button>; })}</div>{unitBeds.length === 0 && <div className="p-6 text-center text-xs text-slate-400 border border-dashed rounded-xl">No beds configured in this unit.</div>}</div>}
-
-        {step === 'details' && <form onSubmit={submit} className="space-y-4"><div className="flex items-center justify-between rounded-xl bg-cyan-500/10 border border-cyan-500/20 p-3 text-xs"><span className="text-slate-500">Assignment</span><strong className="text-cyan-600 dark:text-cyan-400">{selectedUnit?.name} — {selectedBed?.bedNumber}</strong><button type="button" onClick={() => setStep('bed')} className="text-cyan-500">Change</button></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><label className="sm:col-span-2 text-xs font-semibold">Full Name<input required value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="text-xs font-semibold">Age<input type="number" min={0} max={120} value={age} onChange={(e) => setAge(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="text-xs font-semibold">Sex<select value={sex} onChange={(e) => setSex(e.target.value as Patient['sex'])} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Male</option><option>Female</option><option>Other</option></select></label><label className="sm:col-span-2 text-xs font-semibold">Diagnosis<input required value={primaryDiagnosis} onChange={(e) => setPrimaryDiagnosis(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="text-xs font-semibold">Status<select value={acuity} onChange={(e) => setAcuity(e.target.value as PatientStatus)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Stable</option><option>Unstable</option><option>Critical</option></select></label><label className="text-xs font-semibold">Code Status<select value={codeStatus} onChange={(e) => setCodeStatus(e.target.value as Patient['codeStatus'])} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Full Code</option><option>DNR</option><option>DNI</option><option>Comfort Measures Only</option></select></label><label className="sm:col-span-2 text-xs font-semibold">Chief Complaint<input value={chiefComplaint} onChange={(e) => setChiefComplaint(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label><label className="sm:col-span-3 text-xs font-semibold">Allergies (comma separated)<input value={allergies} onChange={(e) => setAllergies(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm" /></label></div><div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-500">Cancel</button><button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs">Create Patient & Open File</button></div></form>}
-      </div>
-    </div>
-  );
+export const AddPatientModal:React.FC<AddPatientModalProps>=({isOpen,onClose,defaultUnitId,defaultBedId})=>{
+ const{units,beds,patients,addPatient,showToast,setCurrentPatientId,setCurrentView}=useApp();
+ const initialStep=defaultUnitId&&defaultBedId?'details':defaultUnitId?'bed':'unit';
+ const[step,setStep]=useState<'unit'|'bed'|'details'>(initialStep);const[selectedUnitId,setSelectedUnitId]=useState(defaultUnitId||'');const[selectedBedId,setSelectedBedId]=useState(defaultBedId||'');const[fullName,setFullName]=useState('');const[age,setAge]=useState(55);const[sex,setSex]=useState<'Male'|'Female'|'Other'>('Male');const[primaryDiagnosis,setPrimaryDiagnosis]=useState('');const[acuity,setAcuity]=useState<PatientStatus>('Stable');const[codeStatus,setCodeStatus]=useState<Patient['codeStatus']>('Full Code');const[chiefComplaint,setChiefComplaint]=useState('');const[allergies,setAllergies]=useState('NKDA');
+ const selectedUnit=units.find(u=>u.id===selectedUnitId);const selectedBed=beds.find(b=>b.id===selectedBedId);const unitBeds=useMemo(()=>beds.filter(b=>b.unitId===selectedUnitId),[beds,selectedUnitId]);
+ if(!isOpen)return null;
+ const selectUnit=(id:string)=>{setSelectedUnitId(id);setSelectedBedId('');setStep('bed');};
+ const getActiveOccupant=(bedId:string)=>{const bed=beds.find(b=>b.id===bedId);return bed?.patientId?patients.find(p=>p.id===bed.patientId&&!p.isArchived):undefined;};
+ const selectBed=(id:string)=>{const bed=beds.find(b=>b.id===id);if(!bed||getActiveOccupant(id))return;setSelectedBedId(id);setStep('details');};
+ const submit=(e:React.FormEvent)=>{e.preventDefault();if(!selectedUnitId||!selectedBedId){showToast('Select a Unit and an available Bed before creating the patient.','error');return;}if(!fullName.trim()||!primaryDiagnosis.trim()){showToast('Patient name and diagnosis are required.','error');return;}const activeOccupant=getActiveOccupant(selectedBedId);if(!selectedUnit||!selectedBed||activeOccupant){showToast('The selected bed is no longer available. Please choose another bed.','error');setStep('bed');return;}try{const allergyList=allergies.split(',').map(s=>s.trim()).filter(Boolean);const patientData:Partial<Patient>={fullName:fullName.trim(),age,sex,primaryDiagnosis:primaryDiagnosis.trim(),status:acuity,codeStatus,unitId:selectedUnitId,bedId:selectedBedId,allergies:allergyList,clinicalSummary:{chiefComplaint:chiefComplaint.trim()||primaryDiagnosis.trim(),hpi:`${fullName.trim()} is a ${age}-year-old ${sex} admitted to ${selectedUnit.name}, ${selectedBed.bedNumber}, for ${primaryDiagnosis.trim()}.`,pmh:[],psh:[],drugHistory:'Under clinical reconciliation',allergies:allergyList,familyHistory:'Non-contributory',socialHistory:'Not documented'}};const created=addPatient(patientData,selectedBedId);setCurrentPatientId(created.id);setCurrentView('patient');showToast(`${created.fullName} admitted to ${selectedUnit.name} — ${selectedBed.bedNumber}.`,'success');onClose();}catch(error:any){showToast(String(error?.message||'Admission failed.'),'error');setStep('bed');}};
+ return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 p-5 shadow-2xl"><div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-500 flex items-center justify-center"><UserPlus className="w-5 h-5"/></div><div><h2 className="text-lg font-bold text-slate-900 dark:text-white">Admit New Clinical Patient</h2><p className="text-xs text-slate-500 dark:text-slate-400">Step {step==='unit'?'1 — Select Unit':step==='bed'?'2 — Select Bed':'3 — Patient Details'}</p></div></div><button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-5 h-5"/></button></div>
+ <div className="grid grid-cols-3 gap-2 my-5">{['unit','bed','details'].map((s,i)=><div key={s} className={`rounded-xl border px-3 py-2 text-xs font-bold ${step===s?'bg-cyan-500 text-slate-950 border-cyan-500':'bg-slate-50 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800'}`}>{i+1}. {s==='unit'?'Unit':s==='bed'?'Bed':'Patient File'}{((s==='unit'&&selectedUnitId)||(s==='bed'&&selectedBedId))&&step!==s?<Check className="inline ml-1 w-3 h-3"/>:null}</div>)}</div>
+ {step==='unit'&&<div className="space-y-4"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Select admitting Unit</h3><p className="text-xs text-slate-500 dark:text-slate-400">Choose the clinical unit before selecting a bed.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{units.map(unit=>{const available=beds.filter(b=>b.unitId===unit.id&&!getActiveOccupant(b.id)).length;return <button key={unit.id} type="button" onClick={()=>selectUnit(unit.id)} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-left hover:border-cyan-500 transition-colors"><div className="flex items-center justify-between"><div><div className="text-[10px] uppercase tracking-wider text-cyan-500 font-bold">{unit.type}</div><div className="text-sm font-bold text-slate-900 dark:text-white mt-1">{unit.name}</div></div><Building2 className="w-5 h-5 text-cyan-500"/></div><div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">{available} available bed(s)</div></button>})}</div>{units.length===0&&<div className="p-6 text-center text-xs text-slate-400">No clinical units configured. Add a unit first.</div>}</div>}
+ {step==='bed'&&<div className="space-y-4"><div className="flex items-center justify-between"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Select an available bed</h3><p className="text-xs text-slate-500">{selectedUnit?.name||'Selected unit'}</p></div><button type="button" onClick={()=>setStep('unit')} className="text-xs font-semibold text-cyan-500 flex items-center gap-1"><ArrowLeft className="w-3 h-3"/> Change Unit</button></div><div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">{unitBeds.map(bed=>{const occupant=getActiveOccupant(bed.id);const occupied=!!occupant;return <button key={bed.id} type="button" disabled={occupied} onClick={()=>selectBed(bed.id)} className={`p-3 rounded-2xl border text-left ${occupied?'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800':'border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-slate-50 dark:bg-slate-900/60'}`}><div className="flex justify-between"><span className="text-xs font-bold text-slate-900 dark:text-white">{bed.bedNumber}</span><BedDouble className="w-4 h-4 text-cyan-500"/></div><div className={`text-[11px] mt-2 font-semibold ${occupied?'text-rose-500':'text-emerald-500'}`}>{occupied?`Occupied — ${occupant?.fullName}`:'Available'}</div></button>})}</div>{unitBeds.length===0&&<div className="p-6 text-center text-xs text-slate-400 border border-dashed rounded-xl">No beds configured in this unit.</div>}</div>}
+ {step==='details'&&<form onSubmit={submit} className="space-y-4"><div className="flex items-center justify-between rounded-xl bg-cyan-500/10 border border-cyan-500/20 p-3 text-xs"><span className="text-slate-500">Assignment</span><strong className="text-cyan-600 dark:text-cyan-400">{selectedUnit?.name} — {selectedBed?.bedNumber}</strong><button type="button" onClick={()=>setStep('bed')} className="text-cyan-500">Change</button></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><label className="sm:col-span-2 text-xs font-semibold">Full Name<input required value={fullName} onChange={e=>setFullName(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"/></label><label className="text-xs font-semibold">Age<input type="number" min={0} max={120} value={age} onChange={e=>setAge(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"/></label><label className="text-xs font-semibold">Sex<select value={sex} onChange={e=>setSex(e.target.value as Patient['sex'])} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Male</option><option>Female</option><option>Other</option></select></label><label className="sm:col-span-2 text-xs font-semibold">Diagnosis<input required value={primaryDiagnosis} onChange={e=>setPrimaryDiagnosis(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"/></label><label className="text-xs font-semibold">Status<select value={acuity} onChange={e=>setAcuity(e.target.value as PatientStatus)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Stable</option><option>Unstable</option><option>Critical</option></select></label><label className="text-xs font-semibold">Code Status<select value={codeStatus} onChange={e=>setCodeStatus(e.target.value as Patient['codeStatus'])} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"><option>Full Code</option><option>DNR</option><option>DNI</option><option>Comfort Measures Only</option></select></label><label className="sm:col-span-2 text-xs font-semibold">Chief Complaint<input value={chiefComplaint} onChange={e=>setChiefComplaint(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"/></label><label className="sm:col-span-3 text-xs font-semibold">Allergies (comma separated)<input value={allergies} onChange={e=>setAllergies(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm"/></label></div><div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-500">Cancel</button><button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs">Create Patient & Open File</button></div></form>}
+ </div></div>;
 };
