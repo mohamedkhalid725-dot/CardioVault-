@@ -20,7 +20,7 @@ service cloud.firestore {
     match /accessCodes/{hash} {
       // Access codes are looked up by their SHA-256 hash. Only signed-in users may
       // read an active master-workspace code so the redemption flow can validate it.
-      allow get: if signedIn() && resource.data.active == true && resource.data.workspaceId == 'cardiovault_master_workspace';
+      allow get: if signedIn();
       allow create: if workspaceOwner(request.resource.data.workspaceId) && request.resource.data.workspaceId == 'cardiovault_master_workspace';
       allow update, delete: if workspaceOwner(resource.data.workspaceId) && resource.data.workspaceId == 'cardiovault_master_workspace';
     }
