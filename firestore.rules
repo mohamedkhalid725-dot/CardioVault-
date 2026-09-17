@@ -18,6 +18,7 @@ service cloud.firestore {
     }
 
     match /accessCodes/{hash} {
+      // Access-code permission fix: deployment trigger.
       // Access codes are looked up by their SHA-256 hash. Only signed-in users may
       // read an active master-workspace code so the redemption flow can validate it.
       allow get: if signedIn();
