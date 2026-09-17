@@ -1,0 +1,196 @@
+name: CardioVault Production Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HAS_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+  HAS_RELEASE_KEYSTORE: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_BASE64 }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Production web build
+        run: npm run build
+
+      - name: Validate Firebase AI backend
+        working-directory: functions
+        run: |
+          npm install
+          node --check index.js
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Configure Firebase Android
+        run: |
+          cp google-services.json android/app/google-services.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('google-services.json').read_text())
+          clients=cfg.get('client',[])
+          android=[c for c in clients if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.cardiovault.app']
+          if not android:
+              raise SystemExit('Firebase config does not contain Android package com.cardiovault.app')
+          oauth=android[0].get('oauth_client',[])
+          if not any(o.get('client_type')==1 and o.get('android_info',{}).get('package_name')=='com.cardiovault.app' for o in oauth):
+              raise SystemExit('No Android OAuth client for com.cardiovault.app')
+          p=Path('android/variables.gradle')
+          s=p.read_text()
+          if 'rgcfaIncludeGoogle' not in s:
+              s=s.replace('ext {', "ext {\n    rgcfaIncludeGoogle = true\n    androidxCredentialsVersion = '1.3.0'")
+          p.write_text(s)
+          p=Path('android/build.gradle')
+          s=p.read_text()
+          if 'com.google.gms:google-services' not in s:
+              s=s.replace('dependencies {', "dependencies {\n        classpath 'com.google.gms:google-services:4.5.0'")
+          p.write_text(s)
+          p=Path('android/app/build.gradle')
+          s=p.read_text()
+          if 'com.google.gms.google-services' not in s:
+              s=s.replace('apply plugin:', "apply plugin: 'com.google.gms.google-services'\napply plugin:", 1)
+          p.write_text(s)
+          PY
+          npx cap update android
+
+      - name: Deploy Firestore rules
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          npx firebase-tools@latest deploy --only firestore:rules --project ccu-notebook --non-interactive --config firebase.json
+
+      - name: Prepare launcher icon
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+          rm -rf assets
+          mkdir -p assets
+          rsvg-convert -w 1024 -h 1024 public/cardiovault-logo.svg -o assets/icon.png
+          cp assets/icon.png assets/icon-only.png
+          cp assets/icon.png assets/icon-foreground.png
+          npx @capacitor/assets@latest generate --android
+
+      - name: Harden Android auth/network manifest
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          if 'android.permission.INTERNET' not in s:
+              s=s.replace('</manifest>', '    <uses-permission android:name="android.permission.INTERNET" />\n</manifest>')
+          if 'android:name=".MainActivity"' in s and 'android:launchMode="singleTask"' not in s:
+              s=s.replace('android:name=".MainActivity"', 'android:name=".MainActivity"\n            android:launchMode="singleTask"')
+          p.write_text(s)
+          PY
+
+      - name: Require production signing secrets
+        if: ${{ env.HAS_RELEASE_KEYSTORE == '' }}
+        run: |
+          echo 'Missing CARDIOVAULT_RELEASE_KEYSTORE_BASE64.'
+          echo 'Configure the production/upload keystore secrets before running a publishable build.'
+          exit 1
+
+      - name: Configure production signing
+        env:
+          CARDIOVAULT_RELEASE_KEYSTORE_BASE64: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_BASE64 }}
+          CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
+          CARDIOVAULT_RELEASE_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEY_PASSWORD }}
+        run: |
+          echo "$CARDIOVAULT_RELEASE_KEYSTORE_BASE64" | base64 --decode > android/cardiovault-release.keystore
+          cat >> android/app/build.gradle <<'GRADLE'
+          def cardiovaultReleaseKeystore = rootProject.file('cardiovault-release.keystore')
+          if (cardiovaultReleaseKeystore.exists()) {
+              android {
+                  signingConfigs {
+                      cardiovaultRelease {
+                          storeFile cardiovaultReleaseKeystore
+                          storePassword System.getenv('CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD')
+                          keyAlias System.getenv('CARDIOVAULT_RELEASE_KEY_ALIAS')
+                          keyPassword System.getenv('CARDIOVAULT_RELEASE_KEY_PASSWORD')
+                      }
+                  }
+                  buildTypes {
+                      release {
+                          signingConfig signingConfigs.cardiovaultRelease
+                          minifyEnabled false
+                      }
+                  }
+              }
+          }
+          GRADLE
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - name: Build signed Release APK and AAB
+        working-directory: android
+        env:
+          CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
+          CARDIOVAULT_RELEASE_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+
+      - name: Verify production artifacts
+        working-directory: android
+        run: |
+          test -s app/build/outputs/apk/release/app-release.apk
+          test -s app/build/outputs/bundle/release/app-release.aab
+          echo '--- APK certificate ---'
+          keytool -printcert -jarfile app/build/outputs/apk/release/app-release.apk | grep -E 'Owner:|SHA1:|SHA256:'
+          echo '--- INTERNET permission ---'
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          echo 'Production release verification: OK'
+
+      - name: Upload Production APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioVault-2.0.0-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Google Play AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioVault-2.0.0-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
