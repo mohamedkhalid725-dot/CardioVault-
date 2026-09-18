@@ -202,6 +202,10 @@ jobs:
           PROGUARD
       - name: Build hardened release bundle and APK
         working-directory: android
+        env:
+          CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
+          CARDIOVAULT_RELEASE_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
       - name: Build debug APK
         working-directory: android
