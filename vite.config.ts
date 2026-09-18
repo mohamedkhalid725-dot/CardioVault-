@@ -12,7 +12,7 @@ export default defineConfig(() => {
       },
     },
     build: {
-      minify: 'esbuild',
+      minify: 'esbuild' as const,
       sourcemap: false,
       cssMinify: true,
     },
