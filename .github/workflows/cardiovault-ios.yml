@@ -1,0 +1,102 @@
+name: CardioVault iOS Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    env:
+      HAS_IOS_FIREBASE_CONFIG: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Add Capacitor iOS
+        run: npx cap add ios
+
+      - name: Configure Firebase iOS
+        if: ${{ env.HAS_IOS_FIREBASE_CONFIG != '' }}
+        env:
+          GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+        run: |
+          echo "$GOOGLE_SERVICE_INFO_PLIST_BASE64" | base64 --decode > ios/App/App/GoogleService-Info.plist
+
+          gem install xcodeproj --no-document
+
+          ruby <<'RUBY'
+          require 'xcodeproj'
+          project_path = 'ios/App/App.xcodeproj'
+          project = Xcodeproj::Project.open(project_path)
+
+          app_group = project.main_group.groups.find { |g| g.display_name == 'App' }
+          raise 'App group not found' unless app_group
+
+          existing = app_group.files.find { |f| f.path == 'GoogleService-Info.plist' }
+          unless existing
+            file_ref = app_group.new_file('GoogleService-Info.plist')
+            target = project.targets.find { |t| t.name == 'App' }
+            target.resources_build_phase.add_file_reference(file_ref)
+          end
+
+          project.save
+          RUBY
+
+          IOS_CLIENT_ID=$(/usr/libexec/PlistBuddy -c 'Print :CLIENT_ID' ios/App/App/GoogleService-Info.plist)
+          REVERSED_CLIENT_ID=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' ios/App/App/GoogleService-Info.plist)
+
+          /usr/libexec/PlistBuddy -c "Add :GIDClientID string $IOS_CLIENT_ID" ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" ios/App/App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" ios/App/App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" ios/App/App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $REVERSED_CLIENT_ID" ios/App/App/Info.plist || true
+
+      - name: Fail clearly if Firebase iOS config is missing
+        if: ${{ env.HAS_IOS_FIREBASE_CONFIG == '' }}
+        run: |
+          echo "::error::Missing GOOGLE_SERVICE_INFO_PLIST_BASE64 repository secret."
+          echo "Add the base64 contents of GoogleService-Info.plist as a GitHub Actions secret."
+          exit 1
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Verify iOS configuration
+        run: |
+          test -f ios/App/App/GoogleService-Info.plist
+          grep -q 'com.cardiovault.app' ios/App/App/GoogleService-Info.plist
+          grep -q 'GIDClientID' ios/App/App/Info.plist
+          echo "CardioVault iOS configuration: OK"
+
+      - name: Build unsigned iOS archive
+        run: |
+          xcodebuild             -workspace ios/App/App.xcworkspace             -scheme App             -configuration Release             -destination 'generic/platform=iOS'             -archivePath "$RUNNER_TEMP/CardioVault.xcarchive"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             archive
+
+      - name: Package Xcode project
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent ios CardioVault-iOS-XcodeProject.zip
+
+      - name: Upload iOS Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioVault-iOS-XcodeProject
+          path: CardioVault-iOS-XcodeProject.zip
+          retention-days: 14
+
+      - name: Upload unsigned iOS archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioVault-iOS-unsigned-archive
+          path: ${{ runner.temp }}/CardioVault.xcarchive
+          retention-days: 14
