@@ -152,6 +152,23 @@ jobs:
           PY
           echo '--- Gradle signing report ---'
           ./gradlew signingReport --no-daemon
+      - name: Configure hardened Android release build
+        working-directory: android
+        run: |
+          cat >> app/build.gradle <<'GRADLE'
+          android {
+              buildTypes {
+                  release {
+                      minifyEnabled true
+                      shrinkResources true
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+          GRADLE
+      - name: Build hardened release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
       - name: Build debug APK
         working-directory: android
         env:
@@ -166,7 +183,14 @@ jobs:
           keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk | grep -E 'Owner:|SHA1:|SHA256:' || true
           echo '--- INTERNET permission ---'
           grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml && echo 'INTERNET permission: OK' || (echo 'INTERNET permission: MISSING' && exit 1)
-      - name: Upload CardioVault APK
+      - name: Upload hardened release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioVault-hardened-release-unsigned-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload CardioVault debug APK
         uses: actions/upload-artifact@v4
         with:
           name: CardioVault-debug-apk
