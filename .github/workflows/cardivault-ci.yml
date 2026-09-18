@@ -166,6 +166,12 @@ jobs:
               }
           }
           GRADLE
+          cat >> app/proguard-rules.pro <<'PROGUARD'
+          # Facebook authentication classes are optional in the Capacitor Firebase plugin.
+          # CardioVault enables Google authentication only, so these absent optional classes
+          # must not make the release shrinker fail.
+          -dontwarn com.facebook.**
+          PROGUARD
       - name: Build hardened release bundle and APK
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
