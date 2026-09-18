@@ -8,6 +8,7 @@ on:
 
 env:
   HAS_CARDIOVAULT_DEBUG_KEYSTORE: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_BASE64 }}
+  HAS_CARDIOVAULT_RELEASE_KEYSTORE: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_BASE64 }}
   HAS_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
 jobs:
@@ -133,6 +134,33 @@ jobs:
               }
           }
           GRADLE
+      - name: Configure CardioVault release signing when provided
+        if: ${{ env.HAS_CARDIOVAULT_RELEASE_KEYSTORE != '' }}
+        env:
+          CARDIOVAULT_RELEASE_KEYSTORE_BASE64: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_BASE64 }}
+          CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
+          CARDIOVAULT_RELEASE_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEY_PASSWORD }}
+        run: |
+          echo "$CARDIOVAULT_RELEASE_KEYSTORE_BASE64" | base64 --decode > android/cardiovault-release.keystore
+          cat >> android/app/build.gradle <<'GRADLE'
+          def cardiovaultReleaseKeystore = rootProject.file('cardiovault-release.keystore')
+          if (cardiovaultReleaseKeystore.exists()) {
+              android {
+                  signingConfigs {
+                      cardiovaultRelease {
+                          storeFile cardiovaultReleaseKeystore
+                          storePassword System.getenv('CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD')
+                          keyAlias System.getenv('CARDIOVAULT_RELEASE_KEY_ALIAS')
+                          keyPassword System.getenv('CARDIOVAULT_RELEASE_KEY_PASSWORD')
+                      }
+                  }
+                  buildTypes {
+                      release { signingConfig signingConfigs.cardiovaultRelease }
+                  }
+              }
+          }
+          GRADLE
       - name: Show Android/Firebase signing diagnostics
         working-directory: android
         run: |
@@ -185,14 +213,22 @@ jobs:
       - name: Verify final APK certificate and network permission
         working-directory: android
         run: |
-          echo '--- Final APK certificate ---'
+          echo '--- Release APK signing status ---'
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            if [ "$HAS_CARDIOVAULT_RELEASE_KEYSTORE" != "" ]; then
+              "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+            else
+              echo 'Release APK is unsigned because CARDIOVAULT_RELEASE_KEYSTORE_BASE64 is not configured.'
+            fi
+          fi
+          echo '--- Debug APK certificate ---'
           keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk | grep -E 'Owner:|SHA1:|SHA256:' || true
           echo '--- INTERNET permission ---'
           grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml && echo 'INTERNET permission: OK' || (echo 'INTERNET permission: MISSING' && exit 1)
-      - name: Upload hardened release APK
+      - name: Label release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CardioVault-hardened-release-apk
+          name: ${{ env.CARDIOVAULT_RELEASE_ARTIFACT }}
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
