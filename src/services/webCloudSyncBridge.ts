@@ -1,5 +1,6 @@
 import { StorageService } from './storage';
 import type { Unit } from '../types/clinical';
+import { reconcileClinicalRegistry } from './bedReconciliation';
 import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDb, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
 import { MASTER_WORKSPACE_ID, MASTER_ACCOUNT_EMAIL, type WorkspaceAccessState } from './workspaceAccess';
@@ -53,10 +54,12 @@ export async function webLoadCurrentUserFromCloud(){
       const localUnits=StorageService.getUnits();
       if (localUnits.length>units.length && units.length>0) { units=localUnits; preservedLocalOwnerUnits=true; }
     }
+    const reconciled=reconcileClinicalRegistry(units,beds,patients);
+    units=reconciled.units; beds=reconciled.beds; patients=reconciled.patients;
     localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
     try { StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients); }
     finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
-    if (preservedLocalOwnerUnits) void webSyncCurrentUserNow();
+    if (preservedLocalOwnerUnits||reconciled.changed) void webSyncCurrentUserNow();
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
     return {uid:user.uid,found:!!(units.length||beds.length||patients.length),access};
   }catch(error:any){
