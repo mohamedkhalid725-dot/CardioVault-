@@ -1,4 +1,5 @@
 import { StorageService } from './storage';
+import type { Unit } from '../types/clinical';
 import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDb, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
 import { MASTER_WORKSPACE_ID, MASTER_ACCOUNT_EMAIL, type WorkspaceAccessState } from './workspaceAccess';
@@ -45,9 +46,16 @@ export async function webLoadCurrentUserFromCloud(){
       units=unit.exists()?[{...unit.data(),id:access.unitId}]:[];
       [beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'beds'),access.unitId),collectionData(path(access.workspaceId,'patients'),access.unitId)]);
     }
+    // Never let an incomplete owner cloud snapshot erase a larger local unit registry.
+    // If local has more units than cloud, keep the local registry and upload it on the next sync.
+    if (access.role==='owner') {
+      const localUnits=StorageService.getUnits();
+      if (localUnits.length>units.length && units.length>0) units=localUnits;
+    }
     localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
     try { StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients); }
     finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
+    if (access.role==='owner' && StorageService.getUnits().length>units.length) void webSyncCurrentUserNow();
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
     return {uid:user.uid,found:!!(units.length||beds.length||patients.length),access};
   }catch(error:any){
@@ -98,10 +106,18 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
     if (!access) return () => {};
 
     const persistCollection = (name:'units'|'beds'|'patients', snap:any) => {
-      const values = snap.docs.map((d:any)=>({...d.data(), id:d.id}));
+      const values:any[] = snap.docs.map((d:any)=>({...d.data(), id:d.id}));
+      if (access.role==='owner' && name==='units') {
+        const localUnits=StorageService.getUnits();
+        if (localUnits.length>values.length && values.length>0) {
+          void webSyncCurrentUserNow();
+          onRefresh?.();
+          return;
+        }
+      }
       localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
       try {
-        if (name==='units') StorageService.saveUnits(values);
+        if (name==='units') StorageService.saveUnits(values as Unit[]);
         else if (name==='beds') StorageService.saveBeds(values);
         else StorageService.savePatients(values);
       } finally {
@@ -128,7 +144,7 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
     } else if (access.unitId) {
       const unitRef = webDoc(`${path(access.workspaceId,'units')}/${access.unitId}`);
       const unsubscribeUnit = onSnapshot(unitRef, snap => {
-        const values = snap.exists() ? [{...snap.data(), id:snap.id}] : [];
+        const values:Unit[] = snap.exists() ? [{...snap.data(), id:snap.id} as Unit] : [];
         localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
         try { StorageService.saveUnits(values); }
         finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
