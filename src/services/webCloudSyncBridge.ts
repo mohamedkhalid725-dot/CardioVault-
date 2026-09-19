@@ -17,7 +17,8 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
     const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};
     localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state)); return state;
   }
-  const stored=getStoredWorkspaceAccess(); if(stored)return stored;
+  // Never trust a cached workspace access state across Firebase accounts.
+  // Resolve membership from the currently authenticated UID every time.
   const member=await getDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${uid}`));
   if(!member.exists())return null;
   const m=member.data();
@@ -50,13 +51,25 @@ export async function webLoadCurrentUserFromCloud(){
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
     return {uid:user.uid,found:!!(units.length||beds.length||patients.length),access};
   }catch(error:any){
-    localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));return {uid:user.uid,found:false,access:null};
+    localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+    localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+    return {uid:user.uid,found:false,access:null};
   }
 }
 export async function webSyncCurrentUserNow(){
   const user=webCurrentUser(); if(!user?.uid)return false;
   try{
-    const access=await accessForUser(user.uid); if(!access||access.role==='view_only')return false;
+    const access=await accessForUser(user.uid);
+    if(!access){
+      localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+      localStorage.setItem(LAST_ERROR_DETAIL_KEY,'No CardioVault Workspace is assigned to this Firebase account. Redeem the Unit Access Code for this account first.');
+      return false;
+    }
+    if(access.role==='view_only'){
+      localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+      localStorage.setItem(LAST_ERROR_DETAIL_KEY,'This CardioVault account has view-only access and cannot upload changes.');
+      return false;
+    }
     const sync=async(name:string,records:any[],unitFilter:boolean)=>{
       const current=new Set<string>();
       for(const record of records){if(!record?.id)continue;if(unitFilter&&String(record.unitId)!==String(access.unitId))continue;current.add(String(record.id));await setDoc(webDoc(`${path(access.workspaceId,name)}/${record.id}`),{...safe(record),id:String(record.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true});}
