@@ -36,9 +36,43 @@ export function restoreLocalDataFromCloud(collection:'units'|'beds'|'patients',v
 
 async function migrateLegacyOwnerData(uid:string,legacyUnits:any[],legacyBeds:any[],legacyPatients:any[]):Promise<WorkspaceAccessState>{if(!(await isMasterAccount()))throw new Error('Legacy data migration is restricted to the Master Account.');await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}`,data:{ownerUid:uid,ownerEmail:'mohamedkhalid725@gmail.com',schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString(),migratedFromLegacy:true},merge:true});const copy=async(collection:string,records:any[])=>{for(const record of records){if(!record?.id)continue;const safe=firestoreSafe(record)||{};await FirebaseFirestore.setDocument({reference:`${workspacePath(MASTER_WORKSPACE_ID,collection)}/${record.id}`,data:{...safe,id:record.id},merge:true});}};await copy('units',legacyUnits);await copy('beds',legacyBeds);await copy('patients',legacyPatients);const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state));return state;}
 
-async function restoreMemberAccess(uid:string):Promise<WorkspaceAccessState|null>{try{const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${uid}`});const data=readSnapshotData(result?.snapshot);if(!data?.unitId||!data?.accessCodeHash)return null;const code:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${data.accessCodeHash}`});const codeData=readSnapshotData(code?.snapshot);if(!codeData?.active||codeData.workspaceId!==MASTER_WORKSPACE_ID)return null;let unitName=String(codeData.unitName||'');try{const unit:any=await FirebaseFirestore.getDocument({reference:`${workspacePath(MASTER_WORKSPACE_ID,'units')}/${data.unitId}`});unitName=String(readSnapshotData(unit?.snapshot)?.name||unitName);}catch{}const state:WorkspaceAccessState={workspaceId:MASTER_WORKSPACE_ID,role:(data.role==='view_only'?'view_only':'clinical_editor') as WorkspaceAccessState['role'],unitId:String(data.unitId),unitName};localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state));return state;}catch(error){console.warn('Member workspace restore failed:',error);return null;}}
+async function restoreMemberAccess(uid:string):Promise<WorkspaceAccessState|null>{
+  try{
+    const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${uid}`});
+    const data=readSnapshotData(result?.snapshot);
+    if(!data?.unitId||!data?.accessCodeHash){
+      recordCloudError(new Error('This Firebase account is not assigned to a CardioVault Unit. Redeem the Unit Access Code for this account first.'));
+      return null;
+    }
+    const code:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${data.accessCodeHash}`});
+    const codeData=readSnapshotData(code?.snapshot);
+    if(!codeData?.active||codeData.workspaceId!==MASTER_WORKSPACE_ID){
+      recordCloudError(new Error('The Unit Access Code assigned to this Firebase account is inactive or invalid.'));
+      return null;
+    }
+    let unitName=String(codeData.unitName||'');
+    try{
+      const unit:any=await FirebaseFirestore.getDocument({reference:`${workspacePath(MASTER_WORKSPACE_ID,'units')}/${data.unitId}`});
+      unitName=String(readSnapshotData(unit?.snapshot)?.name||unitName);
+    }catch{}
+    const state:WorkspaceAccessState={workspaceId:MASTER_WORKSPACE_ID,role:(data.role==='view_only'?'view_only':'clinical_editor') as WorkspaceAccessState['role'],unitId:String(data.unitId),unitName};
+    localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state));
+    return state;
+  }catch(error){
+    recordCloudError(error);
+    console.warn('Member workspace restore failed:',error);
+    return null;
+  }
+}
 
-async function resolveAccess():Promise<WorkspaceAccessState|null>{if(await isMasterAccount())return await ensureOwnerWorkspace();const stored=getStoredWorkspaceAccess();if(stored?.role==='view_only'||stored?.role==='clinical_editor')return stored;const id=await currentUid();if(!id)return null;return await restoreMemberAccess(id);}
+async function resolveAccess():Promise<WorkspaceAccessState|null>{
+  const id=await currentUid();
+  if(!id)return null;
+  if(await isMasterAccount())return await ensureOwnerWorkspace();
+  // Never reuse a cached workspace membership after the Firebase account changes.
+  // Resolve the membership from the currently authenticated UID.
+  return await restoreMemberAccess(id);
+}
 
 async function syncCollection(workspaceId:string,collection:string,records:any[],filter:(record:any)=>boolean,allowRemoteDelete:boolean):Promise<void>{const reference=workspacePath(workspaceId,collection);const currentIds=new Set<string>();for(const record of records){if(!record?.id||!filter(record))continue;const id=String(record.id);currentIds.add(id);const safe=firestoreSafe(record)||{};await withRetry(()=>FirebaseFirestore.setDocument({reference:`${reference}/${id}`,data:{...safe,id,updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},merge:true}));}if(!allowRemoteDelete)return;const remote=await getCollectionDocuments(reference);for(const item of remote){if(filter(item.data)&&!currentIds.has(item.id))await withRetry(()=>FirebaseFirestore.deleteDocument({reference:`${reference}/${item.id}`}));}}
 async function writeMetadata(workspaceId:string,uid:string,access:WorkspaceAccessState){await withRetry(()=>FirebaseFirestore.setDocument({reference:`workspaces/${workspaceId}/metadata/cloud`,data:{workspaceId,ownerUid:uid,lastClientSync:new Date().toISOString(),schemaVersion:SCHEMA_VERSION,role:access.role,unitId:access.unitId||null,platform:Capacitor.getPlatform()},merge:true}));}
