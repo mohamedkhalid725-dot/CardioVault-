@@ -1,7 +1,7 @@
 import { StorageService } from './storage';
 import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDb, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
-import { MASTER_WORKSPACE_ID, MASTER_ACCOUNT_EMAIL, getStoredWorkspaceAccess, type WorkspaceAccessState } from './workspaceAccess';
+import { MASTER_WORKSPACE_ID, MASTER_ACCOUNT_EMAIL, type WorkspaceAccessState } from './workspaceAccess';
 
 const SCHEMA_VERSION=12;
 const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
