@@ -1,4 +1,5 @@
 import { StorageService } from './storage';
+import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDb, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
 import { MASTER_WORKSPACE_ID, MASTER_ACCOUNT_EMAIL, getStoredWorkspaceAccess, type WorkspaceAccessState } from './workspaceAccess';
 
@@ -43,7 +44,9 @@ export async function webLoadCurrentUserFromCloud(){
       units=unit.exists()?[{...unit.data(),id:access.unitId}]:[];
       [beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'beds'),access.unitId),collectionData(path(access.workspaceId,'patients'),access.unitId)]);
     }
-    StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients);
+    localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
+    try { StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients); }
+    finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
     return {uid:user.uid,found:!!(units.length||beds.length||patients.length),access};
   }catch(error:any){
@@ -66,4 +69,74 @@ export async function webSyncCurrentUserNow(){
     await sync('patients',StorageService.getPatients(),access.role!=='owner');
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);return true;
   }catch(error:any){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));return false;}
+}
+
+
+let webRealtimeUnsubscribes: Array<()=>void> = [];
+
+export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<()=>void> {
+  for (const unsubscribe of webRealtimeUnsubscribes.splice(0)) {
+    try { unsubscribe(); } catch {}
+  }
+  const user = webCurrentUser();
+  if (!user?.uid) return () => {};
+  try {
+    const access = await accessForUser(user.uid);
+    if (!access) return () => {};
+
+    const persistCollection = (name:'units'|'beds'|'patients', snap:any) => {
+      const values = snap.docs.map((d:any)=>({...d.data(), id:d.id}));
+      localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
+      try {
+        if (name==='units') StorageService.saveUnits(values);
+        else if (name==='beds') StorageService.saveBeds(values);
+        else StorageService.savePatients(values);
+      } finally {
+        localStorage.removeItem('cardiovault_cloud_restore_in_progress');
+      }
+      localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());
+      onRefresh?.();
+    };
+
+    const listenCollection = (name:'units'|'beds'|'patients', unitId?:string) => {
+      const ref = webCollection(path(access.workspaceId,name));
+      const target = unitId ? query(ref, where('unitId','==',unitId)) : ref;
+      const unsubscribe = onSnapshot(target, snap => persistCollection(name,snap), error => {
+        localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+        localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+      });
+      webRealtimeUnsubscribes.push(unsubscribe);
+    };
+
+    if (access.role==='owner') {
+      listenCollection('units');
+      listenCollection('beds');
+      listenCollection('patients');
+    } else if (access.unitId) {
+      const unitRef = webDoc(`${path(access.workspaceId,'units')}/${access.unitId}`);
+      const unsubscribeUnit = onSnapshot(unitRef, snap => {
+        const values = snap.exists() ? [{...snap.data(), id:snap.id}] : [];
+        localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
+        try { StorageService.saveUnits(values); }
+        finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
+        localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());
+        onRefresh?.();
+      }, error => {
+        localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+        localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+      });
+      webRealtimeUnsubscribes.push(unsubscribeUnit);
+      listenCollection('beds',String(access.unitId));
+      listenCollection('patients',String(access.unitId));
+    }
+  } catch (error:any) {
+    localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+    localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+  }
+
+  return () => {
+    for (const unsubscribe of webRealtimeUnsubscribes.splice(0)) {
+      try { unsubscribe(); } catch {}
+    }
+  };
 }
