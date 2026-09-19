@@ -1,12 +1,17 @@
-name: CardioVault Privacy Policy Pages
+name: CardioVault Web App Pages
 
 on:
   push:
     branches:
       - main
     paths:
+      - src/**
+      - public/**
+      - index.html
+      - package.json
+      - vite.config.ts
+      - .github/workflows/web-pages.yml
       - privacy-policy.html
-      - .github/workflows/privacy-policy-pages.yml
   workflow_dispatch:
 
 permissions:
@@ -28,10 +33,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare privacy policy site
-        run: |
-          mkdir -p site
-          cp privacy-policy.html site/index.html
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build CardioVault Web App
+        run: npm run build
+
+      - name: Add Privacy Policy
+        run: cp privacy-policy.html dist/privacy-policy.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -39,7 +54,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: dist
 
       - name: Deploy to GitHub Pages
         id: deployment
