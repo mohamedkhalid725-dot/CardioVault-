@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { StorageService } from './storage';
-import { WorkspaceAccessState, MASTER_WORKSPACE_ID, ensureOwnerWorkspace, getStoredWorkspaceAccess, isMasterAccount } from './workspaceAccess';
+import { WorkspaceAccessState, MASTER_WORKSPACE_ID, ensureOwnerWorkspace, isMasterAccount } from './workspaceAccess';
 import { webCurrentUser } from './webFirebase';
 import { webLoadCurrentUserFromCloud, webSyncCurrentUserNow } from './webCloudSyncBridge';
 
