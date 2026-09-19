@@ -48,14 +48,15 @@ export async function webLoadCurrentUserFromCloud(){
     }
     // Never let an incomplete owner cloud snapshot erase a larger local unit registry.
     // If local has more units than cloud, keep the local registry and upload it on the next sync.
+    let preservedLocalOwnerUnits=false;
     if (access.role==='owner') {
       const localUnits=StorageService.getUnits();
-      if (localUnits.length>units.length && units.length>0) units=localUnits;
+      if (localUnits.length>units.length && units.length>0) { units=localUnits; preservedLocalOwnerUnits=true; }
     }
     localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
     try { StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients); }
     finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
-    if (access.role==='owner' && StorageService.getUnits().length>units.length) void webSyncCurrentUserNow();
+    if (preservedLocalOwnerUnits) void webSyncCurrentUserNow();
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
     return {uid:user.uid,found:!!(units.length||beds.length||patients.length),access};
   }catch(error:any){
