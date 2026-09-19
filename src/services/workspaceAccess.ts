@@ -1,6 +1,7 @@
 import {Capacitor} from '@capacitor/core';
 import {FirebaseAuthentication} from '@capacitor-firebase/authentication';
 import {FirebaseFirestore} from '@capacitor-firebase/firestore';
+import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc} from './webFirebase';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
 export interface WorkspaceAccessState{workspaceId:string;role:WorkspaceRole;unitId:string|null;unitName:string|null;}
 export interface UnitAccessCode{unitId:string;unitName:string;code:string;role:Exclude<WorkspaceRole,'owner'>;active:boolean;}
