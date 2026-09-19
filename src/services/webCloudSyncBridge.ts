@@ -13,7 +13,7 @@ const safe=(v:any):any=>JSON.parse(JSON.stringify(v??null));
 async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   const user=webCurrentUser();
   if(user?.email?.toLowerCase()===MASTER_ACCOUNT_EMAIL.toLowerCase()){
-    await setDoc(webDoc(MASTER_WORKSPACE_ID),{ownerUid:uid,ownerEmail:MASTER_ACCOUNT_EMAIL,schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString()},{merge:true});
+    await setDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}`),{ownerUid:uid,ownerEmail:MASTER_ACCOUNT_EMAIL,schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString()},{merge:true});
     const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};
     localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state)); return state;
   }
