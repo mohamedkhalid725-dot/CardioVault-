@@ -161,7 +161,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
       const uploadBatchId=Date.now();
       const preparedFiles = await Promise.all(imageFiles.map(file => optimizeClinicalImage(file)));
       const uploaded = await Promise.all(preparedFiles.map((file, index) => {
-        const path=`patients/${patient.id}/imaging/${activeStudyForUpload}/${uploadBatchId}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const path=`units/${patient.unitId}/patients/${patient.id}/imaging/${activeStudyForUpload}/${uploadBatchId}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         return uploadClinicalMedia(file,path).then(result=>({result,path}));
       }));
       const urls = uploaded.map(item => item.result.url);
