@@ -10,6 +10,23 @@ const sections=[['overview','Overview'],['history','History'],['vitals','Vitals 
 const val=(v:any,f='—')=>v===undefined||v===null||v===''?f:Array.isArray(v)?(v.length?v.join(', '):f):String(v);
 const short=(v:any,max=105)=>{const s=val(v,'');return s.length>max?`${s.slice(0,max-1)}…`:s;};
 
+const ARABIC_FONT_URL='https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoNaskhArabic/NotoNaskhArabic-Regular.ttf';
+const loadArabicPdfFont=async(doc:any)=>{
+ try{
+  const response=await fetch(ARABIC_FONT_URL,{cache:'force-cache'});
+  if(!response.ok)throw new Error('Arabic font request failed');
+  const buffer=await response.arrayBuffer();
+  const bytes=new Uint8Array(buffer);
+  let binary='';const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));
+  const base64=btoa(binary);
+  doc.addFileToVFS('NotoNaskhArabic-Regular.ttf',base64);
+  doc.addFont('NotoNaskhArabic-Regular.ttf','NotoNaskhArabic','normal');
+  doc.setFont('NotoNaskhArabic','normal');
+  if(typeof doc.setLanguage==='function')doc.setLanguage('ar-EG');
+ }catch(error){console.warn('Arabic PDF font unavailable; using PDF fallback font.',error);}
+};
+
 const imageData=async(url:string):Promise<string|null>=>{try{if(url.startsWith('data:image/'))return url;const controller=new AbortController();const timer=window.setTimeout(()=>controller.abort(),3500);const response=await fetch(url,{signal:controller.signal});window.clearTimeout(timer);if(!response.ok)return null;const blob=await response.blob();return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(typeof reader.result==='string'?reader.result:null);reader.onerror=()=>resolve(null);reader.readAsDataURL(blob);});}catch{return null;}};
 
 export const ExportSummarySectionV2:React.FC<{patient:Patient}>=({patient})=>{
@@ -18,7 +35,7 @@ export const ExportSummarySectionV2:React.FC<{patient:Patient}>=({patient})=>{
  useEffect(()=>()=>{if(previewUrl)URL.revokeObjectURL(previewUrl);},[previewUrl]);
  const closePreview=()=>{if(previewUrl)URL.revokeObjectURL(previewUrl);setPreviewUrl('');setPreview(false);};
  const exportPdf=async(saveToDevice=true)=>{if(!selected.length){showToast('Select at least one section.','error');return;}setBusy(true);try{
-  const doc=new jsPDF({unit:'mm',format:'a4',compress:true});let page=1;let y=48;
+  const doc=new jsPDF({unit:'mm',format:'a4',compress:true});await loadArabicPdfFont(doc);let page=1;let y=48;
   const navy=[9,38,70],teal=[12,113,116],cyan=[24,170,181],ink=[22,38,58],muted=[85,103,121],line=[205,218,226],pale=[235,247,249],danger=[186,42,55],gold=[214,156,31];
   const set=(kind:'fill'|'draw'|'text',c:number[])=>{if(kind==='fill')doc.setFillColor(c[0],c[1],c[2]);else if(kind==='draw')doc.setDrawColor(c[0],c[1],c[2]);else doc.setTextColor(c[0],c[1],c[2]);};
   const logo=()=>{set('fill',teal);doc.circle(20,13,5,'F');doc.circle(27,13,5,'F');doc.triangle(15.5,15,31.5,15,23.5,25,'F');doc.setDrawColor(255,255,255);doc.setLineWidth(.65);doc.line(16.5,17,19.5,17);doc.line(19.5,17,21.2,12);doc.line(21.2,12,23,20);doc.line(23,20,25.2,14.5);doc.line(25.2,14.5,27,17);doc.line(27,17,30,17);};
