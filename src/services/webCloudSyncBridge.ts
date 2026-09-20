@@ -11,6 +11,7 @@ const LAST_ERROR_KEY='cardiovault_last_cloud_sync_error';
 const LAST_ERROR_DETAIL_KEY='cardiovault_last_cloud_sync_error_detail';
 const path=(workspace:string,collection:string)=>`workspaces/${workspace}/${collection}`;
 const safe=(v:any):any=>JSON.parse(JSON.stringify(v??null));
+const withTimeout=<T,>(promise:Promise<T>,timeoutMs=15000):Promise<T>=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Cloud sync operation timed out.')),timeoutMs);promise.then(v=>{clearTimeout(timer);resolve(v);},e=>{clearTimeout(timer);reject(e);});});
 
 async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   const user=webCurrentUser();
@@ -84,7 +85,7 @@ export async function webSyncCurrentUserNow(){
     }
     const sync=async(name:string,records:any[],unitFilter:boolean)=>{
       const current=new Set<string>();
-      for(const record of records){if(!record?.id)continue;if(unitFilter&&String(record.unitId)!==String(access.unitId))continue;current.add(String(record.id));await setDoc(webDoc(`${path(access.workspaceId,name)}/${record.id}`),{...safe(record),id:String(record.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true});}
+      for(const record of records){if(!record?.id)continue;if(unitFilter&&String(record.unitId)!==String(access.unitId))continue;current.add(String(record.id));await withTimeout(setDoc(webDoc(`${path(access.workspaceId,name)}/${record.id}`),{...safe(record),id:String(record.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true}));}
       if(access.role==='owner'){
         const remote=await collectionData(path(access.workspaceId,name));for(const item of remote)if(!current.has(String(item.id)))await deleteDoc(webDoc(`${path(access.workspaceId,name)}/${item.id}`));
       }
