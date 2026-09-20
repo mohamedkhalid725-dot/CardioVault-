@@ -16,6 +16,12 @@ set public = false,
     file_size_limit = 10485760,
     allowed_mime_types = excluded.allowed_mime_types;
 
+-- Re-runnable policy setup.
+drop policy if exists "CardioVault Firebase users can upload clinical images" on storage.objects;
+drop policy if exists "CardioVault users can read their own clinical images" on storage.objects;
+drop policy if exists "CardioVault users can update their own clinical images" on storage.objects;
+drop policy if exists "CardioVault users can delete their own clinical images" on storage.objects;
+
 -- Only accept Firebase JWTs issued for CardioVault's Firebase project.
 -- Storage assigns owner_id from the JWT sub claim when an object is created.
 -- SELECT/DELETE/UPDATE are then restricted to that same Firebase user.
