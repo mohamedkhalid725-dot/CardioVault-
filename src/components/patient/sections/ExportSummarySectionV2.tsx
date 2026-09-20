@@ -5,6 +5,7 @@ import {Patient}from'../../../types/clinical';
 import {useApp}from'../../../context/AppContext';
 import {Capacitor}from'@capacitor/core';
 import {Directory,Filesystem}from'@capacitor/filesystem';
+import {installArabicTextSupport}from'../../../services/pdfArabicSupport';
 
 const sections=[['overview','Overview'],['history','History'],['vitals','Vitals & Balance'],['ecg','ECG'],['examination','Examination'],['cardiology','Cardiology'],['medications','Medications'],['icu','ICU / Ventilator'],['imaging','Imaging'],['labs','Laboratory'],['procedures','Procedures'],['calculators','Calculators'],['progress','Progress Notes'],['timeline','Timeline (Chronological)']] as const;
 const val=(v:any,f='—')=>v===undefined||v===null||v===''?f:Array.isArray(v)?(v.length?v.join(', '):f):String(v);
@@ -35,7 +36,7 @@ export const ExportSummarySectionV2:React.FC<{patient:Patient}>=({patient})=>{
  useEffect(()=>()=>{if(previewUrl)URL.revokeObjectURL(previewUrl);},[previewUrl]);
  const closePreview=()=>{if(previewUrl)URL.revokeObjectURL(previewUrl);setPreviewUrl('');setPreview(false);};
  const exportPdf=async(saveToDevice=true)=>{if(!selected.length){showToast('Select at least one section.','error');return;}setBusy(true);try{
-  const doc=new jsPDF({unit:'mm',format:'a4',compress:true});await loadArabicPdfFont(doc);let page=1;let y=48;
+  const doc=new jsPDF({unit:'mm',format:'a4',compress:true});installArabicTextSupport(doc);let page=1;let y=48;
   const navy=[9,38,70],teal=[12,113,116],cyan=[24,170,181],ink=[22,38,58],muted=[85,103,121],line=[205,218,226],pale=[235,247,249],danger=[186,42,55],gold=[214,156,31];
   const set=(kind:'fill'|'draw'|'text',c:number[])=>{if(kind==='fill')doc.setFillColor(c[0],c[1],c[2]);else if(kind==='draw')doc.setDrawColor(c[0],c[1],c[2]);else doc.setTextColor(c[0],c[1],c[2]);};
   const logo=()=>{set('fill',teal);doc.circle(20,13,5,'F');doc.circle(27,13,5,'F');doc.triangle(15.5,15,31.5,15,23.5,25,'F');doc.setDrawColor(255,255,255);doc.setLineWidth(.65);doc.line(16.5,17,19.5,17);doc.line(19.5,17,21.2,12);doc.line(21.2,12,23,20);doc.line(23,20,25.2,14.5);doc.line(25.2,14.5,27,17);doc.line(27,17,30,17);};
@@ -79,7 +80,7 @@ export const ExportSummarySectionV2:React.FC<{patient:Patient}>=({patient})=>{
   if(has('timeline')){title('Timeline (Chronological)','blue');table(['Added At','Activity','Fields'],(patient.auditTrail||[]).slice(0,14).map(e=>[new Date(e.timestamp).toLocaleString(),short(e.action,42),short((e.fields||[]).join(', '),70)]),[48,56,78],7);}
   if(has('progress')||has('overview')){title('Current Plan','blue');paragraph('Plan',patient.progressNotes?.[0]?.plan||'Continue monitoring, routine investigations, and treatment according to the active clinical plan.',145);title('Disposition / Transfer Goal','gold');paragraph('Goal',patient.isArchived?'Discharged / Archived':'Pending clinical stabilization and ongoing observation.',145);}
   footer();
-  const blob=doc.output('blob');const previewObjectUrl=URL.createObjectURL(blob);if(previewUrl)URL.revokeObjectURL(previewUrl);setPreviewUrl(previewObjectUrl);setPreview(true);
+  const blob=doc.output('blob');const pdfDataUri=doc.output('datauristring');if(previewUrl)URL.revokeObjectURL(previewUrl);setPreviewUrl(pdfDataUri);setPreview(true);
 const filename=`CardioVault-${patient.mrn||patient.id}.pdf`;
 if(saveToDevice){
  if(Capacitor.isNativePlatform()){
