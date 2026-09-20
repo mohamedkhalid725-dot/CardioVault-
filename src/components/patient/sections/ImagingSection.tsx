@@ -145,7 +145,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
         return uploadClinicalMedia(file,path).then(result=>({result,path}));
       }));
       const urls = uploaded.map(item => item.result.url);
-      const paths = uploaded.map(item => item.path);
+      const paths = uploaded.filter(item => item.result.cloud).map(item => item.result.storagePath || item.path);
       persist(studies.map(s => s.id === activeStudyForUpload
         ? { ...s, imageUrls: [...(s.imageUrls || []), ...urls], imageStoragePaths: [...(s.imageStoragePaths || []), ...paths] }
         : s
