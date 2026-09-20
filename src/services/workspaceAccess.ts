@@ -2,6 +2,7 @@ import {Capacitor} from '@capacitor/core';
 import {FirebaseAuthentication} from '@capacitor-firebase/authentication';
 import {FirebaseFirestore} from '@capacitor-firebase/firestore';
 import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc} from './webFirebase';
+import { isSupabaseStorageConfigured, registerSupabaseUnitAccessCode, revokeSupabaseUnitAccessCode, redeemSupabaseUnitAccessCode } from './supabaseStorage';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
 export interface WorkspaceAccessState{workspaceId:string;role:WorkspaceRole;unitId:string|null;unitName:string|null;}
 export interface UnitAccessCode{unitId:string;unitName:string;code:string;role:Exclude<WorkspaceRole,'owner'>;active:boolean;}
@@ -24,6 +25,11 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   const code=raw.trim().toUpperCase();
   if(code.length<6)throw new Error('Invalid Unit Access Code.');
   const accessCodeHash=await hash(code);
+  let supabaseAccess: { unitId:string; unitName:string; role:'view_only'|'clinical_editor' } | null = null;
+  if (isSupabaseStorageConfigured()) {
+    try { supabaseAccess = await redeemSupabaseUnitAccessCode(code); }
+    catch (error) { console.warn('Supabase Unit membership redemption failed:', error); }
+  }
   let access:any;
   if(Capacitor.isNativePlatform()){
     const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${accessCodeHash}`});
@@ -32,6 +38,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
     const result=await webGetDoc(webDoc(`accessCodes/${accessCodeHash}`));
     access=result.exists()?result.data():null;
   }
+  if(supabaseAccess) access={...access,unitId:supabaseAccess.unitId,unitName:supabaseAccess.unitName,role:supabaseAccess.role};
   if(!access?.active||access.workspaceId!==MASTER_WORKSPACE_ID||!access.unitId)throw new Error('Invalid or inactive Unit Access Code.');
   const membership={uid:id,workspaceId:MASTER_WORKSPACE_ID,unitId:access.unitId,role:access.role==='view_only'?'view_only':'clinical_editor',accessCodeHash,joinedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(Capacitor.isNativePlatform()){
