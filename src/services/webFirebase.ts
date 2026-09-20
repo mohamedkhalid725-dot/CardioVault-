@@ -74,14 +74,3 @@ export async function uploadMediaToStorage(file: Blob, path: string): Promise<st
 export async function deleteMediaFromStorage(path: string): Promise<void> {
   await deleteObject(storageRef(webStorage, path));
 }
-
-
-export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
-  const ref = storageRef(webStorage, path);
-  const snapshot = await uploadBytes(ref, file, { contentType: file.type || 'application/octet-stream' });
-  return getDownloadURL(snapshot.ref);
-}
-
-export async function deleteMediaFromStorage(path: string): Promise<void> {
-  await deleteObject(storageRef(webStorage, path));
-}
