@@ -52,7 +52,6 @@ export async function notifyClinicalData(
           body: message,
           channelId: CHANNEL_ID,
           schedule: { at: new Date(Date.now() + 250) },
-          smallIcon: 'ic_stat_icon_config_sample',
           extra: { type: 'clinical-data-update' },
         },
       ],
