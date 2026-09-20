@@ -13,6 +13,33 @@ const path=(workspace:string,collection:string)=>`workspaces/${workspace}/${coll
 const safe=(v:any):any=>JSON.parse(JSON.stringify(v??null));
 const withTimeout=<T,>(promise:Promise<T>,timeoutMs=15000):Promise<T>=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Cloud sync operation timed out.')),timeoutMs);promise.then(v=>{clearTimeout(timer);resolve(v);},e=>{clearTimeout(timer);reject(e);});});
 
+
+function mergeClinicalMedia(localPatient:any, cloudPatient:any): any {
+  if (!localPatient || !cloudPatient) return cloudPatient;
+  const mergeRecords = (cloudRecords:any[], localRecords:any[]) => {
+    if (!Array.isArray(cloudRecords)) return cloudRecords;
+    const localById = new Map((Array.isArray(localRecords) ? localRecords : []).map((record:any) => [String(record?.id || ''), record]));
+    return cloudRecords.map((cloudRecord:any) => {
+      const localRecord = localById.get(String(cloudRecord?.id || ''));
+      if (!localRecord) return cloudRecord;
+      const cloudUrls = Array.isArray(cloudRecord?.imageUrls) ? cloudRecord.imageUrls : [];
+      const localUrls = Array.isArray(localRecord?.imageUrls) ? localRecord.imageUrls : [];
+      const cloudPaths = Array.isArray(cloudRecord?.imageStoragePaths) ? cloudRecord.imageStoragePaths : [];
+      const localPaths = Array.isArray(localRecord?.imageStoragePaths) ? localRecord.imageStoragePaths : [];
+      const imageUrls = [...cloudUrls, ...localUrls.filter((url:any) => !cloudUrls.includes(url))];
+      const imageStoragePaths = [...cloudPaths, ...localPaths.filter((p:any) => !cloudPaths.includes(p))];
+      return { ...cloudRecord, imageUrls, imageStoragePaths };
+    });
+  };
+  const merged = { ...cloudPatient };
+  merged.ecgRecords = mergeRecords(cloudPatient.ecgRecords, localPatient.ecgRecords);
+  merged.imaging = mergeRecords(Array.isArray(cloudPatient.imaging) ? cloudPatient.imaging : [], Array.isArray(localPatient.imaging) ? localPatient.imaging : []);
+  if (Array.isArray(cloudPatient.imagingStudies)) {
+    merged.imagingStudies = mergeRecords(cloudPatient.imagingStudies, localPatient.imagingStudies);
+  }
+  return merged;
+}
+
 async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   const user=webCurrentUser();
   if(user?.email?.toLowerCase()===MASTER_ACCOUNT_EMAIL.toLowerCase()){
@@ -57,6 +84,12 @@ export async function webLoadCurrentUserFromCloud(){
     }
     const reconciled=reconcileClinicalRegistry(units,beds,patients);
     units=reconciled.units; beds=reconciled.beds; patients=reconciled.patients;
+    const localPatients=StorageService.getPatients();
+    const localById=new Map(localPatients.map((patient:any)=>[String(patient?.id||''),patient]));
+    patients=patients.map((cloudPatient:any)=>{
+      const localPatient=localById.get(String(cloudPatient?.id||''));
+      return localPatient ? mergeClinicalMedia(localPatient,cloudPatient) : cloudPatient;
+    });
     localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
     try { StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients); }
     finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
@@ -124,7 +157,15 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
       try {
         if (name==='units') StorageService.saveUnits(values as Unit[]);
         else if (name==='beds') StorageService.saveBeds(values);
-        else StorageService.savePatients(values);
+        else {
+          const localPatients=StorageService.getPatients();
+          const localById=new Map(localPatients.map((patient:any)=>[String(patient?.id||''),patient]));
+          const mergedPatients=values.map((cloudPatient:any)=>{
+            const localPatient=localById.get(String(cloudPatient?.id||''));
+            return localPatient ? mergeClinicalMedia(localPatient,cloudPatient) : cloudPatient;
+          });
+          StorageService.savePatients(mergedPatients);
+        }
       } finally {
         localStorage.removeItem('cardiovault_cloud_restore_in_progress');
       }
