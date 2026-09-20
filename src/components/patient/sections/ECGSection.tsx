@@ -4,6 +4,7 @@ import { ECGRecord, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
 import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { uploadClinicalMedia } from '../../../services/mediaStorage';
 
 interface Props { patient: Patient; }
 const blank = (): ECGRecord => ({ id: '', date: new Date().toISOString().split('T')[0], time: new Date().toTimeString().slice(0, 5), heartRate: 0, rhythm: '', regularity: '', axis: '', pr: 0, qrs: 0, qt: 0, qtc: 0, pWave: '', qrsFindings: '', stSegment: '', tWave: '', otherFindings: '', interpretation: [], finalImpression: '', imageUrls: [] });
