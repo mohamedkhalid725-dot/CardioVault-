@@ -57,6 +57,28 @@ export function isSupabaseStoragePath(path: string): boolean {
   return path.startsWith('supabase:');
 }
 
+export async function registerSupabaseUnitAccessCode(code: string, unitId: string, unitName: string, role: 'view_only' | 'clinical_editor'): Promise<void> {
+  const { error } = await getClient().rpc('cardio_register_access_code', { p_code: code, p_unit_id: unitId, p_unit_name: unitName, p_role: role });
+  if (error) throw unwrapSupabaseError(error, 'access-code registration');
+}
+
+export async function revokeSupabaseUnitAccessCode(code: string): Promise<void> {
+  const { error } = await getClient().rpc('cardio_revoke_access_code', { p_code: code });
+  if (error) throw unwrapSupabaseError(error, 'access-code revocation');
+}
+
+export async function redeemSupabaseUnitAccessCode(code: string): Promise<{ unitId: string; unitName: string; role: 'view_only' | 'clinical_editor' }> {
+  const { data, error } = await getClient().rpc('cardio_redeem_access_code', { p_code: code });
+  if (error) throw unwrapSupabaseError(error, 'access-code redemption');
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.unit_id) throw new Error('Supabase did not return a Unit membership.');
+  return {
+    unitId: String(row.unit_id),
+    unitName: String(row.unit_name || 'Unit'),
+    role: row.role === 'view_only' ? 'view_only' : 'clinical_editor',
+  };
+}
+
 export async function uploadToSupabaseStorage(file: Blob, path: string): Promise<string> {
   const storagePath = cleanPath(path);
   const { data, error } = await getClient().storage.from(SUPABASE_CLINICAL_BUCKET).upload(storagePath, file, {
