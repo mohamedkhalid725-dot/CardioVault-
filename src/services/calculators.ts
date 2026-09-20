@@ -3,12 +3,104 @@
 export interface CalculatorDefinition {
   id: string;
   name: string;
-  category: 'Cardiology' | 'Critical Care' | 'ABG' | 'Hemodynamics' | 'Renal & Electrolytes' | 'Drug Infusion';
+  category: 'Cardiology' | 'Emergency & Risk' | 'Critical Care' | 'ABG' | 'Hemodynamics' | 'Renal & Electrolytes' | 'Drug Infusion';
   subtitle: string;
   description: string;
 }
 
-export const CLINICAL_CALCULATORS: CalculatorDefinition[] = [
+export const CLINICAL_CALCULATORS: CalculatorDefinition[] = [ 
+  {
+    id: 'grace-acs',
+    name: 'GRACE Score',
+    category: 'Cardiology',
+    subtitle: 'ACS risk stratification',
+    description: 'GRACE risk score inputs for acute coronary syndrome risk assessment.',
+  },
+  {
+    id: 'timi-stemi',
+    name: 'TIMI Risk Score (STEMI)',
+    category: 'Cardiology',
+    subtitle: 'STEMI risk stratification',
+    description: 'TIMI risk score for patients with ST-elevation myocardial infarction.',
+  },
+  {
+    id: 'dapt-score',
+    name: 'DAPT Score',
+    category: 'Cardiology',
+    subtitle: 'Extended DAPT assessment',
+    description: 'Estimates benefit and bleeding trade-off considerations for prolonged dual antiplatelet therapy after PCI.',
+  },
+  {
+    id: 'precise-dapt',
+    name: 'PRECISE-DAPT',
+    category: 'Cardiology',
+    subtitle: 'DAPT bleeding risk',
+    description: 'Five-item bleeding risk score using age, hemoglobin, white-cell count, creatinine clearance and prior bleeding.',
+  },
+  {
+    id: 'wells-pe',
+    name: 'Wells Score — PE',
+    category: 'Emergency & Risk',
+    subtitle: 'Pulmonary embolism pretest probability',
+    description: 'Clinical pretest probability score for suspected pulmonary embolism.',
+  },
+  {
+    id: 'wells-dvt',
+    name: 'Wells Score — DVT',
+    category: 'Emergency & Risk',
+    subtitle: 'DVT pretest probability',
+    description: 'Clinical pretest probability score for suspected lower-extremity deep-vein thrombosis.',
+  },
+  {
+    id: 'perc-rule',
+    name: 'PERC Rule',
+    category: 'Emergency & Risk',
+    subtitle: 'PE rule-out criteria',
+    description: 'Eight-item pulmonary embolism rule-out checklist for selected low-risk patients.',
+  },
+  {
+    id: 'revised-geneva',
+    name: 'Revised Geneva Score',
+    category: 'Emergency & Risk',
+    subtitle: 'PE pretest probability',
+    description: 'Clinical and objective pretest probability score for pulmonary embolism.',
+  },
+  {
+    id: 'curb-65',
+    name: 'CURB-65',
+    category: 'Emergency & Risk',
+    subtitle: 'Community-acquired pneumonia severity',
+    description: 'Five-item severity score for community-acquired pneumonia.',
+  },
+  {
+    id: 'orbit-bleeding',
+    name: 'ORBIT Bleeding Score',
+    category: 'Emergency & Risk',
+    subtitle: 'Bleeding risk in AF',
+    description: 'Bleeding risk score for patients with atrial fibrillation receiving antithrombotic therapy.',
+  },
+  {
+    id: 'crusade-bleeding',
+    name: 'CRUSADE Bleeding Score',
+    category: 'Emergency & Risk',
+    subtitle: 'NSTE-ACS bleeding risk',
+    description: 'Bleeding risk assessment for patients with non-ST-elevation acute coronary syndrome.',
+  },
+  {
+    id: 'four-ts',
+    name: '4Ts Score',
+    category: 'Emergency & Risk',
+    subtitle: 'HIT pretest probability',
+    description: 'Pretest probability score for heparin-induced thrombocytopenia.',
+  },
+  {
+    id: 'ist-dic',
+    name: 'ISTH DIC Score',
+    category: 'Emergency & Risk',
+    subtitle: 'Overt DIC scoring',
+    description: 'ISTH overt disseminated intravascular coagulation scoring framework.',
+  },
+
   {
     id: 'cha2ds2-vasc',
     name: 'CHA₂DS₂-VASc',
@@ -131,6 +223,82 @@ export const CLINICAL_CALCULATORS: CalculatorDefinition[] = [
 ];
 
 export const MedicalCalculators = {
+  // GRACE ACS (points are entered using the published category bins)
+  calcGRACE(inputs: { age:number; hr:number; sbp:number; creatinine:number; killip:number; cardiacArrest:boolean; stDeviation:boolean; elevatedMarkers:boolean }) {
+    const agePts = inputs.age < 40 ? 0 : inputs.age < 50 ? 18 : inputs.age < 60 ? 36 : inputs.age < 70 ? 55 : inputs.age < 80 ? 73 : inputs.age < 90 ? 91 : 100;
+    const hrPts = inputs.hr < 50 ? 0 : inputs.hr < 70 ? 3 : inputs.hr < 90 ? 9 : inputs.hr < 110 ? 14 : inputs.hr < 150 ? 23 : inputs.hr < 200 ? 36 : 46;
+    const sbpPts = inputs.sbp >= 200 ? 0 : inputs.sbp >= 180 ? 3 : inputs.sbp >= 160 ? 7 : inputs.sbp >= 140 ? 11 : inputs.sbp >= 120 ? 15 : inputs.sbp >= 100 ? 24 : inputs.sbp >= 80 ? 38 : 58;
+    const crPts = inputs.creatinine < 0.4 ? 1 : inputs.creatinine < 0.8 ? 4 : inputs.creatinine < 1.2 ? 7 : inputs.creatinine < 1.6 ? 10 : inputs.creatinine < 2.0 ? 13 : inputs.creatinine < 4.0 ? 21 : 28;
+    const killipPts = [0,20,39,59,79][Math.max(1,Math.min(4,Math.round(inputs.killip)))];
+    const score = agePts + hrPts + sbpPts + crPts + killipPts + (inputs.cardiacArrest?39:0) + (inputs.stDeviation?28:0) + (inputs.elevatedMarkers?14:0);
+    const risk = score < 109 ? 'Low' : score < 141 ? 'Intermediate' : 'High';
+    return {score,risk};
+  },
+
+  calcTIMISTEMI(inputs:{age65Plus:boolean;weightUnder67:boolean;diabetesHypertension:boolean;sbpUnder100:boolean;hrOver100:boolean;killipIItoIV:boolean;anteriorSTOrLBBB:boolean;timeToTreatmentOver4h:boolean}) {
+    let score=0;
+    if(inputs.age65Plus)score+=1;if(inputs.weightUnder67)score+=1;if(inputs.diabetesHypertension)score+=1;if(inputs.sbpUnder100)score+=3;if(inputs.hrOver100)score+=2;if(inputs.killipIItoIV)score+=2;if(inputs.anteriorSTOrLBBB)score+=1;if(inputs.timeToTreatmentOver4h)score+=1;
+    return {score,risk:score<=2?'Lower':score<=4?'Intermediate':'Higher'};
+  },
+
+  calcDAPT(inputs:{age:number;smoker:boolean;diabetes:boolean;miAtPresentation:boolean;priorPciOrMi:boolean;stentDiameterSmall:boolean;paclitaxelStent:boolean;chfOrLvefLow:boolean;veinGraftStent:boolean}) {
+    let score=0;
+    if(inputs.age>=75)score-=2;else if(inputs.age>=65)score-=1;
+    if(inputs.smoker)score+=1;if(inputs.diabetes)score+=1;if(inputs.miAtPresentation)score+=1;if(inputs.priorPciOrMi)score+=1;if(inputs.stentDiameterSmall)score+=1;if(inputs.paclitaxelStent)score+=1;if(inputs.chfOrLvefLow)score+=2;if(inputs.veinGraftStent)score+=2;
+    return {score,interpretation:score>=2?'Score ≥2: greater net benefit from prolonged DAPT in the original DAPT study population.':'Score <2: less favorable benefit-to-risk balance for prolonged DAPT in the original DAPT study population.'};
+  },
+
+  calcPreciseDAPT(inputs:{age:number;hemoglobin:number;wbc:number;crcl:number;priorBleeding:boolean}) {
+    const score= Math.round((inputs.age*0.1) + Math.max(0,15-inputs.hemoglobin)*2 + Math.max(0,inputs.wbc-10)*1.5 + Math.max(0,30-inputs.crcl)*0.2 + (inputs.priorBleeding?10:0));
+    return {score,risk:score>=25?'High':score>=11?'Intermediate':'Low'};
+  },
+
+  calcWellsPE(inputs:{clinicalDvt:boolean;peMostLikely:boolean;hrOver100:boolean;previousVte:boolean;hemoptysis:boolean;malignancy:boolean}) {
+    const score=(inputs.clinicalDvt?3:0)+(inputs.peMostLikely?3:0)+(inputs.hrOver100?1.5:0)+(inputs.previousVte?1.5:0)+(inputs.hemoptysis?1:0)+(inputs.malignancy?1:0);
+    return {score,risk:score<=1?'Low':score<=6?'Moderate':'High',twoTier:score>4?'PE likely':'PE unlikely'};
+  },
+
+  calcWellsDVT(inputs:{activeCancer:boolean;paralysisOrParesis:boolean;immobilizedOrSurgery:boolean;localizedTenderness:boolean;entireLegSwollen:boolean;calfSwelling3cm:boolean;pittingEdema:boolean;collateralSuperficialVeins:boolean;previousDvt:boolean;alternativeDiagnosisLikely:boolean}) {
+    const score=(inputs.activeCancer?1:0)+(inputs.paralysisOrParesis?1:0)+(inputs.immobilizedOrSurgery?1:0)+(inputs.localizedTenderness?1:0)+(inputs.entireLegSwollen?1:0)+(inputs.calfSwelling3cm?1:0)+(inputs.pittingEdema?1:0)+(inputs.collateralSuperficialVeins?1:0)+(inputs.previousDvt?1:0)-(inputs.alternativeDiagnosisLikely?2:0);
+    return {score,risk:score>=2?'DVT likely':'DVT unlikely'};
+  },
+
+  calcPERC(inputs:{age50Plus:boolean;hr100Plus:boolean;oxygenSat95Below:boolean;unilateralLegSwelling:boolean;hemoptysis:boolean;recentSurgeryTrauma:boolean;priorVte:boolean;hormoneUse:boolean}) {
+    const positive=Object.values(inputs).filter(Boolean).length;
+    return {score:positive,negative:positive===0,result:positive===0?'PERC negative':'PERC positive'};
+  },
+
+  calcRevisedGeneva(inputs:{age65Plus:boolean;previousVte:boolean;surgeryOrFracture:boolean;activeCancer:boolean;unilateralLegPain:boolean;hemoptysis:boolean;hr75to94:boolean;hr95Plus:boolean;legPainOnPalpation:boolean}) {
+    let score=0;
+    if(inputs.age65Plus)score+=1;if(inputs.previousVte)score+=3;if(inputs.surgeryOrFracture)score+=2;if(inputs.activeCancer)score+=2;if(inputs.unilateralLegPain)score+=3;if(inputs.hemoptysis)score+=2;if(inputs.hr75to94)score+=3;if(inputs.hr95Plus)score+=5;if(inputs.legPainOnPalpation)score+=4;
+    return {score,risk:score<=3?'Low':score<=10?'Intermediate':'High'};
+  },
+
+  calcCURB65(inputs:{confusion:boolean;ureaOver7:boolean;rr30Plus:boolean;sbp90OrDbp60:boolean;age65Plus:boolean}) {
+    const score=(inputs.confusion?1:0)+(inputs.ureaOver7?1:0)+(inputs.rr30Plus?1:0)+(inputs.sbp90OrDbp60?1:0)+(inputs.age65Plus?1:0);
+    return {score,risk:score<=1?'Lower':score===2?'Intermediate':'Higher'};
+  },
+
+  calcORBIT(inputs:{age74Plus:boolean;hemoglobinLow:boolean;bleedingHistory:boolean;renalInsufficiency:boolean;antiplatelet:boolean}) {
+    const score=(inputs.age74Plus?1:0)+(inputs.hemoglobinLow?2:0)+(inputs.bleedingHistory?2:0)+(inputs.renalInsufficiency?1:0)+(inputs.antiplatelet?1:0);
+    return {score,risk:score<=2?'Low':score<=4?'Intermediate':'High'};
+  },
+
+  calcCRUSADE(inputs:{female:boolean;diabetes:boolean;vascularDisease:boolean;heartRate:number;systolicBp:number;hematocrit:number;creatinine:number}) {
+    const score=(inputs.female?8:0)+(inputs.diabetes?6:0)+(inputs.vascularDisease?4:0)+(inputs.heartRate>=110?9:inputs.heartRate>=90?6:inputs.heartRate>=70?3:0)+(inputs.systolicBp<90?10:inputs.systolicBp<110?8:inputs.systolicBp<120?5:inputs.systolicBp<140?1:0)+(inputs.hematocrit<30?9:inputs.hematocrit<36?7:inputs.hematocrit<40?3:0)+(inputs.creatinine>=4?28:inputs.creatinine>=2?17:inputs.creatinine>=1.5?10:inputs.creatinine>=1?7:0);
+    return {score,risk:score<20?'Very Low':score<30?'Low':score<40?'Moderate':score<50?'High':'Very High'};
+  },
+
+  calcFourTs(inputs:{thrombocytopenia:number;timing:number;thrombosis:number;otherCause:number}) {
+    const score=inputs.thrombocytopenia+inputs.timing+inputs.thrombosis+inputs.otherCause;
+    return {score,risk:score<=3?'Low':score<=5?'Intermediate':'High'};
+  },
+
+  calcISTHDIC(inputs:{platelet:number;fibrinMarker:number;ptProlongation:number;fibrinogen:number}) {
+    const score=(inputs.platelet<50?2:inputs.platelet<100?1:0)+(inputs.fibrinMarker>=3?3:inputs.fibrinMarker>=1?2:0)+(inputs.ptProlongation>=6?2:inputs.ptProlongation>=3?1:0)+(inputs.fibrinogen<100?1:0);
+    return {score,risk:score>=5?'Overt DIC score compatible':'Non-overt / lower score'};
+  },
+
   // CHA2DS2-VASc
   calcCHA2DS2VASc(inputs: {
     chf: boolean;
