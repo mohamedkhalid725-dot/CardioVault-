@@ -21,6 +21,8 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
   const [editingStudyId, setEditingStudyId] = useState<string | null>(null);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [activeStudyForUpload, setActiveStudyForUpload] = useState<string | null>(null);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [savingStudy, setSavingStudy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [studyType, setStudyType] = useState('Chest X-ray');
@@ -82,6 +84,8 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
 
   const handleSaveStudy = (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingStudy) return;
+    setSavingStudy(true);
     if (!findings.trim() || !impression.trim()) {
       showToast('Please provide findings and impression', 'error');
       return;
@@ -116,6 +120,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
       showToast('New imaging study recorded', 'success');
     }
     setShowAddModal(false);
+    setSavingStudy(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,6 +134,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
       return;
     }
 
+    setUploadingImages(true);
     try {
       const uploaded = await Promise.all(imageFiles.map((file, index) =>
         uploadClinicalMedia(file, `patients/${patient.id}/imaging/${activeStudyForUpload}/${Date.now()}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
@@ -144,6 +150,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
       console.error('Scan image upload failed:', error);
       showToast('One or more images could not be uploaded.', 'error');
     } finally {
+      setUploadingImages(false);
       setActiveStudyForUpload(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -193,7 +200,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
                 <div><h3 className="text-base font-bold text-slate-900 dark:text-white">{study.modality} — {study.region}</h3><p className="text-xs text-slate-500 dark:text-slate-400">{study.date} • Indication: {study.indication}</p></div>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto">
-                <button onClick={() => { setActiveStudyForUpload(study.id); fileInputRef.current?.click(); }} className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5"><Upload className="w-3.5 h-3.5 text-cyan-500" /> Upload Scan</button>
+                <button onClick={() => { if (uploadingImages) return; setActiveStudyForUpload(study.id); fileInputRef.current?.click(); }} disabled={uploadingImages} className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5">{uploadingImages ? 'Uploading…' : <><Upload className="w-3.5 h-3.5 text-cyan-500" /> Upload Scan</>}</button>
                 <button onClick={() => handleOpenEdit(study)} className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" title="Edit Study"><Edit2 className="w-3.5 h-3.5" /></button>
                 <button onClick={() => handleDeleteStudy(study.id)} className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-500" title="Delete Study"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
@@ -244,7 +251,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
               <div><label className="block text-slate-500 dark:text-slate-400 font-medium mb-1">Clinical Indication</label><input value={indication} onChange={e => setIndication(e.target.value)} placeholder="e.g. Line confirmation, acute dyspnea, stroke rule-out" className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white" /></div>
               <div><label className="block text-slate-500 dark:text-slate-400 font-medium mb-1">Findings</label><textarea value={findings} onChange={e => setFindings(e.target.value)} rows={3} placeholder="Detailed anatomical observations, line positions, lung fields..." className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white" /></div>
               <div><label className="block text-slate-500 dark:text-slate-400 font-medium mb-1">Impression</label><textarea value={impression} onChange={e => setImpression(e.target.value)} rows={2} placeholder="Summary diagnostic interpretation / recommendation..." className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white" /></div>
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium">Cancel</button><button type="submit" className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold">Save Study</button></div>
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium">Cancel</button><button type="submit" disabled={savingStudy} className="px-4 py-2 rounded-xl bg-cyan-500 disabled:opacity-40 hover:bg-cyan-400 text-slate-950 font-bold">{savingStudy ? 'Saving…' : 'Save Study'}</button></div>
             </form>
           </div>
         </div>
