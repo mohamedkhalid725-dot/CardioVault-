@@ -5,6 +5,7 @@ import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
 import { uploadClinicalMedia, optimizeClinicalImage, isClinicalImageFile } from '../../../services/mediaStorage';
 import { deleteMediaFromStorage } from '../../../services/webFirebase';
+import { syncCurrentUserNow } from '../../../services/cloudSyncBridge';
 
 interface ImagingSectionProps { patient: Patient; }
 
@@ -150,7 +151,9 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
         ? { ...s, imageUrls: [...(s.imageUrls || []), ...urls], imageStoragePaths: [...(s.imageStoragePaths || []), ...paths] }
         : s
       ));
-      showToast(`${urls.length} scan image${urls.length === 1 ? '' : 's'} attached and synced to cloud`, 'success');
+      const synced = await syncCurrentUserNow();
+      if (!synced) throw new Error('Scan uploaded, but the patient record could not be saved to cloud. Please run Cloud Sync before leaving the patient file.');
+      showToast(`${urls.length} scan image${urls.length === 1 ? '' : 's'} uploaded and saved to cloud.`, 'success');
     } catch (error) {
       console.error('Scan image upload failed:', error);
       const message = error instanceof Error ? error.message : String(error); showToast(message.slice(0, 220), 'error');
