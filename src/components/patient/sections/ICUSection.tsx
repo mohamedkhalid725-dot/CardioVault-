@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Wind, Plus, Activity, Gauge, Edit2, Loader2 } from 'lucide-react';
-import { Patient, VentilatorSettings, ABGRecord, RespiratorySupportType, VentilatorRecord } from '../../../types/clinical';
+import { Patient, ABGRecord, RespiratorySupportType, VentilatorRecord } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { MedicalCalculators } from '../../../services/calculators';
 
