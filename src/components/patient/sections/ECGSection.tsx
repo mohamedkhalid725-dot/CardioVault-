@@ -3,7 +3,7 @@ import { Activity, Plus, Image as ImageIcon, Trash2, Calendar, Clock } from 'luc
 import { ECGRecord, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
-import { uploadClinicalMedia, optimizeClinicalImage } from '../../../services/mediaStorage';
+import { uploadClinicalMedia, optimizeClinicalImage, isClinicalImageFile } from '../../../services/mediaStorage';
 import { deleteMediaFromStorage } from '../../../services/webFirebase';
 
 interface Props { patient: Patient; }
@@ -35,9 +35,9 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
     const files: File[] = e.target.files ? Array.from(e.target.files) : [];
     if (!files.length || !selected) return;
 
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    const imageFiles = files.filter(isClinicalImageFile);
     if (!imageFiles.length) {
-      showToast('Please select image files only.', 'error');
+      showToast('Please select image files only (JPG, PNG, WEBP, HEIC).', 'error');
       e.target.value = '';
       return;
     }
