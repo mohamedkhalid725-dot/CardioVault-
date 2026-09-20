@@ -105,33 +105,81 @@ async function getNativeIdToken(): Promise<string> {
   return token;
 }
 
-const storageBucketName = firebaseConfig.storageBucket;
-const storageObjectUrl = (path: string) =>
-  `https://firebasestorage.googleapis.com/v0/b/${storageBucketName}/o/${encodeURIComponent(path)}`;
+// Firebase projects can have either the modern `.firebasestorage.app` default bucket
+// or a legacy `.appspot.com` bucket. The app config normally points to the active
+// bucket, but older projects can retain the legacy bucket. Try the configured bucket
+// first and transparently fall back to the legacy name only when the service returns 404.
+const storageBucketCandidates = Array.from(new Set([
+  firebaseConfig.storageBucket,
+  firebaseConfig.storageBucket.endsWith('.firebasestorage.app')
+    ? firebaseConfig.storageBucket.replace('.firebasestorage.app', '.appspot.com')
+    : firebaseConfig.storageBucket.endsWith('.appspot.com')
+      ? firebaseConfig.storageBucket.replace('.appspot.com', '.firebasestorage.app')
+      : firebaseConfig.storageBucket,
+]));
+
+const storageObjectUrl = (bucket: string, path: string) =>
+  `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(path)}`;
+
+async function readStorageError(response: Response): Promise<string> {
+  try {
+    const body = await response.text();
+    return body ? `: ${body.slice(0, 300)}` : '';
+  } catch {
+    return '';
+  }
+}
 
 async function nativeStorageUpload(file: Blob, path: string): Promise<string> {
   const token = await getNativeIdToken();
   const downloadToken = crypto.randomUUID();
-  const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${storageBucketName}/o?uploadType=media&name=${encodeURIComponent(path)}`;
-  const uploadResponse = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
-  });
-  if (!uploadResponse.ok) throw new Error(`Firebase Storage upload failed (${uploadResponse.status}).`);
-  const metadataResponse = await fetch(storageObjectUrl(path), {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ metadata: { firebaseStorageDownloadTokens: downloadToken } }),
-  });
-  if (!metadataResponse.ok) throw new Error(`Firebase Storage metadata update failed (${metadataResponse.status}).`);
-  return `${storageObjectUrl(path)}?alt=media&token=${encodeURIComponent(downloadToken)}`;
+  let lastError = '';
+
+  for (const bucket of storageBucketCandidates) {
+    const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?uploadType=media&name=${encodeURIComponent(path)}`;
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+
+    if (uploadResponse.ok) {
+      const metadataResponse = await fetch(storageObjectUrl(bucket, path), {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata: { firebaseStorageDownloadTokens: downloadToken } }),
+      });
+      if (!metadataResponse.ok) {
+        throw new Error(`Firebase Storage metadata update failed (${metadataResponse.status})${await readStorageError(metadataResponse)}.`);
+      }
+      return `${storageObjectUrl(bucket, path)}?alt=media&token=${encodeURIComponent(downloadToken)}`;
+    }
+
+    lastError = `Firebase Storage upload failed (${uploadResponse.status})${await readStorageError(uploadResponse)}`;
+    if (uploadResponse.status !== 404) break;
+  }
+
+  throw new Error(lastError || 'Firebase Storage upload failed.');
 }
 
 async function nativeStorageDelete(path: string): Promise<void> {
   const token = await getNativeIdToken();
-  const response = await fetch(storageObjectUrl(path), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok && response.status !== 404) throw new Error(`Firebase Storage delete failed (${response.status}).`);
+  let lastError = '';
+
+  for (const bucket of storageBucketCandidates) {
+    const response = await fetch(storageObjectUrl(bucket, path), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}`,
+    });
+    if (response.ok || response.status === 404) {
+      if (response.ok) return;
+      continue;
+    }
+    lastError = `Firebase Storage delete failed (${response.status})${await readStorageError(response)}`;
+    break;
+  }
+
+  if (lastError) throw new Error(lastError);
 }
 
 export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
