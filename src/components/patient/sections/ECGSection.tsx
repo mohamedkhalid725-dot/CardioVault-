@@ -60,7 +60,7 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
       showToast(`${urls.length} ECG image${urls.length === 1 ? '' : 's'} attached to the selected record.`, 'success');
     } catch (error) {
       console.error('ECG image upload failed:', error);
-      showToast('One or more ECG images could not be uploaded.', 'error');
+      const message = error instanceof Error ? error.message : String(error); showToast(message.slice(0, 220), 'error');
     } finally {
       setUploadingImages(false);
       e.target.value = '';
