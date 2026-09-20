@@ -6,7 +6,7 @@ import {useApp}from'../../../context/AppContext';
 import {Capacitor}from'@capacitor/core';
 import {Directory,Filesystem}from'@capacitor/filesystem';
 
-const sections=[['overview','Overview'],['history','History'],['vitals','Vitals & Balance'],['ecg','ECG'],['examination','Examination'],['cardiology','Cardiology'],['medications','Medications'],['icu','ICU / Ventilator'],['imaging','Imaging'],['labs','Laboratory'],['procedures','Procedures'],['calculators','Calculators'],['progress','Progress Notes']] as const;
+const sections=[['overview','Overview'],['history','History'],['vitals','Vitals & Balance'],['ecg','ECG'],['examination','Examination'],['cardiology','Cardiology'],['medications','Medications'],['icu','ICU / Ventilator'],['imaging','Imaging'],['labs','Laboratory'],['procedures','Procedures'],['calculators','Calculators'],['progress','Progress Notes'],['timeline','Timeline (Chronological)']] as const;
 const val=(v:any,f='—')=>v===undefined||v===null||v===''?f:Array.isArray(v)?(v.length?v.join(', '):f):String(v);
 const short=(v:any,max=105)=>{const s=val(v,'');return s.length>max?`${s.slice(0,max-1)}…`:s;};
 
@@ -59,6 +59,7 @@ export const ExportSummarySectionV2:React.FC<{patient:Patient}>=({patient})=>{
   if(has('icu')){title('ICU / Ventilator & ABG');const v:any=patient.ventilator||{};twoCols([['Mode',v.mode],['FiO₂',v.fio2!==undefined?`${v.fio2}%`:'' ],['PEEP',v.peep],['SpO₂',v.spo2?`${v.spo2}%`:'' ],['RR',v.rr],['EtCO₂',v.etco2],['Tidal Volume',v.tidalVolume]]);const a:any=v.abgHistory?.[0];if(a){table(['Parameter','Value','Parameter','Value'],[['pH',val(a.ph),'PaCO₂',val(a.paco2)],['PaO₂',val(a.pao2),'HCO₃⁻',val(a.hco3)],['Lactate',val(a.lactate),'P/F Ratio',val(a.pfRatio)]],[45,46,45,46],7);}}
   if(has('calculators')){title('Clinical Calculators','blue');table(['Calculator','Result','Interpretation'],(patient.calculatorResults||[]).slice(0,8).map(r=>[val(r.name),val(r.score),short(r.interpretation,48)]),[66,34,82],7);}
   if(has('progress')){title('Progress Notes (Latest)');table(['Date / Time','Author','Note'],(patient.progressNotes||[]).slice(0,5).map(n=>[`${val(n.date)} ${val(n.time)}`,short(n.author,25),short(n.assessment||n.plan||n.events,80)]),[38,43,101],7);}
+  if(has('timeline')){title('Timeline (Chronological)','blue');table(['Added At','Activity','Fields'],(patient.auditTrail||[]).slice(0,14).map(e=>[new Date(e.timestamp).toLocaleString(),short(e.action,42),short((e.fields||[]).join(', '),70)]),[48,56,78],7);}
   if(has('progress')||has('overview')){title('Current Plan','blue');paragraph('Plan',patient.progressNotes?.[0]?.plan||'Continue monitoring, routine investigations, and treatment according to the active clinical plan.',145);title('Disposition / Transfer Goal','gold');paragraph('Goal',patient.isArchived?'Discharged / Archived':'Pending clinical stabilization and ongoing observation.',145);}
   footer();
   const blob=doc.output('blob');const previewObjectUrl=URL.createObjectURL(blob);if(previewUrl)URL.revokeObjectURL(previewUrl);setPreviewUrl(previewObjectUrl);setPreview(true);
