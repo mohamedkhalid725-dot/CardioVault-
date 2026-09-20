@@ -3,6 +3,7 @@ import { Image as ImageIcon, Plus, Trash2, X, Layers, Edit2, Upload } from 'luci
 import { Patient, ImagingStudy } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
+import { uploadClinicalMedia } from '../../../services/mediaStorage';
 
 interface ImagingSectionProps { patient: Patient; }
 
@@ -129,18 +130,16 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     }
 
     try {
-      const dataUrls = await Promise.all(imageFiles.map(file => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error || new Error('Could not read image'));
-        reader.readAsDataURL(file);
-      })));
-
+      const uploaded = await Promise.all(imageFiles.map((file, index) =>
+        uploadClinicalMedia(file, `patients/${patient.id}/imaging/${activeStudyForUpload}/${Date.now()}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
+      ));
+      const urls = uploaded.map(item => item.url);
+      const usedCloud = uploaded.filter(item => item.cloud).length;
       persist(studies.map(s => s.id === activeStudyForUpload
-        ? { ...s, imageUrls: [...(s.imageUrls || []), ...dataUrls] }
+        ? { ...s, imageUrls: [...(s.imageUrls || []), ...urls] }
         : s
       ));
-      showToast(`${dataUrls.length} scan image${dataUrls.length === 1 ? '' : 's'} attached successfully`, 'success');
+      showToast(`${urls.length} scan image${urls.length === 1 ? '' : 's'} attached${usedCloud ? ' and synced to cloud' : ''}`, 'success');
     } catch (error) {
       console.error('Scan image upload failed:', error);
       showToast('One or more images could not be uploaded.', 'error');
