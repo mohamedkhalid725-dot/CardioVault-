@@ -4,6 +4,7 @@ import { Patient, ImagingStudy } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
 import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { uploadClinicalMedia } from '../../../services/mediaStorage';
 
 interface ImagingSectionProps { patient: Patient; }
 
