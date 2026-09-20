@@ -1,6 +1,5 @@
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
@@ -42,8 +41,6 @@ export const webAuth = initializeAuth(app, {
   persistence: [indexedDBLocalPersistence, browserLocalPersistence],
   popupRedirectResolver: browserPopupRedirectResolver,
 });
-export const webStorage = getStorage(app);
-
 export const webStorage = getStorage(app);
 
 export const webDb: Firestore = initializeFirestore(app, {
