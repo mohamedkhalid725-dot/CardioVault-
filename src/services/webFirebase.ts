@@ -90,14 +90,6 @@ export const webDoc = (path:string) => doc(getWebDb(), path);
 export const webCollection = (path:string) => collection(getWebDb(), path);
 export { getDoc, getDocs, setDoc, deleteDoc, query, where };
 
-async function getNativeIdToken(): Promise<string> {
-  const { user } = await FirebaseAuthentication.getCurrentUser();
-  if (!user) throw new Error('No authenticated Firebase user is available.');
-  const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: false });
-  if (!token) throw new Error('Could not obtain the Firebase Auth ID token.');
-  return token;
-}
-
 export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
   return uploadToSupabaseStorage(file, path);
 }
