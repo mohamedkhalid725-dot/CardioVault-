@@ -4,6 +4,7 @@ import { Patient, ImagingStudy } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
 import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { deleteMediaFromStorage } from '../../../services/webFirebase';
 
 interface ImagingSectionProps { patient: Patient; }
 
@@ -43,6 +44,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     findings: s.findings || '',
     impression: s.impression || '',
     imageUrls: s.imageUrls || s.images || [],
+    imageStoragePaths: s.imageStoragePaths || [],
     radiologist: s.radiologist || s.operator || 'Attending Radiologist',
   }));
 
@@ -136,13 +138,15 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
 
     setUploadingImages(true);
     try {
-      const uploaded = await Promise.all(imageFiles.map((file, index) =>
-        uploadClinicalMedia(file, `patients/${patient.id}/imaging/${activeStudyForUpload}/${Date.now()}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
-      ));
-      const urls = uploaded.map(item => item.url);
-      const usedCloud = uploaded.filter(item => item.cloud).length;
+      const uploadBatchId=Date.now();
+      const uploaded = await Promise.all(imageFiles.map((file, index) => {
+        const path=`patients/${patient.id}/imaging/${activeStudyForUpload}/${uploadBatchId}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        return uploadClinicalMedia(file,path).then(result=>({result,path}));
+      }));
+      const urls = uploaded.map(item => item.result.url);
+      const paths = uploaded.map(item => item.path);
       persist(studies.map(s => s.id === activeStudyForUpload
-        ? { ...s, imageUrls: [...(s.imageUrls || []), ...urls] }
+        ? { ...s, imageUrls: [...(s.imageUrls || []), ...urls], imageStoragePaths: [...(s.imageStoragePaths || []), ...paths] }
         : s
       ));
       showToast(`${urls.length} scan image${urls.length === 1 ? '' : 's'} attached${usedCloud ? ' and synced to cloud' : ''}`, 'success');
@@ -156,12 +160,15 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     }
   };
 
-  const handleRemoveImage = (studyId: string, imgIdx: number) => {
+  const handleRemoveImage = async (studyId: string, imgIdx: number) => {
+    const study=studies.find(s=>s.id===studyId);
+    const storagePath=study?.imageStoragePaths?.[imgIdx];
+    if(storagePath){try{await deleteMediaFromStorage(storagePath);}catch(error){console.warn('Cloud imaging delete failed:',error);}}
     persist(studies.map(s => {
       if (s.id !== studyId) return s;
-      const next = [...(s.imageUrls || [])];
-      next.splice(imgIdx, 1);
-      return { ...s, imageUrls: next };
+      const nextUrls=[...(s.imageUrls || [])];nextUrls.splice(imgIdx,1);
+      const nextPaths=[...(s.imageStoragePaths || [])];if(imgIdx<nextPaths.length)nextPaths.splice(imgIdx,1);
+      return { ...s, imageUrls: nextUrls, imageStoragePaths: nextPaths };
     }));
     showToast('Attached image removed', 'success');
   };
