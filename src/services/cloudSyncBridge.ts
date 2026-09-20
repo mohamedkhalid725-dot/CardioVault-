@@ -34,7 +34,53 @@ async function withRetry<T>(operation:()=>Promise<T>,attempts=3):Promise<T>{let 
 const workspacePath=(workspaceId:string,collection:string)=>`workspaces/${workspaceId}/${collection}`;
 function clearLocalClinicalData(){const previous=suppressSync;suppressSync=true;try{StorageService.saveUnits([]);StorageService.saveBeds([]);StorageService.savePatients([]);}finally{suppressSync=previous;}}
 function setLocalData(units:any[],beds:any[],patients:any[]){const previous=suppressSync;suppressSync=true;try{StorageService.saveUnits(units);StorageService.saveBeds(beds);StorageService.savePatients(patients);}finally{suppressSync=previous;}}
-export function restoreLocalDataFromCloud(collection:'units'|'beds'|'patients',values:any[]){const previous=suppressSync;suppressSync=true;try{if(collection==='units')StorageService.saveUnits(values);else if(collection==='beds')StorageService.saveBeds(values);else StorageService.savePatients(values);}finally{suppressSync=previous;}}
+function mergeClinicalMedia(localPatient:any, cloudPatient:any): any {
+  if (!localPatient || !cloudPatient) return cloudPatient;
+  const mergeRecords = (cloudRecords:any[], localRecords:any[]) => {
+    if (!Array.isArray(cloudRecords)) return cloudRecords;
+    const localById = new Map((Array.isArray(localRecords) ? localRecords : []).map((record:any) => [String(record?.id || ''), record]));
+    return cloudRecords.map((cloudRecord:any) => {
+      const localRecord = localById.get(String(cloudRecord?.id || ''));
+      if (!localRecord) return cloudRecord;
+      const cloudUrls = Array.isArray(cloudRecord?.imageUrls) ? cloudRecord.imageUrls : [];
+      const localUrls = Array.isArray(localRecord?.imageUrls) ? localRecord.imageUrls : [];
+      const cloudPaths = Array.isArray(cloudRecord?.imageStoragePaths) ? cloudRecord.imageStoragePaths : [];
+      const localPaths = Array.isArray(localRecord?.imageStoragePaths) ? localRecord.imageStoragePaths : [];
+      return {
+        ...cloudRecord,
+        imageUrls: cloudUrls.length ? cloudUrls : localUrls,
+        imageStoragePaths: cloudPaths.length ? cloudPaths : localPaths,
+      };
+    });
+  };
+  const merged = { ...cloudPatient };
+  merged.ecgRecords = mergeRecords(cloudPatient.ecgRecords, localPatient.ecgRecords);
+  const cloudImaging = Array.isArray(cloudPatient.imaging) ? cloudPatient.imaging : [];
+  const localImaging = Array.isArray(localPatient.imaging) ? localPatient.imaging : [];
+  merged.imaging = mergeRecords(cloudImaging, localImaging);
+  if (Array.isArray(cloudPatient.imagingStudies)) {
+    merged.imagingStudies = mergeRecords(cloudPatient.imagingStudies, localPatient.imagingStudies);
+  }
+  return merged;
+}
+
+export function restoreLocalDataFromCloud(collection:'units'|'beds'|'patients',values:any[]){
+  const previous=suppressSync;
+  suppressSync=true;
+  try{
+    if(collection==='units') StorageService.saveUnits(values);
+    else if(collection==='beds') StorageService.saveBeds(values);
+    else {
+      const localPatients=StorageService.getPatients();
+      const localById=new Map(localPatients.map((patient:any)=>[String(patient?.id||''),patient]));
+      const mergedPatients=values.map((cloudPatient:any)=>{
+        const localPatient=localById.get(String(cloudPatient?.id||''));
+        return localPatient ? mergeClinicalMedia(localPatient,cloudPatient) : cloudPatient;
+      });
+      StorageService.savePatients(mergedPatients);
+    }
+  } finally { suppressSync=previous; }
+}
 
 async function migrateLegacyOwnerData(uid:string,legacyUnits:any[],legacyBeds:any[],legacyPatients:any[]):Promise<WorkspaceAccessState>{if(!(await isMasterAccount()))throw new Error('Legacy data migration is restricted to the Master Account.');await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}`,data:{ownerUid:uid,ownerEmail:'mohamedkhalid725@gmail.com',schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString(),migratedFromLegacy:true},merge:true});const copy=async(collection:string,records:any[])=>{for(const record of records){if(!record?.id)continue;const safe=firestoreSafe(record)||{};await FirebaseFirestore.setDocument({reference:`${workspacePath(MASTER_WORKSPACE_ID,collection)}/${record.id}`,data:{...safe,id:record.id},merge:true});}};await copy('units',legacyUnits);await copy('beds',legacyBeds);await copy('patients',legacyPatients);const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state));return state;}
 
