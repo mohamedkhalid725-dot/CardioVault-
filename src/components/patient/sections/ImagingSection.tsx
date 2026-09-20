@@ -119,7 +119,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
     if (!files.length || !activeStudyForUpload) return;
 
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
