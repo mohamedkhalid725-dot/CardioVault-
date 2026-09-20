@@ -53,6 +53,26 @@ service cloud.firestore {
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
       match /metadata/{documentId} { allow read, write: if workspaceOwner(workspaceId); }
+
+      match /media/{mediaId} {
+        allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId, resource.data.unitId);
+        allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, request.resource.data.unitId);
+        allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, resource.data.unitId);
+
+        match /chunks/{chunkId} {
+          allow read: if workspaceOwner(workspaceId) ||
+            (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)) &&
+             unitMember(workspaceId, get(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)).data.unitId));
+
+          allow create, update: if workspaceOwner(workspaceId) ||
+            (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)) &&
+             clinicalEditor(workspaceId, get(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)).data.unitId));
+
+          allow delete: if workspaceOwner(workspaceId) ||
+            (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)) &&
+             clinicalEditor(workspaceId, get(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)).data.unitId));
+        }
+      }
     }
 
     match /{document=**} { allow read, write: if false; }
