@@ -589,171 +589,29 @@ const initialAhmedData: Patient = {
   ],
 };
 
-// Initial Bed configuration matching Reference Image 2
-export const INITIAL_UNITS: Unit[] = [
-  { id: 'unit-icu', name: 'ICU', type: 'Intensive Care Unit', totalBeds: 8 },
-  { id: 'unit-ccu', name: 'CCU', type: 'Coronary Care Unit', totalBeds: 6 },
-  { id: 'unit-pediatric-icu', name: 'Pediatric ICU', type: 'Pediatric Intensive Care', totalBeds: 4 },
-  { id: 'unit-neuro-icu', name: 'Neuro ICU', type: 'Neuro Intensive Care', totalBeds: 5 },
-  { id: 'unit-surgical-icu', name: 'Surgical ICU', type: 'Surgical Intensive Care', totalBeds: 6 },
-];
+// CardioVault starts with an empty workspace. Units/beds/patients are created by the physician.
+// These IDs are kept only as a migration list so the old demo seed can be removed from
+// existing local/cloud workspaces without touching units created by the physician.
+export const LEGACY_DEMO_UNIT_IDS = new Set([
+  'unit-icu',
+  'unit-ccu',
+  'unit-pediatric-icu',
+  'unit-neuro-icu',
+  'unit-surgical-icu',
+]);
+export const LEGACY_DEMO_PATIENT_IDS = new Set([
+  'patient-2025001', 'patient-sara', 'patient-mohamed-h', 'patient-nada',
+  'patient-tariq', 'patient-mona', 'patient-youssef', 'patient-layla',
+  'patient-omar', 'patient-fatima', 'patient-khaled', 'patient-hassan',
+  'patient-zeinab', 'patient-samir', 'patient-adam', 'patient-mariam',
+  'patient-noor', 'patient-rashid', 'patient-salma', 'patient-ibrahim',
+  'patient-dalia',
+]);
+export const INITIAL_UNITS: Unit[] = [];
 
-export const INITIAL_BEDS: Bed[] = [
-  // Neuro ICU Beds (Reference Image 2)
-  { id: 'bed-neuro-1', unitId: 'unit-neuro-icu', bedNumber: 'Bed 1', status: 'Critical', patientId: 'patient-2025001' },
-  { id: 'bed-neuro-2', unitId: 'unit-neuro-icu', bedNumber: 'Bed 2', status: 'Unstable', patientId: 'patient-sara' },
-  { id: 'bed-neuro-3', unitId: 'unit-neuro-icu', bedNumber: 'Bed 3', status: 'Empty' },
-  { id: 'bed-neuro-4', unitId: 'unit-neuro-icu', bedNumber: 'Bed 4', status: 'Stable', patientId: 'patient-mohamed-h' },
-  { id: 'bed-neuro-5', unitId: 'unit-neuro-icu', bedNumber: 'Bed 5', status: 'Stable', patientId: 'patient-nada' },
+export const INITIAL_BEDS: Bed[] = [];
 
-  // CCU Beds
-  { id: 'bed-ccu-1', unitId: 'unit-ccu', bedNumber: 'Bed 1', status: 'Critical', patientId: 'patient-tariq' },
-  { id: 'bed-ccu-2', unitId: 'unit-ccu', bedNumber: 'Bed 2', status: 'Unstable', patientId: 'patient-mona' },
-  { id: 'bed-ccu-3', unitId: 'unit-ccu', bedNumber: 'Bed 3', status: 'Stable', patientId: 'patient-youssef' },
-  { id: 'bed-ccu-4', unitId: 'unit-ccu', bedNumber: 'Bed 4', status: 'Stable', patientId: 'patient-layla' },
-  { id: 'bed-ccu-5', unitId: 'unit-ccu', bedNumber: 'Bed 5', status: 'Empty' },
-  { id: 'bed-ccu-6', unitId: 'unit-ccu', bedNumber: 'Bed 6', status: 'Empty' },
-
-  // ICU Beds
-  { id: 'bed-icu-1', unitId: 'unit-icu', bedNumber: 'Bed 1', status: 'Critical', patientId: 'patient-omar' },
-  { id: 'bed-icu-2', unitId: 'unit-icu', bedNumber: 'Bed 2', status: 'Unstable', patientId: 'patient-fatima' },
-  { id: 'bed-icu-3', unitId: 'unit-icu', bedNumber: 'Bed 3', status: 'Stable', patientId: 'patient-khaled' },
-  { id: 'bed-icu-4', unitId: 'unit-icu', bedNumber: 'Bed 4', status: 'Stable', patientId: 'patient-hassan' },
-  { id: 'bed-icu-5', unitId: 'unit-icu', bedNumber: 'Bed 5', status: 'Stable', patientId: 'patient-zeinab' },
-  { id: 'bed-icu-6', unitId: 'unit-icu', bedNumber: 'Bed 6', status: 'Stable', patientId: 'patient-samir' },
-  { id: 'bed-icu-7', unitId: 'unit-icu', bedNumber: 'Bed 7', status: 'Empty' },
-  { id: 'bed-icu-8', unitId: 'unit-icu', bedNumber: 'Bed 8', status: 'Empty' },
-
-  // Pediatric ICU Beds
-  { id: 'bed-peds-1', unitId: 'unit-pediatric-icu', bedNumber: 'Bed 1', status: 'Unstable', patientId: 'patient-adam' },
-  { id: 'bed-peds-2', unitId: 'unit-pediatric-icu', bedNumber: 'Bed 2', status: 'Stable', patientId: 'patient-mariam' },
-  { id: 'bed-peds-3', unitId: 'unit-pediatric-icu', bedNumber: 'Bed 3', status: 'Stable', patientId: 'patient-noor' },
-  { id: 'bed-peds-4', unitId: 'unit-pediatric-icu', bedNumber: 'Bed 4', status: 'Empty' },
-
-  // Surgical ICU Beds
-  { id: 'bed-surg-1', unitId: 'unit-surgical-icu', bedNumber: 'Bed 1', status: 'Critical', patientId: 'patient-rashid' },
-  { id: 'bed-surg-2', unitId: 'unit-surgical-icu', bedNumber: 'Bed 2', status: 'Unstable', patientId: 'patient-salma' },
-  { id: 'bed-surg-3', unitId: 'unit-surgical-icu', bedNumber: 'Bed 3', status: 'Stable', patientId: 'patient-ibrahim' },
-  { id: 'bed-surg-4', unitId: 'unit-surgical-icu', bedNumber: 'Bed 4', status: 'Stable', patientId: 'patient-dalia' },
-  { id: 'bed-surg-5', unitId: 'unit-surgical-icu', bedNumber: 'Bed 5', status: 'Empty' },
-  { id: 'bed-surg-6', unitId: 'unit-surgical-icu', bedNumber: 'Bed 6', status: 'Empty' },
-];
-
-export const INITIAL_PATIENTS: Patient[] = [
-  initialAhmedData,
-  {
-    ...initialAhmedData,
-    id: 'patient-sara',
-    mrn: '2025002',
-    fullName: 'Sara Ali',
-    age: 44,
-    sex: 'Female',
-    weight: 64,
-    height: 165,
-    unitId: 'unit-neuro-icu',
-    bedId: 'bed-neuro-2',
-    status: 'Unstable',
-    primaryDiagnosis: 'Subarachnoid Hemorrhage (SAH)',
-    secondaryDiagnoses: ['Aneurysmal Clipping Day 2', 'Cerebral Vasospasm risk'],
-    clinicalSummary: {
-      ...initialAhmedData.clinicalSummary,
-      chiefComplaint: 'Severe "thunderclap" headache followed by syncope.',
-      hpi: '44 yo female presenting with acute Hunt & Hess Grade 3 subarachnoid hemorrhage due to ruptured anterior communicating artery aneurysm. Successfully clipped on Day 0.',
-    },
-    vitalsHistory: [
-      {
-        id: 'vital-sara-1',
-        timestamp: '2026-09-14 07:30',
-        sbp: 138,
-        dbp: 78,
-        hr: 76,
-        rr: 15,
-        spo2: 99,
-        temp: 37.1,
-        pain: 4,
-        gcsEye: 4,
-        gcsVerbal: 4,
-        gcsMotor: 6,
-        gcsTotal: 14,
-        rass: 0,
-        cvp: 10,
-        notes: 'Maintaining euvolemia, Nimodipine 60mg q4h administered on schedule.',
-      },
-    ],
-  },
-  {
-    ...initialAhmedData,
-    id: 'patient-mohamed-h',
-    mrn: '2025004',
-    fullName: 'Mohamed Hassan',
-    age: 32,
-    sex: 'Male',
-    weight: 78,
-    height: 180,
-    unitId: 'unit-neuro-icu',
-    bedId: 'bed-neuro-4',
-    status: 'Stable',
-    primaryDiagnosis: 'Brain Trauma (Closed Head Injury)',
-    secondaryDiagnoses: ['Right frontal contusion', 'Linear skull fracture'],
-  },
-  {
-    ...initialAhmedData,
-    id: 'patient-nada',
-    mrn: '2025005',
-    fullName: 'Nada Ahmed',
-    age: 51,
-    sex: 'Female',
-    weight: 70,
-    height: 162,
-    unitId: 'unit-neuro-icu',
-    bedId: 'bed-neuro-5',
-    status: 'Stable',
-    primaryDiagnosis: 'Post Craniotomy',
-    secondaryDiagnoses: ['Meningioma resection', 'Postoperative surveillance'],
-  },
-  {
-    ...initialAhmedData,
-    id: 'patient-tariq',
-    mrn: '2025010',
-    fullName: 'Tariq Mansoor',
-    age: 63,
-    sex: 'Male',
-    weight: 85,
-    height: 172,
-    unitId: 'unit-ccu',
-    bedId: 'bed-ccu-1',
-    status: 'Critical',
-    primaryDiagnosis: 'Acute Anterior STEMI (Killip III)',
-    secondaryDiagnoses: ['Cardiogenic Shock', 'Post Primary PCI to LAD with DES'],
-    cardiology: {
-      ...initialAhmedData.cardiology,
-      rhythm: 'Sinus Tachycardia with occasional PVCs',
-      heartRate: 104,
-      bp: '92/60 mmHg (MAP 70)',
-      heartFailureStatus: 'Decompensated',
-      nyha: 'Class IV',
-      killip: 'Class III (Pulmonary edema)',
-      echo: {
-        ...initialAhmedData.cardiology.echo,
-        ef: 32,
-        lvFunction: 'Severe anterior and apical hypokinesis',
-      },
-      biomarkers: {
-        troponin: '14.8 ng/mL (Significantly Elevated)',
-        ckmb: '82 ng/mL',
-        bnp: '1250 pg/mL',
-        ntProBnp: '4800 pg/mL',
-      },
-      coronary: {
-        cath: 'Emergency Coronary Angiogram',
-        coronaryFindings: '100% proximal LAD occlusion. 70% RCA lesion.',
-        pci: 'Primary PCI to proximal LAD with 3.5x24 mm Drug Eluting Stent',
-        stent: '1 DES deployed, TIMI 3 flow restored',
-        cabg: 'None',
-      },
-    },
-  },
-];
+export const INITIAL_PATIENTS: Patient[] = [];
 
 // Local-first persistent storage helpers
 export const StorageService = {
@@ -894,8 +752,8 @@ export const StorageService = {
     localStorage.removeItem(STORAGE_KEYS.UNITS);
     localStorage.removeItem(STORAGE_KEYS.BEDS);
     localStorage.removeItem(STORAGE_KEYS.PATIENTS);
-    this.saveUnits(INITIAL_UNITS);
-    this.saveBeds(INITIAL_BEDS);
-    this.savePatients(INITIAL_PATIENTS);
+    this.saveUnits([]);
+    this.saveBeds([]);
+    this.savePatients([]);
   },
 };
