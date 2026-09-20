@@ -117,18 +117,37 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     setShowAddModal(false);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeStudyForUpload) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      persist(studies.map(s => s.id === activeStudyForUpload ? { ...s, imageUrls: [...(s.imageUrls || []), dataUrl] } : s));
-      showToast('Scan image attached successfully', 'success');
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !activeStudyForUpload) return;
+
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    if (!imageFiles.length) {
+      showToast('Please select image files only.', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    try {
+      const dataUrls = await Promise.all(imageFiles.map(file => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error || new Error('Could not read image'));
+        reader.readAsDataURL(file);
+      })));
+
+      persist(studies.map(s => s.id === activeStudyForUpload
+        ? { ...s, imageUrls: [...(s.imageUrls || []), ...dataUrls] }
+        : s
+      ));
+      showToast(`${dataUrls.length} scan image${dataUrls.length === 1 ? '' : 's'} attached successfully`, 'success');
+    } catch (error) {
+      console.error('Scan image upload failed:', error);
+      showToast('One or more images could not be uploaded.', 'error');
+    } finally {
       setActiveStudyForUpload(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleRemoveImage = (studyId: string, imgIdx: number) => {
@@ -148,7 +167,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-150">
-      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+      <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileUpload} className="hidden" />
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
