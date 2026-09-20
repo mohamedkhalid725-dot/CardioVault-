@@ -5,6 +5,7 @@ import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
 import { uploadClinicalMedia, optimizeClinicalImage, isClinicalImageFile } from '../../../services/mediaStorage';
 import { deleteMediaFromStorage } from '../../../services/webFirebase';
+import { syncCurrentUserNow } from '../../../services/cloudSyncBridge';
 
 interface Props { patient: Patient; }
 const blank = (): ECGRecord => ({ id: '', date: new Date().toISOString().split('T')[0], time: new Date().toTimeString().slice(0, 5), heartRate: 0, rhythm: '', regularity: '', axis: '', pr: 0, qrs: 0, qt: 0, qtc: 0, pWave: '', qrsFindings: '', stSegment: '', tWave: '', otherFindings: '', interpretation: [], finalImpression: '', imageUrls: [] });
@@ -57,7 +58,9 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
         : r
       );
       updatePatient(patient.id, { ecgRecords: next });
-      showToast(`${urls.length} ECG image${urls.length === 1 ? '' : 's'} attached to the selected record.`, 'success');
+      const synced = await syncCurrentUserNow();
+      if (!synced) throw new Error('Image uploaded, but the patient record could not be saved to cloud. Please run Cloud Sync before leaving the patient file.');
+      showToast(`${urls.length} ECG image${urls.length === 1 ? '' : 's'} uploaded and saved to cloud.`, 'success');
     } catch (error) {
       console.error('ECG image upload failed:', error);
       const message = error instanceof Error ? error.message : String(error); showToast(message.slice(0, 220), 'error');
