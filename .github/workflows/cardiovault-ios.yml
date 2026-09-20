@@ -26,6 +26,10 @@ jobs:
       - name: Add Capacitor iOS
         run: npx cap add ios
 
+      - name: Configure iOS microphone permission
+        run: |
+          /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string CardioVault uses the microphone to record clinical voice notes.' ios/App/App/Info.plist || /usr/libexec/PlistBuddy -c 'Set :NSMicrophoneUsageDescription CardioVault uses the microphone to record clinical voice notes.' ios/App/App/Info.plist
+
       - name: Configure Firebase iOS
         if: ${{ env.HAS_IOS_FIREBASE_CONFIG != '' }}
         env:
