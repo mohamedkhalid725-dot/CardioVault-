@@ -84,7 +84,7 @@ jobs:
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest deploy --only firestore:rules --project ccu-notebook --non-interactive --config firebase.json
+          npx firebase-tools@latest deploy --only firestore:rules,storage --project ccu-notebook --non-interactive --config firebase.json
       - name: Prepare CardioVault launcher icon
         run: |
           sudo apt-get update
