@@ -2,11 +2,25 @@ import { uploadMediaToStorage } from './webFirebase';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function uploadWithRetry(file: Blob, path: string): Promise<string> {
   let last: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      return await uploadMediaToStorage(file, path);
+      // Never leave the UI stuck on "Uploading…" if Firebase Storage/network
+      // does not settle its request (especially on mobile browsers).
+      return await withTimeout(uploadMediaToStorage(file, path), 20000, 'Firebase Storage upload timed out. Check your internet connection and try again.');
     } catch (error) {
       last = error;
       if (attempt < 3) await sleep(500 * attempt);
