@@ -3,7 +3,7 @@
 export interface CalculatorDefinition {
   id: string;
   name: string;
-  category: 'Cardiology' | 'Critical Care' | 'ABG' | 'Hemodynamics' | 'Renal & Electrolytes' | 'Drug Infusion';
+  category: 'Cardiology' | 'Critical Care' | 'ABG' | 'Hemodynamics' | 'Renal & Electrolytes' | 'Drug Infusion' | 'VTE / Emergency';
   subtitle: string;
   description: string;
 }
