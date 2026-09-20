@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { Capacitor } from '@capacitor/core';
-import { FirebaseStorage } from '@capacitor-firebase/storage';
-import { Filesystem, Directory } from '@capacitor/filesystem';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   GoogleAuthProvider,
@@ -68,82 +67,65 @@ export const webCollection = (path:string) => collection(webDb, path);
 export { getDoc, getDocs, setDoc, deleteDoc, query, where };
 
 
-async function blobToBase64(file: Blob): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      const comma = result.indexOf(',');
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = () => reject(reader.error || new Error('Could not prepare image for native upload.'));
-    reader.readAsDataURL(file);
-  });
+async function getNativeIdToken(): Promise<string> {
+  const { user } = await FirebaseAuthentication.getCurrentUser();
+  if (!user) throw new Error('No authenticated Firebase user is available.');
+  const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: false });
+  if (!token) throw new Error('Could not obtain the Firebase Auth ID token.');
+  return token;
 }
 
+const storageBucketName = firebaseConfig.storageBucket.replace(/\.app$/, '');
+const storageObjectUrl = (path: string) =>
+  `https://firebasestorage.googleapis.com/v0/b/${storageBucketName}/o/${encodeURIComponent(path)}`;
+
 async function nativeStorageUpload(file: Blob, path: string): Promise<string> {
-  const tempName = `cardiovault-upload-${Date.now()}-${Math.random().toString(36).slice(2)}-${path.split('/').pop() || 'image'}`;
-  const base64 = await blobToBase64(file);
-  let uri = '';
-  try {
-    const written = await Filesystem.writeFile({
-      path: tempName,
-      data: base64,
-      directory: Directory.Cache,
-      recursive: true,
-    });
-    const resolved = await Filesystem.getUri({ directory: Directory.Cache, path: tempName });
-    uri = resolved.uri || written.uri || '';
-    if (!uri) throw new Error('Could not create a temporary image file.');
+  const token = await getNativeIdToken();
+  const downloadToken = crypto.randomUUID();
+  const uploadUrl = `${storageObjectUrl(path)}?uploadType=media&name=${encodeURIComponent(path)}`;
 
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const finish = (error?: unknown) => {
-        if (settled) return;
-        settled = true;
-        error ? reject(error) : resolve();
-      };
-      const timeout = setTimeout(() => finish(new Error('Native Firebase Storage upload timed out.')), 60000);
-      FirebaseStorage.uploadFile(
-        {
-          path,
-          uri,
-        },
-        (event, error) => {
-          if (error) {
-            clearTimeout(timeout);
-            finish(error);
-          } else if (event?.completed) {
-            clearTimeout(timeout);
-            finish();
-          }
-        },
-      ).catch(error => {
-        clearTimeout(timeout);
-        finish(error);
-      });
-    });
-
-    const { downloadUrl } = await FirebaseStorage.getDownloadUrl({ path });
-    if (!downloadUrl) throw new Error('Firebase Storage returned no download URL.');
-    return downloadUrl;
-  } finally {
-    try {
-      await Filesystem.deleteFile({ directory: Directory.Cache, path: tempName });
-    } catch {
-      // Temporary cache cleanup is best-effort.
-    }
+  const uploadResponse = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(`Firebase Storage upload failed (${uploadResponse.status}).`);
   }
+
+  const metadataResponse = await fetch(storageObjectUrl(path), {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      metadata: { firebaseStorageDownloadTokens: downloadToken },
+    }),
+  });
+  if (!metadataResponse.ok) {
+    throw new Error(`Firebase Storage metadata update failed (${metadataResponse.status}).`);
+  }
+
+  return `${storageObjectUrl(path)}?alt=media&token=${encodeURIComponent(downloadToken)}`;
 }
 
 async function nativeStorageDelete(path: string): Promise<void> {
-  await FirebaseStorage.deleteFile({ path });
+  const token = await getNativeIdToken();
+  const response = await fetch(storageObjectUrl(path), {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Firebase Storage delete failed (${response.status}).`);
+  }
 }
 
 export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
-  // Native Android/iOS uses the Firebase Storage native SDK, so it shares the
-  // same native Firebase Auth session and avoids WebView fetch/REST issues.
-  if (Capacitor.isNativePlatform()) return nativeStorageUpload(file, path);
+  // Native Android/iOS uses Firebase Auth's native ID token with the Storage REST API.\n  // This avoids loading a separate native Storage plugin and keeps startup stable.\n  if (Capacitor.isNativePlatform()) return nativeStorageUpload(file, path);
 
   const ref = storageRef(webStorage, path);
   return await new Promise<string>((resolve, reject) => {
@@ -175,9 +157,6 @@ export async function uploadMediaToStorage(file: Blob, path: string): Promise<st
 }
 
 export async function deleteMediaFromStorage(path: string): Promise<void> {
-  if (Capacitor.isNativePlatform()) {
-    await nativeStorageDelete(path);
-    return;
-  }
+  if (Capacitor.isNativePlatform()) {\n    await nativeStorageDelete(path);\n    return;\n  }
   await deleteObject(storageRef(webStorage, path));
 }
