@@ -1,7 +1,7 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject, type FirebaseStorage } from 'firebase/storage';
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
@@ -13,6 +13,7 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   type User,
+  type Auth,
 } from 'firebase/auth';
 import {
   initializeFirestore,
@@ -38,34 +39,63 @@ const firebaseConfig = {
   appId: '1:963615758407:ios:a113cc828e31dbd550b962',
 };
 
-const app = initializeApp(firebaseConfig);
-export const webAuth = initializeAuth(app, {
-  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
-  popupRedirectResolver: browserPopupRedirectResolver,
-});
-export const webStorage = getStorage(app);
+// The native Android/iOS builds use the Capacitor Firebase plugins.
+// Do not initialize Firebase Web Auth/Firestore/Storage inside the native WebView.
+// Keeping the Web SDK lazy also prevents IndexedDB persistence from touching startup.
+const app: FirebaseApp = initializeApp(firebaseConfig);
 
-export const webDb: Firestore = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-});
+let webAuthInstance: Auth | null = null;
+let webStorageInstance: FirebaseStorage | null = null;
+let webDbInstance: Firestore | null = null;
 
-export async function webGoogleSignIn(): Promise<User> {
-  const result = await signInWithPopup(webAuth, new GoogleAuthProvider());
-  return result.user;
+function assertWebPlatform(): void {
+  if (Capacitor.isNativePlatform()) {
+    throw new Error('Firebase Web SDK is unavailable on native CardioVault builds.');
+  }
+}
+
+function getWebAuth(): Auth {
+  assertWebPlatform();
+  if (!webAuthInstance) {
+    webAuthInstance = initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  }
+  return webAuthInstance;
+}
+
+function getWebStorage(): FirebaseStorage {
+  assertWebPlatform();
+  if (!webStorageInstance) webStorageInstance = getStorage(app);
+  return webStorageInstance;
+}
+
+function getWebDb(): Firestore {
+  assertWebPlatform();
+  if (!webDbInstance) {
+    webDbInstance = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  }
+  return webDbInstance;
+}
+
+export function webGoogleSignIn(): Promise<User> {
+  return signInWithPopup(getWebAuth(), new GoogleAuthProvider()).then(result => result.user);
 }
 export async function webEmailSignIn(email:string,password:string):Promise<User>{
-  return (await signInWithEmailAndPassword(webAuth,email,password)).user;
+  return (await signInWithEmailAndPassword(getWebAuth(),email,password)).user;
 }
 export async function webEmailCreate(email:string,password:string):Promise<User>{
-  return (await createUserWithEmailAndPassword(webAuth,email,password)).user;
+  return (await createUserWithEmailAndPassword(getWebAuth(),email,password)).user;
 }
-export async function webSignOut(){ await signOut(webAuth); }
-export function webCurrentUser(){ return webAuth.currentUser; }
+export async function webSignOut(){ await signOut(getWebAuth()); }
+export function webCurrentUser(){ return Capacitor.isNativePlatform() ? null : getWebAuth().currentUser; }
 
-export const webDoc = (path:string) => doc(webDb, path);
-export const webCollection = (path:string) => collection(webDb, path);
+export const webDoc = (path:string) => doc(getWebDb(), path);
+export const webCollection = (path:string) => collection(getWebDb(), path);
 export { getDoc, getDocs, setDoc, deleteDoc, query, where };
-
 
 async function getNativeIdToken(): Promise<string> {
   const { user } = await FirebaseAuthentication.getCurrentUser();
@@ -83,53 +113,30 @@ async function nativeStorageUpload(file: Blob, path: string): Promise<string> {
   const token = await getNativeIdToken();
   const downloadToken = crypto.randomUUID();
   const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${storageBucketName}/o?uploadType=media&name=${encodeURIComponent(path)}`;
-
   const uploadResponse = await fetch(uploadUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': file.type || 'application/octet-stream',
-    },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': file.type || 'application/octet-stream' },
     body: file,
   });
-  if (!uploadResponse.ok) {
-    throw new Error(`Firebase Storage upload failed (${uploadResponse.status}).`);
-  }
-
+  if (!uploadResponse.ok) throw new Error(`Firebase Storage upload failed (${uploadResponse.status}).`);
   const metadataResponse = await fetch(storageObjectUrl(path), {
     method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      metadata: { firebaseStorageDownloadTokens: downloadToken },
-    }),
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metadata: { firebaseStorageDownloadTokens: downloadToken } }),
   });
-  if (!metadataResponse.ok) {
-    throw new Error(`Firebase Storage metadata update failed (${metadataResponse.status}).`);
-  }
-
+  if (!metadataResponse.ok) throw new Error(`Firebase Storage metadata update failed (${metadataResponse.status}).`);
   return `${storageObjectUrl(path)}?alt=media&token=${encodeURIComponent(downloadToken)}`;
 }
 
 async function nativeStorageDelete(path: string): Promise<void> {
   const token = await getNativeIdToken();
-  const response = await fetch(storageObjectUrl(path), {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok && response.status !== 404) {
-    throw new Error(`Firebase Storage delete failed (${response.status}).`);
-  }
+  const response = await fetch(storageObjectUrl(path), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok && response.status !== 404) throw new Error(`Firebase Storage delete failed (${response.status}).`);
 }
 
 export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
-  // Native Android/iOS uses Firebase Auth's native ID token with the Storage REST API.
-  // This avoids loading a separate native Storage plugin and keeps startup stable.
   if (Capacitor.isNativePlatform()) return nativeStorageUpload(file, path);
-
-  const ref = storageRef(webStorage, path);
+  const ref = storageRef(getWebStorage(), path);
   return await new Promise<string>((resolve, reject) => {
     const task = uploadBytesResumable(ref, file, { contentType: file.type || 'application/octet-stream' });
     let settled = false;
@@ -143,18 +150,10 @@ export async function uploadMediaToStorage(file: Blob, path: string): Promise<st
       task.cancel();
       finish(new Error('Firebase Storage upload timed out. Check your connection and try again.'));
     }, 60000);
-    task.on(
-      'state_changed',
-      undefined,
-      error => finish(error),
-      async () => {
-        try {
-          finish(undefined, await getDownloadURL(task.snapshot.ref));
-        } catch (error) {
-          finish(error);
-        }
-      },
-    );
+    task.on('state_changed', undefined, error => finish(error), async () => {
+      try { finish(undefined, await getDownloadURL(task.snapshot.ref)); }
+      catch (error) { finish(error); }
+    });
   });
 }
 
@@ -163,5 +162,5 @@ export async function deleteMediaFromStorage(path: string): Promise<void> {
     await nativeStorageDelete(path);
     return;
   }
-  await deleteObject(storageRef(webStorage, path));
+  await deleteObject(storageRef(getWebStorage(), path));
 }
