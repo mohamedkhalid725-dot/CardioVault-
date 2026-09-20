@@ -48,8 +48,8 @@ function mergeClinicalMedia(localPatient:any, cloudPatient:any): any {
       const localPaths = Array.isArray(localRecord?.imageStoragePaths) ? localRecord.imageStoragePaths : [];
       return {
         ...cloudRecord,
-        imageUrls: cloudUrls.length ? cloudUrls : localUrls,
-        imageStoragePaths: cloudPaths.length ? cloudPaths : localPaths,
+        imageUrls: [...cloudUrls, ...localUrls.filter((url:any) => !cloudUrls.includes(url))],
+        imageStoragePaths: [...cloudPaths, ...localPaths.filter((path:any) => !cloudPaths.includes(path))],
       };
     });
   };
