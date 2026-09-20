@@ -125,7 +125,9 @@ async function nativeStorageDelete(path: string): Promise<void> {
 }
 
 export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
-  // Native Android/iOS uses Firebase Auth's native ID token with the Storage REST API.\n  // This avoids loading a separate native Storage plugin and keeps startup stable.\n  if (Capacitor.isNativePlatform()) return nativeStorageUpload(file, path);
+  // Native Android/iOS uses Firebase Auth's native ID token with the Storage REST API.
+  // This avoids loading a separate native Storage plugin and keeps startup stable.
+  if (Capacitor.isNativePlatform()) return nativeStorageUpload(file, path);
 
   const ref = storageRef(webStorage, path);
   return await new Promise<string>((resolve, reject) => {
@@ -157,6 +159,9 @@ export async function uploadMediaToStorage(file: Blob, path: string): Promise<st
 }
 
 export async function deleteMediaFromStorage(path: string): Promise<void> {
-  if (Capacitor.isNativePlatform()) {\n    await nativeStorageDelete(path);\n    return;\n  }
+  if (Capacitor.isNativePlatform()) {
+    await nativeStorageDelete(path);
+    return;
+  }
   await deleteObject(storageRef(webStorage, path));
 }
