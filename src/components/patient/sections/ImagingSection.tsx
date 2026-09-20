@@ -3,7 +3,7 @@ import { Image as ImageIcon, Plus, Trash2, X, Layers, Edit2, Upload } from 'luci
 import { Patient, ImagingStudy } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
-import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { uploadClinicalMedia, optimizeClinicalImage } from '../../../services/mediaStorage';
 import { deleteMediaFromStorage } from '../../../services/webFirebase';
 
 interface ImagingSectionProps { patient: Patient; }
@@ -139,7 +139,8 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     setUploadingImages(true);
     try {
       const uploadBatchId=Date.now();
-      const uploaded = await Promise.all(imageFiles.map((file, index) => {
+      const preparedFiles = await Promise.all(imageFiles.map(file => optimizeClinicalImage(file)));
+      const uploaded = await Promise.all(preparedFiles.map((file, index) => {
         const path=`patients/${patient.id}/imaging/${activeStudyForUpload}/${uploadBatchId}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         return uploadClinicalMedia(file,path).then(result=>({result,path}));
       }));
@@ -149,7 +150,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
         ? { ...s, imageUrls: [...(s.imageUrls || []), ...urls], imageStoragePaths: [...(s.imageStoragePaths || []), ...paths] }
         : s
       ));
-      showToast(`${urls.length} scan image${urls.length === 1 ? '' : 's'} attached${usedCloud ? ' and synced to cloud' : ''}`, 'success');
+      showToast(`${urls.length} scan image${urls.length === 1 ? '' : 's'} attached and synced to cloud`, 'success');
     } catch (error) {
       console.error('Scan image upload failed:', error);
       showToast('One or more images could not be uploaded.', 'error');
