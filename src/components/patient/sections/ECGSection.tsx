@@ -51,7 +51,7 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
         return uploadClinicalMedia(file,path).then(result=>({result,path}));
       }));
       const urls = uploaded.map(item => item.result.url);
-      const paths = uploaded.map(item => item.path);
+      const paths = uploaded.filter(item => item.result.cloud).map(item => item.result.storagePath || item.path);
       const next = records.map(r => r.id === selected.id
         ? { ...r, imageUrls: [...(r.imageUrls || []), ...urls], imageStoragePaths: [...(r.imageStoragePaths || []), ...paths] }
         : r
