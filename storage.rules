@@ -1,0 +1,50 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function masterAccount() {
+      return signedIn() && request.auth.token.email == 'mohamedkhalid725@gmail.com';
+    }
+
+    function masterWorkspace() {
+      return 'cardiovault_master_workspace';
+    }
+
+    function memberData() {
+      return firestore.get(
+        /databases/(default)/documents/workspaces/$(masterWorkspace())/members/$(request.auth.uid)
+      ).data;
+    }
+
+    function activeMemberForUnit(unitId) {
+      return signedIn()
+        && firestore.exists(
+          /databases/(default)/documents/workspaces/$(masterWorkspace())/members/$(request.auth.uid)
+        )
+        && memberData().unitId == unitId
+        && firestore.exists(
+          /databases/(default)/documents/accessCodes/$(memberData().accessCodeHash)
+        )
+        && firestore.get(
+          /databases/(default)/documents/accessCodes/$(memberData().accessCodeHash)
+        ).data.active == true
+        && firestore.get(
+          /databases/(default)/documents/accessCodes/$(memberData().accessCodeHash)
+        ).data.workspaceId == masterWorkspace();
+    }
+
+    // Clinical uploads use:
+    // units/{unitId}/patients/{patientId}/{imaging|ecg}/...
+    match /units/{unitId}/patients/{patientId}/{allPaths=**} {
+      allow read, write: if masterAccount() || activeMemberForUnit(unitId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
