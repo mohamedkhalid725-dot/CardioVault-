@@ -28,7 +28,15 @@ export const isClinicalImageFile = (file: File) =>
 
 export async function optimizeClinicalImage(file: File): Promise<File> {
   if (!file || file.size <= 0) throw new Error('The selected image is empty.');
-  if (!isClinicalImageFile(file) || file.size <= 900 * 1024) return file;
+  if (!isClinicalImageFile(file)) return file;
+
+  // Android galleries/cameras may provide HEIC/HEIF (and other formats that
+  // are not reliably renderable inside every Android WebView). Always
+  // normalize those formats to JPEG, even when the original file is small.
+  const type = String(file.type || '').toLowerCase();
+  const name = String(file.name || '').toLowerCase();
+  const mustNormalize = /image\\/(heic|heif)/i.test(type) || /\\.(heic|heif)$/i.test(name);
+  if (!mustNormalize && file.size <= 900 * 1024) return file;
 
   const maxDimension = 2048;
   let sourceWidth = 0;
