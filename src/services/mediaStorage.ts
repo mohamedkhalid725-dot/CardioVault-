@@ -28,7 +28,7 @@ export async function fileToDataUrl(file: Blob): Promise<string> {
  * Prepare camera/gallery images before upload.
  *
  * Phone camera images can be 4–12 MB. We keep a clinically useful
- * resolution but resize/compress them locally before Firebase Storage.
+ * resolution but resize/compress them locally before cloud storage.
  * The fallback path uses an HTMLImageElement because some Android
  * WebViews cannot decode every camera format through createImageBitmap.
  */
@@ -111,7 +111,7 @@ export async function optimizeClinicalImage(file: File): Promise<File> {
 }
 
 /**
- * Clinical media is persisted in Firebase Storage, not as base64 in Firestore.
+ * Clinical media is persisted in private Supabase Storage, not as base64 in Firestore.
  * Uploads remain cloud-backed so they survive reload/sync.
  */
 export async function uploadClinicalMedia(
@@ -122,14 +122,14 @@ export async function uploadClinicalMedia(
 
   try {
     const url = await uploadMediaToStorage(file, path);
-    if (!url) throw new Error('Firebase Storage returned no download URL.');
+    if (!url) throw new Error('Supabase Storage returned no signed URL.');
     return { url, cloud: true, storagePath: markSupabaseStoragePath(path) };
   } catch (error) {
     // Clinical images must be cloud-backed. A local data-URL fallback can
     // exceed browser storage / Firestore document limits and can disappear
     // during a later cloud restore. Fail the upload instead of reporting a
     // misleading success.
-    console.error('Firebase Storage upload failed:', error);
+    console.error('Clinical media cloud upload failed:', error);
     throw error instanceof Error ? error : new Error(String(error));
   }
 }
