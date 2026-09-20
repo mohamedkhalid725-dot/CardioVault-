@@ -35,7 +35,7 @@ export async function optimizeClinicalImage(file: File): Promise<File> {
   // normalize those formats to JPEG, even when the original file is small.
   const type = String(file.type || '').toLowerCase();
   const name = String(file.name || '').toLowerCase();
-  const mustNormalize = /image\\/(heic|heif)/i.test(type) || /\\.(heic|heif)$/i.test(name);
+  const mustNormalize = /image\/(heic|heif)/i.test(type) || /\.(heic|heif)$/i.test(name);
   if (!mustNormalize && file.size <= 900 * 1024) return file;
 
   const maxDimension = 2048;
