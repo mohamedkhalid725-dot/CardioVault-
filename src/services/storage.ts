@@ -613,12 +613,31 @@ export const INITIAL_BEDS: Bed[] = [];
 
 export const INITIAL_PATIENTS: Patient[] = [];
 
+export function stripLegacyDemoData<T extends { id?: string; unitId?: string; patientId?: string }>(
+  units: T[],
+  beds: T[],
+  patients: T[],
+): { units: T[]; beds: T[]; patients: T[] } {
+  const unitsClean = units.filter(item => !LEGACY_DEMO_UNIT_IDS.has(String(item?.id || '')));
+  const patientsClean = patients.filter(item => !LEGACY_DEMO_PATIENT_IDS.has(String(item?.id || '')));
+  const bedsClean = beds.filter(item =>
+    !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')) &&
+    !LEGACY_DEMO_PATIENT_IDS.has(String(item?.patientId || ''))
+  );
+  return { units: unitsClean, beds: bedsClean, patients: patientsClean };
+}
+
 // Local-first persistent storage helpers
 export const StorageService = {
   getUnits(): Unit[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.UNITS);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        const cleaned = parsed.filter((item: Unit) => !LEGACY_DEMO_UNIT_IDS.has(String(item?.id || '')));
+        if (cleaned.length !== parsed.length) this.saveUnits(cleaned);
+        return cleaned;
+      }
     } catch (e) {
       console.error('Storage getUnits error:', e);
     }
@@ -637,7 +656,12 @@ export const StorageService = {
   getBeds(): Bed[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.BEDS);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        const cleaned = parsed.filter((item: Bed) => !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')) && !LEGACY_DEMO_PATIENT_IDS.has(String(item?.patientId || '')));
+        if (cleaned.length !== parsed.length) this.saveBeds(cleaned);
+        return cleaned;
+      }
     } catch (e) {
       console.error('Storage getBeds error:', e);
     }
@@ -656,7 +680,12 @@ export const StorageService = {
   getPatients(): Patient[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.PATIENTS);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        const cleaned = parsed.filter((item: Patient) => !LEGACY_DEMO_PATIENT_IDS.has(String(item?.id || '')) && !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')));
+        if (cleaned.length !== parsed.length) this.savePatients(cleaned);
+        return cleaned;
+      }
     } catch (e) {
       console.error('Storage getPatients error:', e);
     }
