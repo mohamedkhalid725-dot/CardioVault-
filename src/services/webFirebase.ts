@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { Capacitor } from '@capacitor/core';
-import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { FirebaseStorage } from '@capacitor-firebase/storage';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   GoogleAuthProvider,
@@ -67,61 +68,81 @@ export const webCollection = (path:string) => collection(webDb, path);
 export { getDoc, getDocs, setDoc, deleteDoc, query, where };
 
 
-const STORAGE_BUCKET = 'ccu-notebook.firebasestorage.app';
-
-async function getNativeFirebaseIdToken(): Promise<string> {
-  const result = await FirebaseAuthentication.getIdToken({ forceRefresh: false });
-  if (!result.token) throw new Error('Firebase session token is unavailable. Please sign in again.');
-  return result.token;
+async function blobToBase64(file: Blob): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Could not prepare image for native upload.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function nativeStorageUpload(file: Blob, path: string): Promise<string> {
-  const token = await getNativeFirebaseIdToken();
-  const downloadToken = crypto.randomUUID();
-  const metadata = JSON.stringify({
-    name: path,
-    contentType: file.type || 'application/octet-stream',
-    metadata: { firebaseStorageDownloadTokens: downloadToken },
-  });
-  const boundary = `----CardioVault${crypto.randomUUID().replace(/-/g, '')}`;
-  const body = new Blob([
-    `--${boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n${metadata}\\r\\n--${boundary}\\r\\nContent-Type: ${file.type || 'application/octet-stream'}\\r\\n\\r\\n`,
-    file,
-    `\\r\\n--${boundary}--`,
-  ]);
-  const endpoint = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o?uploadType=multipart&name=${encodeURIComponent(path)}`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`,
-    },
-    body,
-  });
-  if (!response.ok) {
-    const details = await response.text().catch(() => '');
-    throw new Error(`Storage upload failed (${response.status}): ${details.slice(0, 240)}`);
+  const tempName = `cardiovault-upload-${Date.now()}-${Math.random().toString(36).slice(2)}-${path.split('/').pop() || 'image'}`;
+  const base64 = await blobToBase64(file);
+  let uri = '';
+  try {
+    const written = await Filesystem.writeFile({
+      path: tempName,
+      data: base64,
+      directory: Directory.Cache,
+      recursive: true,
+    });
+    const resolved = await Filesystem.getUri({ directory: Directory.Cache, path: tempName });
+    uri = resolved.uri || written.uri || '';
+    if (!uri) throw new Error('Could not create a temporary image file.');
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        error ? reject(error) : resolve();
+      };
+      const timeout = setTimeout(() => finish(new Error('Native Firebase Storage upload timed out.')), 60000);
+      FirebaseStorage.uploadFile(
+        {
+          path,
+          uri,
+        },
+        (event, error) => {
+          if (error) {
+            clearTimeout(timeout);
+            finish(error);
+          } else if (event?.completed) {
+            clearTimeout(timeout);
+            finish();
+          }
+        },
+      ).catch(error => {
+        clearTimeout(timeout);
+        finish(error);
+      });
+    });
+
+    const { downloadUrl } = await FirebaseStorage.getDownloadUrl({ path });
+    if (!downloadUrl) throw new Error('Firebase Storage returned no download URL.');
+    return downloadUrl;
+  } finally {
+    try {
+      await Filesystem.deleteFile({ directory: Directory.Cache, path: tempName });
+    } catch {
+      // Temporary cache cleanup is best-effort.
+    }
   }
-  return `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${encodeURIComponent(downloadToken)}`;
 }
 
 async function nativeStorageDelete(path: string): Promise<void> {
-  const token = await getNativeFirebaseIdToken();
-  const endpoint = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(path)}`;
-  const response = await fetch(endpoint, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok && response.status !== 404) {
-    const details = await response.text().catch(() => '');
-    throw new Error(`Storage delete failed (${response.status}): ${details.slice(0, 240)}`);
-  }
+  await FirebaseStorage.deleteFile({ path });
 }
 
 export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
-  // Native Capacitor auth lives in the native Firebase SDK. The Firebase JS
-  // Storage SDK has a separate web auth state, so using it directly on Android
-  // can produce storage/unauthorized even after a successful native login.
+  // Native Android/iOS uses the Firebase Storage native SDK, so it shares the
+  // same native Firebase Auth session and avoids WebView fetch/REST issues.
   if (Capacitor.isNativePlatform()) return nativeStorageUpload(file, path);
 
   const ref = storageRef(webStorage, path);
