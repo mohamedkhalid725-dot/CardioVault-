@@ -1,9 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image as ImageIcon, Plus, Trash2, X, Layers, Edit2, Upload } from 'lucide-react';
 import { Patient, ImagingStudy } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
-import { uploadClinicalMedia, optimizeClinicalImage, isClinicalImageFile } from '../../../services/mediaStorage';
+import { uploadClinicalMedia, optimizeClinicalImage, isClinicalImageFile, refreshClinicalMediaUrls } from '../../../services/mediaStorage';
 import { deleteMediaFromStorage } from '../../../services/webFirebase';
 import { syncCurrentUserNow } from '../../../services/cloudSyncBridge';
 
@@ -25,6 +25,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
   const [activeStudyForUpload, setActiveStudyForUpload] = useState<string | null>(null);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [savingStudy, setSavingStudy] = useState(false);
+  const [resolvedImageUrls, setResolvedImageUrls] = useState<Record<string, string[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [studyType, setStudyType] = useState('Chest X-ray');
@@ -48,6 +49,24 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     imageStoragePaths: s.imageStoragePaths || [],
     radiologist: s.radiologist || s.operator || 'Attending Radiologist',
   }));
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const entries = await Promise.all(studies.map(async study => {
+        try {
+          const urls = await refreshClinicalMediaUrls(study.imageUrls || [], study.imageStoragePaths || []);
+          return [study.id, urls] as const;
+        } catch (error) {
+          console.warn('Clinical imaging URL refresh failed:', error);
+          return [study.id, study.imageUrls || []] as const;
+        }
+      }));
+      if (!cancelled) setResolvedImageUrls(Object.fromEntries(entries));
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [studies.map(s => `${s.id}:${(s.imageStoragePaths || []).join(',')}`).join('|'), studies.map(s => (s.imageUrls || []).length).join('|')]);
 
   const filteredStudies = selectedModality === 'All' ? studies : studies.filter(s =>
     s.modality.toLowerCase().includes(selectedModality.toLowerCase()) ||
@@ -224,13 +243,13 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
 
             <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
-                <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 text-cyan-500" /> Attached Scan Images ({study.imageUrls?.length || 0})</span>
+                <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 text-cyan-500" /> Attached Scan Images ({(resolvedImageUrls[study.id] || study.imageUrls || []).length})</span>
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar"><span className="text-[11px] text-slate-400 whitespace-nowrap">Or attach sample:</span>{PRESET_SAMPLE_SCANS.map((preset, idx) => <button key={idx} onClick={() => handleAttachPreset(study.id, preset.url)} className="px-2 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-cyan-500/20 text-slate-600 dark:text-slate-300 whitespace-nowrap">{preset.name.split(' ')[0]}</button>)}</div>
               </div>
 
-              {study.imageUrls && study.imageUrls.length > 0 ? (
+              {(resolvedImageUrls[study.id] || study.imageUrls || []).length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {study.imageUrls.map((url, imgIdx) => (
+                  {(resolvedImageUrls[study.id] || study.imageUrls || []).map((url, imgIdx) => (
                     <div key={imgIdx} className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 aspect-video bg-black/40 cursor-zoom-in" onClick={() => setFullScreenImage(url)}>
                       <img src={url} alt={`${study.modality} Scan ${imgIdx + 1}`} referrerPolicy="no-referrer" draggable={false} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none"><span className="p-1.5 rounded-lg bg-white/20 text-white backdrop-blur-sm">⌕</span></div>
