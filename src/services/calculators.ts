@@ -285,7 +285,7 @@ export const MedicalCalculators = {
     const hrPts = inputs.hr < 50 ? 0 : inputs.hr < 70 ? 3 : inputs.hr < 90 ? 9 : inputs.hr < 110 ? 14 : inputs.hr < 150 ? 23 : inputs.hr < 200 ? 36 : 46;
     const sbpPts = inputs.sbp >= 200 ? 0 : inputs.sbp >= 180 ? 3 : inputs.sbp >= 160 ? 7 : inputs.sbp >= 140 ? 11 : inputs.sbp >= 120 ? 15 : inputs.sbp >= 100 ? 24 : inputs.sbp >= 80 ? 38 : 58;
     const crPts = inputs.creatinine < 0.4 ? 1 : inputs.creatinine < 0.8 ? 4 : inputs.creatinine < 1.2 ? 7 : inputs.creatinine < 1.6 ? 10 : inputs.creatinine < 2.0 ? 13 : inputs.creatinine < 4.0 ? 21 : 28;
-    const killipPts = [0,20,39,59,79][Math.max(1,Math.min(4,Math.round(inputs.killip)))];
+    const killipPts = [0,20,39,59][Math.max(0,Math.min(3,Math.round(inputs.killip)-1))];
     const score = agePts + hrPts + sbpPts + crPts + killipPts + (inputs.cardiacArrest?39:0) + (inputs.stDeviation?28:0) + (inputs.elevatedMarkers?14:0);
     const risk = score < 109 ? 'Low' : score < 141 ? 'Intermediate' : 'High';
     return {score,risk};
@@ -342,7 +342,7 @@ export const MedicalCalculators = {
 
   calcCRUSADE(inputs:{female:boolean;diabetes:boolean;vascularDisease:boolean;heartRate:number;systolicBp:number;hematocrit:number;crcl:number;chf:boolean}) {
     const score=(inputs.female?8:0)+(inputs.diabetes?6:0)+(inputs.vascularDisease?6:0)+(inputs.chf?7:0)+(inputs.heartRate>=110?9:inputs.heartRate>=90?6:inputs.heartRate>=70?3:0)+(inputs.systolicBp<90?10:inputs.systolicBp<110?8:inputs.systolicBp<120?5:inputs.systolicBp<140?1:0)+(inputs.hematocrit<30?9:inputs.hematocrit<36?7:inputs.hematocrit<40?3:0)+(inputs.crcl<15?39:inputs.crcl<30?35:inputs.crcl<60?28:inputs.crcl<90?17:inputs.crcl<120?7:0);
-    return {score,risk:score<20?'Very Low':score<30?'Low':score<40?'Moderate':score<50?'High':'Very High'};
+    return {score,risk:score<=20?'Very Low':score<=30?'Low':score<=40?'Moderate':score<=50?'High':'Very High'};
   },
 
   calcFourTs(inputs:{thrombocytopenia:number;timing:number;thrombosis:number;otherCause:number}) {
@@ -394,7 +394,7 @@ export const MedicalCalculators = {
     const hbPts=inputs.male?(inputs.hb<10?6:inputs.hb<12?3:inputs.hb<13?1:0):(inputs.hb<10?6:inputs.hb<12?1:0);
     const bunPts=inputs.bun<6.5?0:inputs.bun<8?2:inputs.bun<10?3:inputs.bun<25?4:6;
     const sbpPts=inputs.sbp<90?3:inputs.sbp<100?2:inputs.sbp<110?1:0;
-    const score=hbPts+bunPts+sbpPts+(inputs.male?1:0)+(inputs.hr100Plus?1:0)+(inputs.melena?1:0)+(inputs.syncope?2:0)+(inputs.liverDisease?2:0)+(inputs.heartFailure?2:0);
+    const score=hbPts+bunPts+sbpPts+(inputs.hr100Plus?1:0)+(inputs.melena?1:0)+(inputs.syncope?2:0)+(inputs.liverDisease?2:0)+(inputs.heartFailure?2:0);
     return {score};
   },
 
