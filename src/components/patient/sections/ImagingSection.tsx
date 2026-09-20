@@ -3,7 +3,7 @@ import { Image as ImageIcon, Plus, Trash2, X, Layers, Edit2, Upload } from 'luci
 import { Patient, ImagingStudy } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
-import { uploadClinicalMedia, optimizeClinicalImage } from '../../../services/mediaStorage';
+import { uploadClinicalMedia, optimizeClinicalImage, isClinicalImageFile } from '../../../services/mediaStorage';
 import { deleteMediaFromStorage } from '../../../services/webFirebase';
 
 interface ImagingSectionProps { patient: Patient; }
@@ -129,9 +129,9 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     const files: File[] = e.target.files ? Array.from(e.target.files) : [];
     if (!files.length || !activeStudyForUpload) return;
 
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    const imageFiles = files.filter(isClinicalImageFile);
     if (!imageFiles.length) {
-      showToast('Please select image files only.', 'error');
+      showToast('Please select image files only (JPG, PNG, WEBP, HEIC).', 'error');
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
