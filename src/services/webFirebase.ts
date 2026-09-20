@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseStorage } from '@capacitor-firebase/storage';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
@@ -146,8 +146,32 @@ export async function uploadMediaToStorage(file: Blob, path: string): Promise<st
   if (Capacitor.isNativePlatform()) return nativeStorageUpload(file, path);
 
   const ref = storageRef(webStorage, path);
-  const snapshot = await uploadBytes(ref, file, { contentType: file.type || 'application/octet-stream' });
-  return getDownloadURL(snapshot.ref);
+  return await new Promise<string>((resolve, reject) => {
+    const task = uploadBytesResumable(ref, file, { contentType: file.type || 'application/octet-stream' });
+    let settled = false;
+    const finish = (error?: unknown, url?: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      error ? reject(error) : resolve(url || '');
+    };
+    const timeout = setTimeout(() => {
+      task.cancel();
+      finish(new Error('Firebase Storage upload timed out. Check your connection and try again.'));
+    }, 60000);
+    task.on(
+      'state_changed',
+      undefined,
+      error => finish(error),
+      async () => {
+        try {
+          finish(undefined, await getDownloadURL(task.snapshot.ref));
+        } catch (error) {
+          finish(error);
+        }
+      },
+    );
+  });
 }
 
 export async function deleteMediaFromStorage(path: string): Promise<void> {
