@@ -4,6 +4,7 @@ import { ECGRecord, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
 import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { deleteMediaFromStorage } from '../../../services/webFirebase';
 
 interface Props { patient: Patient; }
 const blank = (): ECGRecord => ({ id: '', date: new Date().toISOString().split('T')[0], time: new Date().toTimeString().slice(0, 5), heartRate: 0, rhythm: '', regularity: '', axis: '', pr: 0, qrs: 0, qt: 0, qtc: 0, pWave: '', qrsFindings: '', stSegment: '', tWave: '', otherFindings: '', interpretation: [], finalImpression: '', imageUrls: [] });
@@ -43,12 +44,15 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
 
     setUploadingImages(true);
     try {
-      const uploaded = await Promise.all(imageFiles.map((file, index) =>
-        uploadClinicalMedia(file, `patients/${patient.id}/ecg/${selected.id}/${Date.now()}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
-      ));
-      const urls = uploaded.map(item => item.url);
+      const uploadBatchId=Date.now();
+      const uploaded = await Promise.all(imageFiles.map((file, index) => {
+        const path=`patients/${patient.id}/ecg/${selected.id}/${uploadBatchId}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        return uploadClinicalMedia(file,path).then(result=>({result,path}));
+      }));
+      const urls = uploaded.map(item => item.result.url);
+      const paths = uploaded.map(item => item.path);
       const next = records.map(r => r.id === selected.id
-        ? { ...r, imageUrls: [...(r.imageUrls || []), ...urls] }
+        ? { ...r, imageUrls: [...(r.imageUrls || []), ...urls], imageStoragePaths: [...(r.imageStoragePaths || []), ...paths] }
         : r
       );
       updatePatient(patient.id, { ecgRecords: next });
@@ -62,7 +66,13 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
     }
   };
   const deleteRecord = (id: string) => { if (!window.confirm('Delete this ECG record?')) return; const next = records.filter((r) => r.id !== id); updatePatient(patient.id, { ecgRecords: next }); setSelectedId(next[0]?.id || null); showToast('ECG record deleted.', 'info'); };
-  const deleteImage = (id: string, imageIndex: number) => { if (!window.confirm('Remove this ECG image?')) return; updatePatient(patient.id, { ecgRecords: records.map((r) => r.id === id ? { ...r, imageUrls: (r.imageUrls || []).filter((_, i) => i !== imageIndex) } : r) }); };
+  const deleteImage = async (id: string, imageIndex: number) => {
+    if (!window.confirm('Remove this ECG image?')) return;
+    const record=records.find(r=>r.id===id);
+    const storagePath=record?.imageStoragePaths?.[imageIndex];
+    if(storagePath){try{await deleteMediaFromStorage(storagePath);}catch(error){console.warn('Cloud ECG image delete failed:',error);}}
+    updatePatient(patient.id,{ecgRecords:records.map(r=>r.id===id?{...r,imageUrls:(r.imageUrls||[]).filter((_,i)=>i!==imageIndex),imageStoragePaths:(r.imageStoragePaths||[]).filter((_,i)=>i!==imageIndex)}:r)});
+  };
   const input = 'w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white';
 
   return <div className="space-y-5 max-w-5xl mx-auto animate-in fade-in duration-150">
