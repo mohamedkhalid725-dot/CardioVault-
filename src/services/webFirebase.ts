@@ -75,14 +75,14 @@ async function getNativeIdToken(): Promise<string> {
   return token;
 }
 
-const storageBucketName = firebaseConfig.storageBucket.replace(/\.app$/, '');
+const storageBucketName = firebaseConfig.storageBucket;
 const storageObjectUrl = (path: string) =>
   `https://firebasestorage.googleapis.com/v0/b/${storageBucketName}/o/${encodeURIComponent(path)}`;
 
 async function nativeStorageUpload(file: Blob, path: string): Promise<string> {
   const token = await getNativeIdToken();
   const downloadToken = crypto.randomUUID();
-  const uploadUrl = `${storageObjectUrl(path)}?uploadType=media&name=${encodeURIComponent(path)}`;
+  const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${storageBucketName}/o?uploadType=media&name=${encodeURIComponent(path)}`;
 
   const uploadResponse = await fetch(uploadUrl, {
     method: 'POST',
