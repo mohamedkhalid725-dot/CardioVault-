@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
@@ -43,6 +44,8 @@ export const webAuth = initializeAuth(app, {
 });
 export const webStorage = getStorage(app);
 
+export const webStorage = getStorage(app);
+
 export const webDb: Firestore = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
@@ -63,6 +66,17 @@ export function webCurrentUser(){ return webAuth.currentUser; }
 export const webDoc = (path:string) => doc(webDb, path);
 export const webCollection = (path:string) => collection(webDb, path);
 export { getDoc, getDocs, setDoc, deleteDoc, query, where };
+
+
+export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
+  const ref = storageRef(webStorage, path);
+  const snapshot = await uploadBytes(ref, file, { contentType: file.type || 'application/octet-stream' });
+  return getDownloadURL(snapshot.ref);
+}
+
+export async function deleteMediaFromStorage(path: string): Promise<void> {
+  await deleteObject(storageRef(webStorage, path));
+}
 
 
 export async function uploadMediaToStorage(file: Blob, path: string): Promise<string> {
