@@ -2,7 +2,7 @@ import { StorageService } from './storage';
 import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { onSnapshot } from 'firebase/firestore';
-import { webCurrentUser, webDb, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
+import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
 import { MASTER_WORKSPACE_ID, MASTER_ACCOUNT_EMAIL, type WorkspaceAccessState } from './workspaceAccess';
 
 const SCHEMA_VERSION=12;
