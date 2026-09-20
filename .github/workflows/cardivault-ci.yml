@@ -103,6 +103,8 @@ jobs:
           s=p.read_text()
           if 'android.permission.INTERNET' not in s:
               s=s.replace('</manifest>', '    <uses-permission android:name="android.permission.INTERNET" />\n</manifest>')
+          if 'android.permission.RECORD_AUDIO' not in s:
+              s=s.replace('</manifest>', '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n</manifest>')
           if 'android:name=".MainActivity"' in s and 'android:launchMode="singleTask"' not in s:
               s=s.replace('android:name=".MainActivity"', 'android:name=".MainActivity"\n            android:launchMode="singleTask"')
           p.write_text(s)
@@ -227,8 +229,9 @@ jobs:
           fi
           echo '--- Debug APK certificate ---'
           keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk | grep -E 'Owner:|SHA1:|SHA256:' || true
-          echo '--- INTERNET permission ---'
+          echo '--- required permissions ---'
           grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml && echo 'INTERNET permission: OK' || (echo 'INTERNET permission: MISSING' && exit 1)
+          grep -q 'android.permission.RECORD_AUDIO' app/src/main/AndroidManifest.xml && echo 'RECORD_AUDIO permission: OK' || (echo 'RECORD_AUDIO permission: MISSING' && exit 1)
       - name: Label release artifact
         run: |
           if [ "$HAS_CARDIOVAULT_RELEASE_KEYSTORE" != "" ]; then
