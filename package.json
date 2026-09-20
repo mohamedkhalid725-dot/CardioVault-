@@ -36,7 +36,8 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^6.2.3",
-    "@capacitor/ios": "^7.4.4"
+    "@capacitor/ios": "^7.4.4",
+    "@capacitor/local-notifications": "^7.4.4"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
