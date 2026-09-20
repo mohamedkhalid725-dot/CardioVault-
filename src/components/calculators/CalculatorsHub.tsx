@@ -1,16 +1,16 @@
 import React,{useMemo,useState}from'react';
-import {Search,Calculator,Heart,Activity,Wind,Gauge,Droplets,Syringe,ChevronRight,Star,Clock3}from'lucide-react';
+import {Search,Calculator,Heart,Activity,Wind,Gauge,Droplets,Syringe,ChevronRight,Star,Clock3,ShieldAlert}from'lucide-react';
 import {Patient}from'../../types/clinical';
 import {CARDIOVAULT_CALCULATORS}from'../../services/calculatorCatalog';
 import {FocusedCalculator}from'./FocusedCalculator';
 interface Props{patient?:Patient;embedded?:boolean;}
-type Filter='All'|'Cardiology'|'Critical Care'|'ABG'|'Hemodynamics'|'Renal & Electrolytes'|'Drug Infusion';
-const iconFor=(category:string)=>category==='Cardiology'?Heart:category==='Critical Care'?Activity:category==='ABG'?Wind:category==='Hemodynamics'?Gauge:category==='Renal & Electrolytes'?Droplets:category==='Drug Infusion'?Syringe:Calculator;
-const colorFor=(category:string)=>category==='Cardiology'?'bg-rose-500/15 text-rose-500':category==='Critical Care'?'bg-blue-500/15 text-blue-500':category==='ABG'?'bg-cyan-500/15 text-cyan-500':category==='Hemodynamics'?'bg-violet-500/15 text-violet-500':category==='Renal & Electrolytes'?'bg-emerald-500/15 text-emerald-500':category==='Drug Infusion'?'bg-amber-500/15 text-amber-500':'bg-slate-500/15 text-slate-500';
+type Filter='All'|'Cardiology'|'Critical Care'|'ABG'|'Hemodynamics'|'Renal & Electrolytes'|'Drug Infusion'|'VTE / Emergency';
+const iconFor=(category:string)=>category==='Cardiology'?Heart:category==='Critical Care'?Activity:category==='ABG'?Wind:category==='Hemodynamics'?Gauge:category==='Renal & Electrolytes'?Droplets:category==='Drug Infusion'?Syringe:category==='VTE / Emergency'?ShieldAlert:Calculator;
+const colorFor=(category:string)=>category==='Cardiology'?'bg-rose-500/15 text-rose-500':category==='Critical Care'?'bg-blue-500/15 text-blue-500':category==='ABG'?'bg-cyan-500/15 text-cyan-500':category==='Hemodynamics'?'bg-violet-500/15 text-violet-500':category==='Renal & Electrolytes'?'bg-emerald-500/15 text-emerald-500':category==='Drug Infusion'?'bg-amber-500/15 text-amber-500':category==='VTE / Emergency'?'bg-orange-500/15 text-orange-500':'bg-slate-500/15 text-slate-500';
 const read=(key:string):string[]=>{try{const x=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(x)?x.filter(v=>typeof v==='string'):[]}catch{return[]}};
 export const CalculatorsHub:React.FC<Props>=({patient,embedded=false})=>{
  const[filter,setFilter]=useState<Filter>('All');const[query,setQuery]=useState('');const[selectedId,setSelectedId]=useState<string|null>(null);const[showFav,setShowFav]=useState(false);const[favorites,setFavorites]=useState<string[]>(()=>read('cardiovault_calculator_favorites_v1'));const[recent,setRecent]=useState<string[]>(()=>read('cardiovault_calculator_recent_v1'));
- const filters:Filter[]=['All','Cardiology','Critical Care','ABG','Hemodynamics','Renal & Electrolytes','Drug Infusion'];
+ const filters:Filter[]=['All','Cardiology','Critical Care','ABG','Hemodynamics','Renal & Electrolytes','Drug Infusion','VTE / Emergency'];
  const toggleFavorite=(id:string,e:React.MouseEvent)=>{e.stopPropagation();setFavorites(prev=>{const next=prev.includes(id)?prev.filter(x=>x!==id):[...prev,id];localStorage.setItem('cardiovault_calculator_favorites_v1',JSON.stringify(next));return next;});};
  const openCalculator=(id:string)=>{setSelectedId(id);setRecent(prev=>{const next=[id,...prev.filter(x=>x!==id)].slice(0,8);localStorage.setItem('cardiovault_calculator_recent_v1',JSON.stringify(next));return next;});};
  const list=useMemo(()=>CARDIOVAULT_CALCULATORS.filter(c=>{const matchFilter=filter==='All'||c.category===filter;const matchQuery=`${c.name} ${c.subtitle} ${c.description}`.toLowerCase().includes(query.toLowerCase());const matchFav=!showFav||favorites.includes(c.id);return matchFilter&&matchQuery&&matchFav;}),[filter,query,showFav,favorites]);
