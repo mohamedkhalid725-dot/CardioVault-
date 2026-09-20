@@ -1,5 +1,4 @@
 import { uploadMediaToStorage } from './webFirebase';
-import { markSupabaseStoragePath, resolveSupabaseStorageUrls, isSupabaseStoragePath } from './supabaseStorage';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -122,8 +121,8 @@ export async function uploadClinicalMedia(
 
   try {
     const url = await uploadMediaToStorage(file, path);
-    if (!url) throw new Error('Supabase Storage returned no signed URL.');
-    return { url, cloud: true, storagePath: markSupabaseStoragePath(path) };
+    if (!url) throw new Error('Firebase Storage returned no download URL.');
+    return { url, cloud: true, storagePath: `firebase:${path}` };
   } catch (error) {
     // Clinical images must be cloud-backed. A local data-URL fallback can
     // exceed browser storage / Firestore document limits and can disappear
@@ -135,27 +134,6 @@ export async function uploadClinicalMedia(
 }
 
 
-export async function refreshClinicalMediaUrls(
-  imageUrls: string[] = [],
-  imageStoragePaths: string[] = [],
-): Promise<string[]> {
-  const result = [...imageUrls];
-  const supabaseIndexes: number[] = [];
-  const supabasePaths: string[] = [];
-
-  imageStoragePaths.forEach((path, index) => {
-    if (isSupabaseStoragePath(path)) {
-      supabaseIndexes.push(index);
-      supabasePaths.push(path);
-    }
-  });
-
-  if (!supabasePaths.length) return result;
-
-  const refreshed = await resolveSupabaseStorageUrls(supabasePaths);
-  refreshed.forEach((url, i) => {
-    const index = supabaseIndexes[i];
-    if (typeof index === 'number') result[index] = url;
-  });
-  return result;
+export async function refreshClinicalMediaUrls(imageUrls: string[] = []): Promise<string[]> {
+  return [...imageUrls];
 }
