@@ -14,21 +14,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message: string):
   }
 }
 
-async function uploadWithRetry(file: Blob, path: string): Promise<string> {
-  let last: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      // Never leave the UI stuck on "Uploading…" if Firebase Storage/network
-      // does not settle its request (especially on mobile browsers).
-      return await withTimeout(uploadMediaToStorage(file, path), 20000, 'Firebase Storage upload timed out. Check your internet connection and try again.');
-    } catch (error) {
-      last = error;
-      if (attempt < 3) await sleep(500 * attempt);
-    }
-  }
-  throw last instanceof Error ? last : new Error('Clinical media upload failed.');
-}
-
 export async function fileToDataUrl(file: Blob): Promise<string> {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -131,9 +116,18 @@ export async function optimizeClinicalImage(file: File): Promise<File> {
 export async function uploadClinicalMedia(
   file: Blob,
   path: string
-): Promise<{ url: string; cloud: true }> {
+): Promise<{ url: string; cloud: boolean; storagePath?: string }> {
   if (!file || file.size <= 0) throw new Error('The selected file is empty.');
-  const url = await uploadWithRetry(file, path);
-  if (!url) throw new Error('Firebase Storage returned no download URL.');
-  return { url, cloud: true };
+
+  try {
+    const url = await uploadMediaToStorage(file, path);
+    if (!url) throw new Error('Firebase Storage returned no download URL.');
+    return { url, cloud: true, storagePath: path };
+  } catch (error) {
+    // Cloud failure must never block the clinical record. Keep the actual
+    // image as a data URL so it is persisted with the patient record and can
+    // still be viewed offline. No fake Storage path is saved.
+    console.warn('Firebase Storage upload failed; keeping a local copy instead.', error);
+    return { url: await fileToDataUrl(file), cloud: false };
+  }
 }
