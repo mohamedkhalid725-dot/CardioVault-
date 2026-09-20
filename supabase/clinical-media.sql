@@ -21,9 +21,22 @@ create or replace function public.cardio_valid_firebase_jwt() returns boolean la
  select (auth.jwt()->>'iss')='https://securetoken.google.com/ccu-notebook'
  and (auth.jwt()->>'aud')='ccu-notebook' and coalesce(auth.jwt()->>'sub','')<>'';
 $$;
-create or replace function public.cardio_is_master() returns boolean language sql stable as $$
+create or replace function public.cardio_is_master() returns boolean language sql stable as $
  select public.cardio_valid_firebase_jwt() and lower(coalesce(auth.jwt()->>'email',''))='mohamedkhalid725@gmail.com';
-$$;
+$;
+create or replace function public.cardio_is_unit_member(p_unit_id text) returns boolean
+language sql stable security definer set search_path=public,extensions as $
+ select public.cardio_valid_firebase_jwt()
+ and exists(
+   select 1 from public.cardio_unit_memberships m
+   where m.firebase_uid=auth.jwt()->>'sub'
+     and m.unit_id=p_unit_id
+     and m.active=true
+ );
+$;
+revoke all on function public.cardio_is_unit_member(text) from public;
+grant execute on function public.cardio_is_unit_member(text) to anon,authenticated;
+
 
 create or replace function public.cardio_register_access_code(p_code text,p_unit_id text,p_unit_name text,p_role text default 'clinical_editor')
 returns boolean language plpgsql security definer set search_path=public,extensions as $$
@@ -77,19 +90,19 @@ drop policy if exists "CardioVault unit members can delete clinical images" on s
 
 create policy "CardioVault unit members can upload clinical images" on storage.objects for insert to anon,authenticated with check(
  bucket_id='clinical-media' and public.cardio_valid_firebase_jwt() and
- (public.cardio_is_master() or exists(select 1 from public.cardio_unit_memberships m where m.firebase_uid=auth.jwt()->>'sub' and m.unit_id=split_part(name,'/',2) and m.active=true)));
+ (public.cardio_is_master() or public.cardio_is_unit_member(split_part(name,'/',2))));
 create policy "CardioVault unit members can read clinical images" on storage.objects for select to anon,authenticated using(
  bucket_id='clinical-media' and public.cardio_valid_firebase_jwt() and
- (public.cardio_is_master() or exists(select 1 from public.cardio_unit_memberships m where m.firebase_uid=auth.jwt()->>'sub' and m.unit_id=split_part(name,'/',2) and m.active=true)));
+ (public.cardio_is_master() or public.cardio_is_unit_member(split_part(name,'/',2))));
 create policy "CardioVault unit members can update clinical images" on storage.objects for update to anon,authenticated using(
  bucket_id='clinical-media' and public.cardio_valid_firebase_jwt() and
- (public.cardio_is_master() or exists(select 1 from public.cardio_unit_memberships m where m.firebase_uid=auth.jwt()->>'sub' and m.unit_id=split_part(name,'/',2) and m.active=true)))
+ (public.cardio_is_master() or public.cardio_is_unit_member(split_part(name,'/',2))))
 with check(
  bucket_id='clinical-media' and public.cardio_valid_firebase_jwt() and
- (public.cardio_is_master() or exists(select 1 from public.cardio_unit_memberships m where m.firebase_uid=auth.jwt()->>'sub' and m.unit_id=split_part(name,'/',2) and m.active=true)));
+ (public.cardio_is_master() or public.cardio_is_unit_member(split_part(name,'/',2))));
 create policy "CardioVault unit members can delete clinical images" on storage.objects for delete to anon,authenticated using(
  bucket_id='clinical-media' and public.cardio_valid_firebase_jwt() and
- (public.cardio_is_master() or exists(select 1 from public.cardio_unit_memberships m where m.firebase_uid=auth.jwt()->>'sub' and m.unit_id=split_part(name,'/',2) and m.active=true)));
+ (public.cardio_is_master() or public.cardio_is_unit_member(split_part(name,'/',2))));
 
 drop policy if exists "CardioVault deny direct access code reads" on public.cardio_unit_access_codes;
 drop policy if exists "CardioVault deny direct membership reads" on public.cardio_unit_memberships;
