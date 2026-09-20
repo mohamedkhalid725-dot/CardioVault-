@@ -26,7 +26,7 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
     setSelectedId(record.id); setShowModal(false); showToast('ECG record saved.', 'success');
   };
   const addImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
     if (!files.length || !selected) return;
 
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
