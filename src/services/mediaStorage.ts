@@ -140,7 +140,9 @@ async function removeDoc(reference: string): Promise<void> {
 }
 
 function parseMediaId(value: string): string | null {
-  const raw = value.startsWith('firestore-media:') ? value.slice('firestore-media:'.length) : value;
+  const raw = String(value || '');
+  if (raw.startsWith('firestore-media:')) return raw.slice('firestore-media:'.length) || null;
+  if (raw.startsWith('firestore:')) return raw.slice('firestore:'.length) || null;
   return raw || null;
 }
 
