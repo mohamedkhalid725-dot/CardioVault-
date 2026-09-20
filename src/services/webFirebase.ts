@@ -169,7 +169,7 @@ async function nativeStorageDelete(path: string): Promise<void> {
   for (const bucket of storageBucketCandidates) {
     const response = await fetch(storageObjectUrl(bucket, path), {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}`,
+      headers: { Authorization: `Bearer ${token}` },
     });
     if (response.ok || response.status === 404) {
       if (response.ok) return;
