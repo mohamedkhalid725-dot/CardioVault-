@@ -85,15 +85,6 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
           npx firebase-tools@latest deploy --only firestore:rules --project ccu-notebook --non-interactive --config firebase.json
-      - name: Deploy Firebase Storage rules when Storage API is enabled
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest deploy --only storage --project ccu-notebook --non-interactive --config firebase.json
-          echo "Firebase Storage rules deployed."
       - name: Prepare CardioVault launcher icon
         run: |
           sudo apt-get update
