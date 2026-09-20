@@ -247,9 +247,9 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar"><span className="text-[11px] text-slate-400 whitespace-nowrap">Or attach sample:</span>{PRESET_SAMPLE_SCANS.map((preset, idx) => <button key={idx} onClick={() => handleAttachPreset(study.id, preset.url)} className="px-2 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-cyan-500/20 text-slate-600 dark:text-slate-300 whitespace-nowrap">{preset.name.split(' ')[0]}</button>)}</div>
               </div>
 
-              {(resolvedImageUrls[study.id] || study.imageUrls || []).length > 0 ? (
+              {(resolvedImageUrls[study.id] || []).length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {(resolvedImageUrls[study.id] || study.imageUrls || []).map((url, imgIdx) => (
+                  {(resolvedImageUrls[study.id] || []).map((url, imgIdx) => (
                     <div key={imgIdx} className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 aspect-video bg-black/40 cursor-zoom-in" onClick={() => setFullScreenImage(url)}>
                       <img src={url} alt={`${study.modality} Scan ${imgIdx + 1}`} referrerPolicy="no-referrer" draggable={false} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none"><span className="p-1.5 rounded-lg bg-white/20 text-white backdrop-blur-sm">⌕</span></div>
@@ -257,6 +257,8 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
                     </div>
                   ))}
                 </div>
+              ) : (study.imageUrls || []).length > 0 ? (
+                <div className="py-4 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-400">Loading scan images…</div>
               ) : (
                 <div className="py-4 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-400">No scan images attached yet. Click "Upload Scan" or select a sample image above.</div>
               )}
