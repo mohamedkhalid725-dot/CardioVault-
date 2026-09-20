@@ -24,18 +24,44 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
     updatePatient(patient.id, { ecgRecords: [record, ...records] });
     setSelectedId(record.id); setShowModal(false); showToast('ECG record saved.', 'success');
   };
-  const addImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file || !selected) return;
-    const reader = new FileReader();
-    reader.onload = () => { const next = records.map((r) => r.id === selected.id ? { ...r, imageUrls: [...(r.imageUrls || []), String(reader.result)] } : r); updatePatient(patient.id, { ecgRecords: next }); showToast('ECG image attached to the selected record.', 'success'); };
-    reader.readAsDataURL(file); e.target.value = '';
+  const addImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !selected) return;
+
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    if (!imageFiles.length) {
+      showToast('Please select image files only.', 'error');
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      const dataUrls = await Promise.all(imageFiles.map(file => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error || new Error('Could not read image'));
+        reader.readAsDataURL(file);
+      })));
+
+      const next = records.map(r => r.id === selected.id
+        ? { ...r, imageUrls: [...(r.imageUrls || []), ...dataUrls] }
+        : r
+      );
+      updatePatient(patient.id, { ecgRecords: next });
+      showToast(`${dataUrls.length} ECG image${dataUrls.length === 1 ? '' : 's'} attached to the selected record.`, 'success');
+    } catch (error) {
+      console.error('ECG image upload failed:', error);
+      showToast('One or more ECG images could not be uploaded.', 'error');
+    } finally {
+      e.target.value = '';
+    }
   };
   const deleteRecord = (id: string) => { if (!window.confirm('Delete this ECG record?')) return; const next = records.filter((r) => r.id !== id); updatePatient(patient.id, { ecgRecords: next }); setSelectedId(next[0]?.id || null); showToast('ECG record deleted.', 'info'); };
   const deleteImage = (id: string, imageIndex: number) => { if (!window.confirm('Remove this ECG image?')) return; updatePatient(patient.id, { ecgRecords: records.map((r) => r.id === id ? { ...r, imageUrls: (r.imageUrls || []).filter((_, i) => i !== imageIndex) } : r) }); };
   const input = 'w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white';
 
   return <div className="space-y-5 max-w-5xl mx-auto animate-in fade-in duration-150">
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><Activity className="w-5 h-5 text-cyan-500" /> ECG</h2><p className="text-xs text-slate-500 dark:text-slate-400">Real physician-entered ECG records and patient-specific uploaded images.</p></div><div className="flex gap-2"><button disabled={!selected} onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold disabled:opacity-40"><ImageIcon className="w-4 h-4 text-cyan-500" /> Add Image</button><input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={addImage} /><button onClick={openNew} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-4 h-4" /> Add ECG</button></div></div>
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><Activity className="w-5 h-5 text-cyan-500" /> ECG</h2><p className="text-xs text-slate-500 dark:text-slate-400">Real physician-entered ECG records and patient-specific uploaded images.</p></div><div className="flex gap-2"><button disabled={!selected} onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold disabled:opacity-40"><ImageIcon className="w-4 h-4 text-cyan-500" /> Add Image</button><input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={addImage} /><button onClick={openNew} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-4 h-4" /> Add ECG</button></div></div>
 
     {records.length === 0 ? <div className="p-10 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E]"><Activity className="w-8 h-8 mx-auto text-slate-400 mb-3" /><p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No ECG records yet.</p><p className="text-xs text-slate-400 mt-1">Add an ECG interpretation and optionally attach the actual ECG image.</p></div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-5"><div className="space-y-2">{records.map((r) => <button key={r.id} onClick={() => setSelectedId(r.id)} className={`w-full text-left p-3.5 rounded-2xl border ${selectedId === r.id ? 'bg-cyan-500/10 border-cyan-500/40' : 'bg-white dark:bg-[#111C2E] border-slate-200 dark:border-slate-800'}`}><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-900 dark:text-white">{r.date}</span><span className="text-[10px] text-slate-400">{r.time}</span></div><p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{r.finalImpression || r.interpretation?.join(' • ') || 'ECG record'}</p></button>)}</div><div className="md:col-span-2">{selected && <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-5"><div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800"><div><h3 className="text-lg font-bold text-slate-900 dark:text-white">ECG Interpretation</h3><div className="text-xs text-slate-400 flex gap-3"><span><Calendar className="inline w-3.5 h-3.5" /> {selected.date}</span><span><Clock className="inline w-3.5 h-3.5" /> {selected.time}</span></div></div><button onClick={() => deleteRecord(selected.id)} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-rose-500"><Trash2 className="w-4 h-4" /></button></div><div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{([['HR',selected.heartRate,'bpm'],['PR',selected.pr,'ms'],['QRS',selected.qrs,'ms'],['QTc',selected.qtc,'ms']] as const).map(([l,v,u]) => <div key={l} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60"><span className="text-[10px] text-slate-400 block">{l}</span><b className="text-sm text-slate-900 dark:text-white">{v || '—'} {u}</b></div>)}</div><div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60"><b className="text-xs text-slate-400 block mb-2">Physician Interpretation</b><p className="text-sm whitespace-pre-wrap text-slate-700 dark:text-slate-300">{selected.finalImpression || selected.interpretation?.join('\n') || 'Not documented.'}</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs"><div><b className="text-slate-400">Rhythm:</b> {selected.rhythm || '—'}</div><div><b className="text-slate-400">Axis:</b> {selected.axis || '—'}</div><div><b className="text-slate-400">ST/T:</b> {selected.stSegment || selected.tWave || '—'}</div><div><b className="text-slate-400">Other:</b> {selected.otherFindings || '—'}</div></div><div><b className="text-xs text-slate-400 block mb-2">Attached ECG Images ({selected.imageUrls?.length || 0})</b>{selected.imageUrls?.length ? <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{selected.imageUrls.map((src,i) => <div key={`${selected.id}-${i}`} className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 cursor-zoom-in" onClick={() => setFullScreenImage(src)}><img src={src} alt={`ECG ${i+1}`} draggable={false} className="w-full max-h-72 object-contain bg-white" /><button onClick={(e) => { e.stopPropagation(); deleteImage(selected.id,i); }} className="absolute top-2 right-2 p-2 rounded-lg bg-black/60 text-white"><Trash2 className="w-3.5 h-3.5" /></button></div>)}</div> : <div className="text-xs text-slate-400 p-4 border border-dashed rounded-xl">No image attached to this ECG record.</div>}</div></div>}</div></div>}
 
