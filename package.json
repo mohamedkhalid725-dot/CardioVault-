@@ -26,6 +26,8 @@
     "@capawesome/capacitor-file-picker": "7.2.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "capacitor-voice-recorder": "7.0.6",
+    "@tailwindcss/vite": "^4.1.14",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "11.10.0",
