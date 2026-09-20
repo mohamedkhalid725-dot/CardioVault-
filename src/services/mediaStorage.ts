@@ -62,7 +62,7 @@ export async function optimizeClinicalImage(file: File): Promise<File> {
   try {
     if ('createImageBitmap' in window) {
       try {
-        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        bitmap = await withTimeout(createImageBitmap(file, { imageOrientation: 'from-image' }), 8000, 'Image decoder timed out.');
         sourceWidth = bitmap.width;
         sourceHeight = bitmap.height;
         draw = (ctx, width, height) => ctx.drawImage(bitmap as ImageBitmap, 0, 0, width, height);
@@ -73,12 +73,12 @@ export async function optimizeClinicalImage(file: File): Promise<File> {
 
     if (!bitmap) {
       objectUrl = URL.createObjectURL(file);
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = await withTimeout(new Promise<HTMLImageElement>((resolve, reject) => {
         const element = new Image();
         element.onload = () => resolve(element);
         element.onerror = () => reject(new Error('Could not decode the selected image on this device.'));
         element.src = objectUrl;
-      });
+      }), 8000, 'Image decoder timed out.');
       sourceWidth = img.naturalWidth;
       sourceHeight = img.naturalHeight;
       draw = (ctx, width, height) => ctx.drawImage(img, 0, 0, width, height);
