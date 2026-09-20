@@ -124,10 +124,11 @@ export async function uploadClinicalMedia(
     if (!url) throw new Error('Firebase Storage returned no download URL.');
     return { url, cloud: true, storagePath: path };
   } catch (error) {
-    // Cloud failure must never block the clinical record. Keep the actual
-    // image as a data URL so it is persisted with the patient record and can
-    // still be viewed offline. No fake Storage path is saved.
-    console.warn('Firebase Storage upload failed; keeping a local copy instead.', error);
-    return { url: await fileToDataUrl(file), cloud: false };
+    // Clinical images must be cloud-backed. A local data-URL fallback can
+    // exceed browser storage / Firestore document limits and can disappear
+    // during a later cloud restore. Fail the upload instead of reporting a
+    // misleading success.
+    console.error('Firebase Storage upload failed:', error);
+    throw error instanceof Error ? error : new Error(String(error));
   }
 }
