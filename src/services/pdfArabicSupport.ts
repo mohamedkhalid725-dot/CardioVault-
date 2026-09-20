@@ -27,7 +27,7 @@ function renderArabic(this:PdfLike,value:string|string[],x:number,y:number,optio
  const ctx=canvas.getContext('2d');if(!ctx)return fallback();ctx.scale(scale,scale);ctx.font=`${weight} ${fontSizePt*pxPerPt}px ${family}`;
  const color=this.getTextColor?.();ctx.fillStyle=typeof color==='string'&&color.startsWith('#')?color:'#000000';ctx.textBaseline='alphabetic';ctx.direction='rtl';ctx.textAlign='right';
  lines.forEach((line,index)=>ctx.fillText(line,widthPx-5,linePx*(index+1)));
- const widthMm=widthPx*mmPerPx;const heightMm=(heightPx/scale)*mmPerPx;
+ const widthMm=Math.min(174,widthPx*mmPerPx);const heightMm=heightPx*mmPerPx;
  this.addImage(canvas.toDataURL('image/png'),'PNG',x,y-fontSizePt*0.28,widthMm,heightMm,undefined,'FAST');
  return this;
 }
