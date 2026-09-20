@@ -3,6 +3,7 @@ import { Activity, Plus, Image as ImageIcon, Trash2, Calendar, Clock } from 'luc
 import { ECGRecord, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
+import { uploadClinicalMedia } from '../../../services/mediaStorage';
 
 interface Props { patient: Patient; }
 const blank = (): ECGRecord => ({ id: '', date: new Date().toISOString().split('T')[0], time: new Date().toTimeString().slice(0, 5), heartRate: 0, rhythm: '', regularity: '', axis: '', pr: 0, qrs: 0, qt: 0, qtc: 0, pWave: '', qrsFindings: '', stSegment: '', tWave: '', otherFindings: '', interpretation: [], finalImpression: '', imageUrls: [] });
@@ -36,19 +37,16 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
     }
 
     try {
-      const dataUrls = await Promise.all(imageFiles.map(file => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error || new Error('Could not read image'));
-        reader.readAsDataURL(file);
-      })));
-
+      const uploaded = await Promise.all(imageFiles.map((file, index) =>
+        uploadClinicalMedia(file, `patients/${patient.id}/ecg/${selected.id}/${Date.now()}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
+      ));
+      const urls = uploaded.map(item => item.url);
       const next = records.map(r => r.id === selected.id
-        ? { ...r, imageUrls: [...(r.imageUrls || []), ...dataUrls] }
+        ? { ...r, imageUrls: [...(r.imageUrls || []), ...urls] }
         : r
       );
       updatePatient(patient.id, { ecgRecords: next });
-      showToast(`${dataUrls.length} ECG image${dataUrls.length === 1 ? '' : 's'} attached to the selected record.`, 'success');
+      showToast(`${urls.length} ECG image${urls.length === 1 ? '' : 's'} attached to the selected record.`, 'success');
     } catch (error) {
       console.error('ECG image upload failed:', error);
       showToast('One or more ECG images could not be uploaded.', 'error');
