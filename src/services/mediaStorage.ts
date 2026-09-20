@@ -134,6 +134,6 @@ export async function uploadClinicalMedia(
 }
 
 
-export async function refreshClinicalMediaUrls(imageUrls: string[] = []): Promise<string[]> {
+export async function refreshClinicalMediaUrls(imageUrls: string[] = [], _imageStoragePaths: string[] = []): Promise<string[]> {
   return [...imageUrls];
 }
