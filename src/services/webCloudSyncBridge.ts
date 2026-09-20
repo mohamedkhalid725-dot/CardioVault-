@@ -1,4 +1,4 @@
-import { StorageService } from './storage';
+import { StorageService, stripLegacyDemoData } from './storage';
 import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { onSnapshot } from 'firebase/firestore';
@@ -82,6 +82,8 @@ export async function webLoadCurrentUserFromCloud(){
       const localUnits=StorageService.getUnits();
       if (localUnits.length>units.length && units.length>0) { units=localUnits; preservedLocalOwnerUnits=true; }
     }
+    const cleaned = stripLegacyDemoData(units, beds, patients);
+    units=cleaned.units; beds=cleaned.beds; patients=cleaned.patients;
     const reconciled=reconcileClinicalRegistry(units,beds,patients);
     units=reconciled.units; beds=reconciled.beds; patients=reconciled.patients;
     const localPatients=StorageService.getPatients();
@@ -144,7 +146,10 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
     if (!access) return () => {};
 
     const persistCollection = (name:'units'|'beds'|'patients', snap:any) => {
-      const values:any[] = snap.docs.map((d:any)=>({...d.data(), id:d.id}));
+      let values:any[] = snap.docs.map((d:any)=>({...d.data(), id:d.id}));
+      if (name==='units') values=stripLegacyDemoData(values, [], []).units;
+      if (name==='beds') values=stripLegacyDemoData([], values, []).beds;
+      if (name==='patients') values=stripLegacyDemoData([], [], values).patients;
       if (access.role==='owner' && name==='units') {
         const localUnits=StorageService.getUnits();
         if (localUnits.length>values.length && values.length>0) {
