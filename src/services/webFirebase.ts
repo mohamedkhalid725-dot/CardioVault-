@@ -206,9 +206,10 @@ export async function uploadMediaToStorage(file: Blob, path: string): Promise<st
 }
 
 export async function deleteMediaFromStorage(path: string): Promise<void> {
+  const storagePath = path.startsWith('firebase:') ? path.slice('firebase:'.length) : path;
   if (Capacitor.isNativePlatform()) {
-    await nativeStorageDelete(path);
+    await nativeStorageDelete(storagePath);
     return;
   }
-  await deleteObject(storageRef(getWebStorage(), path));
+  await deleteObject(storageRef(getWebStorage(), storagePath));
 }
