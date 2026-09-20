@@ -87,7 +87,6 @@ jobs:
           npx firebase-tools@latest deploy --only firestore:rules --project ccu-notebook --non-interactive --config firebase.json
       - name: Deploy Firebase Storage rules when Storage API is enabled
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
-        continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
