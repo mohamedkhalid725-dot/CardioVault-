@@ -6,7 +6,7 @@ import {webAuth,webCurrentUser,webGoogleSignIn,webEmailSignIn,webEmailCreate,web
 import {onAuthStateChanged} from'firebase/auth';
 import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
-import {initializeClinicalNotifications,notifyClinicalData} from'../services/clinicalNotifications';
+import {notifyClinicalData} from'../services/clinicalNotifications';
 
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
@@ -27,7 +27,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  useEffect(()=>{const onRestore=()=>hydrateClinicalState();window.addEventListener('cardiovault-data-restored',onRestore);window.addEventListener('cardiovault-workspace-access-granted',onRestore);return()=>{window.removeEventListener('cardiovault-data-restored',onRestore);window.removeEventListener('cardiovault-workspace-access-granted',onRestore);};},[]);
  useEffect(()=>{let active=true;installCloudSyncBridge();const boot=async()=>{const savedAuth=StorageService.getAuth();setThemeState(StorageService.getTheme());if(!Capacitor.isNativePlatform()){const webUser=webCurrentUser();if(webUser){const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:webUser.email||savedAuth.userEmail,userName:webUser.displayName||savedAuth.userName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');void loadCurrentUserFromCloud();}else{setAuth({...savedAuth,isAuthenticated:false,isLocked:false});setCurrentView('login');}return;}let firebaseUser:any=null;try{firebaseUser=(await FirebaseAuthentication.getCurrentUser()).user||null;}catch{}if(!firebaseUser?.uid){clearActiveClinicalWorkspace();const signedOut={...savedAuth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(signedOut);StorageService.saveAuth(signedOut);setCurrentView('login');return;}const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:firebaseUser.email||savedAuth.userEmail,userName:firebaseUser.displayName||savedAuth.userName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');try{const cloud=await loadCurrentUserFromCloud();if(!active)return;if(cloud?.found)hydrateClinicalState();setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');}catch(error){console.warn('Cloud session restore failed:',error);}};void boot();return()=>{active=false;};},[]);
  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},[theme]);
- useEffect(()=>{if(auth.isAuthenticated&&!auth.isLocked)void initializeClinicalNotifications();},[auth.isAuthenticated,auth.isLocked]);
+
  const showToast=(message:string,type:ToastInfo['type']='info')=>{const id=`toast-${Date.now()}-${Math.random()}`;setToasts(p=>[...p,{id,message,type}]);window.setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000);};
  const dismissToast=(id:string)=>setToasts(p=>p.filter(t=>t.id!==id));
  const setTheme=(t:'dark'|'light')=>{setThemeState(t);StorageService.saveTheme(t);};const toggleTheme=()=>setTheme(theme==='dark'?'light':'dark');
