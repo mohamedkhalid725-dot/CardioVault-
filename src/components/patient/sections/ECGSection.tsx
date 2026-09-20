@@ -3,7 +3,7 @@ import { Activity, Plus, Image as ImageIcon, Trash2, Calendar, Clock } from 'luc
 import { ECGRecord, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ImageZoomModal } from '../ImageZoomModal';
-import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { uploadClinicalMedia, optimizeClinicalImage } from '../../../services/mediaStorage';
 import { deleteMediaFromStorage } from '../../../services/webFirebase';
 
 interface Props { patient: Patient; }
@@ -45,7 +45,8 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
     setUploadingImages(true);
     try {
       const uploadBatchId=Date.now();
-      const uploaded = await Promise.all(imageFiles.map((file, index) => {
+      const preparedFiles = await Promise.all(imageFiles.map(file => optimizeClinicalImage(file)));
+      const uploaded = await Promise.all(preparedFiles.map((file, index) => {
         const path=`patients/${patient.id}/ecg/${selected.id}/${uploadBatchId}-${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         return uploadClinicalMedia(file,path).then(result=>({result,path}));
       }));
