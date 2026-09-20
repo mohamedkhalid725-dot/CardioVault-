@@ -32,7 +32,9 @@ export async function fileToDataUrl(file: Blob): Promise<string> {
  * The fallback path uses an HTMLImageElement because some Android
  * WebViews cannot decode every camera format through createImageBitmap.
  */
-export const isClinicalImageFile = (file: File) => /^image\//i.test(file.type) || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name);\n\nexport async function optimizeClinicalImage(file: File): Promise<File> {
+export const isClinicalImageFile = (file: File) => /^image\//i.test(file.type) || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name);
+
+export async function optimizeClinicalImage(file: File): Promise<File> {
   if (!file || file.size <= 0) throw new Error('The selected image is empty.');
   if (!isClinicalImageFile(file) || file.size <= 900 * 1024) return file;
 
