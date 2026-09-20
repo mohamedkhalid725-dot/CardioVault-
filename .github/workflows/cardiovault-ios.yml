@@ -7,6 +7,9 @@ on:
 
 jobs:
   ios:
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
     runs-on: macos-latest
     env:
       HAS_IOS_FIREBASE_CONFIG: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
