@@ -94,10 +94,33 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
 }
 export async function updateTeamDirectoryMember(userId:string,updates:Record<string,any>):Promise<any>{
   const state=await ensureOwnerWorkspace(); if(!state) throw new Error('Only the Master Account can manage the Team Directory.');
+  const cleanUnitIds=Array.from(new Set(Array.isArray(updates.assignedUnitIds)?updates.assignedUnitIds.map(String).filter(Boolean):[]));
+  if(!cleanUnitIds.length) throw new Error('Assign at least one clinical unit.');
+  const now=new Date().toISOString();
   const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${userId}`;
-  const patch={...updates,updatedAt:new Date().toISOString()};
-  if(Capacitor.isNativePlatform()) await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
-  else await webSetDoc(webDoc(ref),patch,{merge:true});
+  const patch={...updates,assignedUnitIds:cleanUnitIds,updatedAt:now};
+  const existingRef=`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}`;
+  const existingMember=Capacitor.isNativePlatform()
+    ? safe((await FirebaseFirestore.getDocument({reference:existingRef})).snapshot)||{}
+    : (await webGetDoc(webDoc(existingRef))).data()||{};
+  const membership={
+    uid:userId,
+    workspaceId:MASTER_WORKSPACE_ID,
+    unitId:cleanUnitIds[0],
+    unitIds:cleanUnitIds,
+    role:patch.role==='viewer'?'view_only':'clinical_editor',
+    active:patch.status!=='inactive',
+    forceReauth:false,
+    joinedAt:existingMember.joinedAt||now,
+    updatedAt:now,
+  };
+  if(Capacitor.isNativePlatform()){
+    await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
+    await FirebaseFirestore.setDocument({reference:existingRef,data:membership,merge:true});
+  }else{
+    await webSetDoc(webDoc(ref),patch,{merge:true});
+    await webSetDoc(webDoc(existingRef),membership,{merge:true});
+  }
   const users=AuthorizationService.getUsers(); const local=users.find(u=>u.userId===userId);
   if(local){ const updated={...local,...patch}; AuthorizationService.saveUsers(users.map(u=>u.userId===userId?updated:u)); return updated; }
   return patch;
@@ -109,7 +132,7 @@ export async function removeTeamDirectoryMember(userId:string):Promise<void>{
     else await webSetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}`),{active:false,forceReauth:true,updatedAt:new Date().toISOString()},{merge:true});
   }catch(error){console.warn('Member access revocation failed:',error);}
 }
-export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{const id=await uid();if(!id)return null;if(await isMasterAccount())return !!(await ensureOwnerWorkspace());try{let membership:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`});membership=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`));membership=result.exists()?result.data():null;}if(!membership)return null;if(membership?.active === false || membership?.forceReauth === true || !membership?.accessCodeHash)return false;let access:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${membership.accessCodeHash}`});access=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`accessCodes/${membership.accessCodeHash}`));access=result.exists()?result.data():null;}if(!access?.active||access.workspaceId!==MASTER_WORKSPACE_ID)return false;return true;}catch(error){console.warn('Workspace access validation failed:',error);return null;}}
+export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{const id=await uid();if(!id)return null;if(await isMasterAccount())return !!(await ensureOwnerWorkspace());try{let membership:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`});membership=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`));membership=result.exists()?result.data():null;}if(!membership)return null;if(membership?.active===false||membership?.forceReauth===true)return false;if(Array.isArray(membership.unitIds)&&membership.unitIds.length)return true;const hashes=Array.from(new Set([membership.accessCodeHash,...(Array.isArray(membership.accessCodeHashes)?membership.accessCodeHashes:[])].filter(Boolean).map(String)));if(!hashes.length)return false;for(const h of hashes){let access:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${h}`});access=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`accessCodes/${h}`));access=result.exists()?result.data():null;}if(access?.active&&access.workspaceId===MASTER_WORKSPACE_ID)return true;}return false;}catch(error){console.warn('Workspace access validation failed:',error);return null;}}
 export function isOwnerAccess(){
   const state=getStoredWorkspaceAccess();
   if(state?.role==='owner'&&state?.workspaceId===MASTER_WORKSPACE_ID)return true;
