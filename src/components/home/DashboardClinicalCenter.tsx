@@ -116,7 +116,7 @@ export const DashboardClinicalCenter: React.FC = () => {
   const activeIds = new Set(scopedActive.map(p => p.id));
   const scopedBeds = useMemo(() => {
     if (currentUser.role === 'department_admin' || currentUser.role === 'consultant') return beds;
-    return beds.filter(b => currentUser.assignedUnitIds.includes(b.unitId));
+    return beds.filter(b => (currentUser.assignedUnitIds || []).includes(b.unitId));
   }, [beds, currentUser]);
 
   const occupied = scopedBeds.filter(b => !!b.patientId && activeIds.has(b.patientId)).length;
