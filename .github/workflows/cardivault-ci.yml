@@ -2,9 +2,10 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, department-system-v1]
   pull_request:
-    branches: [main]
+    branches: [main, department-system-v1]
+  workflow_dispatch:
 
 env:
   VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
