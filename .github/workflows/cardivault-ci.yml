@@ -140,14 +140,10 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
           npx firebase-tools@latest deploy --only firestore:rules --project ccu-notebook --non-interactive --config firebase.json
-      - name: Deploy Firebase Authentication providers
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest deploy --only auth --project ccu-notebook --non-interactive --config firebase.json
+      # Firebase Authentication providers are managed in Firebase Console.
+      # The CLI auth deploy currently requires listing Firebase Web apps, which this CI
+      # service account does not have permission to do. Keeping auth deployment out of
+      # the build prevents an unrelated provider-management permission from blocking APKs.
 
       - name: Prepare CardioVault launcher icon
         run: |
