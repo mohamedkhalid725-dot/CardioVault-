@@ -152,9 +152,28 @@ jobs:
           rm -rf assets
           mkdir -p assets
           rsvg-convert -w 1024 -h 1024 public/cardiovault-logo.svg -o assets/icon.png
-          cp assets/icon.png assets/icon-only.png
-          cp assets/icon.png assets/icon-foreground.png
-          npx @capacitor/assets@latest generate --android
+          test -s assets/icon.png
+          # Do not use @capacitor/assets here: its latest CLI can fail on the CI Node/runtime.
+          # Capacitor's Android template already contains the launcher resource folders;
+          # replace the launcher PNGs directly and remove conflicting adaptive XML resources.
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          src=Path('assets/icon.png')
+          sizes={'mdpi':48,'hdpi':72,'xhdpi':96,'xxhdpi':144,'xxxhdpi':192}
+          res=Path('android/app/src/main/res')
+          for density,size in sizes.items():
+              d=res/f'mipmap-{density}'
+              d.mkdir(parents=True,exist_ok=True)
+              for name in ('ic_launcher.png','ic_launcher_round.png'):
+                  out=d/name
+                  subprocess.run(['rsvg-convert','-w',str(size),'-h',str(size),'public/cardiovault-logo.svg','-o',str(out)],check=True)
+          for d in (res/'mipmap-anydpi-v26',res/'mipmap-anydpi'):
+              for name in ('ic_launcher.xml','ic_launcher_round.xml'):
+                  p=d/name
+                  if p.exists(): p.unlink()
+          print('CardioVault launcher PNGs generated successfully.')
+          PY
       - name: Sync Capacitor Android project
         run: npx cap sync android
       - name: Harden Android auth/network manifest
