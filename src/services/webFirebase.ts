@@ -34,12 +34,12 @@ import {
 } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyCegfOjWEsNwrz96L6UFlbXsODzVs1jFpQ',
-  authDomain: 'ccu-notebook.firebaseapp.com',
-  projectId: 'ccu-notebook',
-  storageBucket: 'ccu-notebook.firebasestorage.app',
-  messagingSenderId: '963615758407',
-  appId: '1:963615758407:ios:a113cc828e31dbd550b962',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCegfOjWEsNwrz96L6UFlbXsODzVs1jFpQ',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'ccu-notebook.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'ccu-notebook',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'ccu-notebook.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '963615758407',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:963615758407:ios:a113cc828e31dbd550b962',
 };
 
 // The native Android/iOS builds use the Capacitor Firebase plugins.
