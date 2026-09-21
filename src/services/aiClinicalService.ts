@@ -1,4 +1,5 @@
-import { FirebaseAuthentication } from '@capacitor-firebase/authentication';\nimport { Capacitor } from '@capacitor/core';\nimport { webCurrentUser } from './webFirebase';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { Capacitor } from '@capacitor/core';\nimport { webCurrentUser } from './webFirebase';
 import { Patient } from '../types/clinical';
 
 export interface AIClinicalResult {
