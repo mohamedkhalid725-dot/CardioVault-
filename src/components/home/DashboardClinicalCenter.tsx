@@ -109,7 +109,7 @@ export const DashboardClinicalCenter: React.FC = () => {
     [activeAll, currentUser]
   );
   const scopedUnits = useMemo(
-    () => AuthorizationService.filterAuthorizedUnits(units, currentUser),
+    () => AuthorizationService.filterAuthorizedUnits(units, currentUser).filter(u => beds.some(b => b.unitId === u.id)),
     [units, currentUser]
   );
 
