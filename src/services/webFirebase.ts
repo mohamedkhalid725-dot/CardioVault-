@@ -39,7 +39,6 @@ const firebaseConfig = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'ccu-notebook',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'ccu-notebook.firebasestorage.app',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '963615758407',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:963615758407:ios:a113cc828e31dbd550b962',
 };
 
 // The native Android/iOS builds use the Capacitor Firebase plugins.
