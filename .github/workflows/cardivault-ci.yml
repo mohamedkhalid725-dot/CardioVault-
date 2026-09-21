@@ -26,6 +26,17 @@ jobs:
         run: npm install
       - name: TypeScript check
         run: npm run lint
+      - name: Capture TypeScript diagnostics
+        if: always()
+        run: npm run lint > tscheck.log 2>&1 || true
+      - name: Upload TypeScript diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardiovault-tscheck-\${{ github.sha }}
+          path: tscheck.log
+          retention-days: 3
+
       - name: Production web build
         run: npm run build
       - name: Validate Firebase AI backend
