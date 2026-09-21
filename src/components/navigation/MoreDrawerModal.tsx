@@ -55,6 +55,13 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
       color: 'text-cyan-500 bg-cyan-500/10',
     },
     {
+      id: 'results-center',
+      title: 'Results Center',
+      subtitle: 'Pending, available, abnormal, and critical results',
+      icon: FlaskConical,
+      color: 'text-amber-500 bg-amber-500/10',
+    },
+    {
       id: 'team',
       title: 'Team Directory',
       subtitle: 'Department staff, roles, and shift coverage',
