@@ -57,7 +57,7 @@ export const DepartmentPulse: React.FC = () => {
 
   const scopedBeds = useMemo(() => {
     if (currentUser.role === 'department_admin' || currentUser.role === 'consultant') return beds;
-    return beds.filter(b => currentUser.assignedUnitIds.includes(b.unitId));
+    return beds.filter(b => (currentUser.assignedUnitIds || []).includes(b.unitId));
   }, [beds, currentUser]);
 
   const occupiedBeds = scopedBeds.filter(bed =>
