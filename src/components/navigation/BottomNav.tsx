@@ -9,7 +9,7 @@ interface BottomNavProps {
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({ onQuickAction }) => {
-  const { currentView, setCurrentView } = useApp();
+  const { currentView, setCurrentView, currentUnitId, setCurrentUnitId, units, beds } = useApp();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
@@ -46,7 +46,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ onQuickAction }) => {
           {/* UNIT */}
           <button
             id="nav-unit-btn"
-            onClick={() => setCurrentView('census')}
+            onClick={() => { const target=currentUnitId && beds.some(b=>b.unitId===currentUnitId) ? currentUnitId : units.find(u=>beds.some(b=>b.unitId===u.id))?.id || units[0]?.id || null; if(target)setCurrentUnitId(target); setCurrentView('census'); }}
             className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition ${
               isUnitActive ? 'text-cyan-500 font-semibold' : 'text-slate-500 dark:text-slate-400'
             }`}
