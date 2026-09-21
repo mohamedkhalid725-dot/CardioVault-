@@ -52,7 +52,23 @@ service cloud.firestore {
         allow delete: if workspaceOwner(workspaceId);
       }
 
+      match /members/{uid}/units/{unitId} {
+        allow get, list: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
+        allow create, update: if workspaceOwner(workspaceId) ||
+          (signedIn() && request.auth.uid == uid &&
+           validAccessCode(request.resource.data.accessCodeHash) &&
+           request.resource.data.uid == request.auth.uid &&
+           request.resource.data.unitId == unitId);
+        allow delete: if workspaceOwner(workspaceId);
+      }
+
       match /accessCodes/{hash} { allow read, write: if workspaceOwner(workspaceId); }
+
+      match /team/{uid} {
+        allow get, list: if workspaceOwner(workspaceId);
+        allow create, update: if workspaceOwner(workspaceId);
+        allow delete: if workspaceOwner(workspaceId);
+      }
       match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
       match /beds/{bedId} {
         allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
