@@ -23,6 +23,7 @@ import {PatientSectionId}from'../../types/clinical';
 import {PatientTimeline}from'./PatientTimeline';
 import {QuickClinicalRecord}from'./QuickClinicalRecord';
 import {PatientSafetySnapshot}from'./PatientSafetySnapshot';
+import {QuickAddModal}from'../navigation/QuickAddModal';
 import {PatientHandoverPanel}from'./PatientHandoverPanel';
 import {CalculatorSaveBar}from'./CalculatorSaveBar';
 import {PanelAlarmManager}from'./PanelAlarmManager';
