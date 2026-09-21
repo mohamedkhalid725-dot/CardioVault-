@@ -21,5 +21,14 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "CardioVault",
+        "supportEmail": "mohamedkhalid725@gmail.com"
+      }
+    }
   }
 }
