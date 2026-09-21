@@ -16,7 +16,8 @@ export const UnitCensusView: React.FC = () => {
   const [newPatientSex,setNewPatientSex]=useState<'Male'|'Female'>('Male');
   const [newPatientDiagnosis,setNewPatientDiagnosis]=useState('');
   const [newPatientStatus,setNewPatientStatus]=useState<PatientStatus>('Stable');
-  const [newPatientMRN,setNewPatientMRN]=useState('');\n  const [teamUsers,setTeamUsers]=useState<UserProfile[]>([]);
+  const [newPatientMRN,setNewPatientMRN]=useState('');
+  const [teamUsers,setTeamUsers]=useState<UserProfile[]>([]);
 
   const access=getStoredWorkspaceAccess();
   const editable=canEditClinicalData();
