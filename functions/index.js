@@ -84,14 +84,14 @@ function compactPatient(patient) {
   };
 }
 
-function buildPrompt(patient) {
+function buildPrompt(patient, assistantTask, userPrompt, draftType) {
   return `You are a clinical decision-support assistant for a physician using CardioVault. Analyze ONLY the supplied patient record. Do not invent findings, diagnoses, medications, doses, contraindications, or test results. Do not make autonomous treatment decisions.
 
 Return ONLY valid JSON with exactly these keys: diagnosticAnalysis (string), differentialDiagnoses (array of {diagnosis,rationale,urgency}), recommendedActions (array of strings), safetyChecks (array of strings), missingData (array of strings), confidence (low|moderate|high).
 
 Use a concise working assessment, explicitly not a confirmed diagnosis. For recommendedActions give general clinician-review actions such as stabilization, monitoring, investigations, medication reconciliation, and escalation when supported by the supplied record. Do not create medication orders. If medication therapy is discussed, require clinician verification of drug, dose, route, contraindications, interactions and local protocol. Highlight urgent safety issues and missing information. If data are insufficient, say so.
 
-PATIENT RECORD:\n${JSON.stringify(patient)}`;
+PATIENT RECORD:\n${JSON.stringify(patient)}\n\nASSISTANT TASK: ${String(assistantTask || 'summary')}\nDRAFT TYPE: ${String(draftType || '')}\nCLINICIAN QUESTION: ${String(userPrompt || '')}`;
 }
 
 function normalizeResult(data) {
@@ -145,7 +145,7 @@ exports.analyzeClinicalPatient = onRequest(
       const ai = new GoogleGenAI({ apiKey: key, apiVersion: 'v1' });
       const response = await ai.models.generateContent({
         model: MODEL,
-        contents: buildPrompt(patient),
+        contents: buildPrompt(patient, req.body?.assistantTask, req.body?.userPrompt, req.body?.draftType),
         config: {
           responseMimeType: 'application/json',
           maxOutputTokens: 5000,
