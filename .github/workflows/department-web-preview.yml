@@ -57,7 +57,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path("$RUNNER_TEMP/firebase-preview.json")
+          import os\n          p=Path(os.environ["RUNNER_TEMP"]) / "firebase-preview.json"
           raw=p.read_text()
           data=json.loads(raw)
           urls=[]
