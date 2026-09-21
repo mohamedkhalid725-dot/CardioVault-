@@ -211,9 +211,9 @@ export const ProtocolLibraryView: React.FC = () => {
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
             }`}
           >
-            {tab === 'Cardiology' && <HeartPulse className="w-3.5 h-3.5" />}
-            {tab === 'ICU / Critical Care' && <Flame className="w-3.5 h-3.5" />}
-            {tab === 'Emergency' && <Zap className="w-3.5 h-3.5" />}
+            {tab === 'Cardiology & ACS' && <HeartPulse className="w-3.5 h-3.5" />}
+            {tab === 'Critical Care & Respiratory' && <Flame className="w-3.5 h-3.5" />}
+            {tab === 'Procedures & Emergencies' && <Zap className="w-3.5 h-3.5" />}
             {tab === 'Personal' && <User className="w-3.5 h-3.5" />}
             {tab === 'Favorites' && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />}
             <span>{tab}</span>
