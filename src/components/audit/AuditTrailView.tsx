@@ -177,8 +177,8 @@ export const AuditTrailView: React.FC = () => {
                   </div>
 
                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                    <strong>Correction by:</strong> {c.correctedBy} • <strong>Clinical Reason:</strong>{' '}
-                    {c.clinicalReason}
+                    <strong>Correction by:</strong> {c.user} • <strong>Clinical Reason:</strong>{' '}
+                    {c.reason}
                   </div>
                 </div>
               ))}
