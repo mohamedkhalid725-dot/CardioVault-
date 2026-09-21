@@ -6,11 +6,12 @@ import {Capacitor}from'@capacitor/core';
 import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {loadCurrentUserFromCloud}from'../../services/cloudSyncBridge';
 import {webEmailSignIn,webEmailCreate}from'../../services/webFirebase';
+import {isMasterAccount,ensureOwnerWorkspace} from '../../services/workspaceAccess';
 
 async function waitForNativeGoogleUser():Promise<any|null>{for(let attempt=0;attempt<12;attempt+=1){try{const pending=await FirebaseAuthentication.getPendingAuthResult();if(pending?.user?.email)return pending.user;}catch{}try{const current=await FirebaseAuthentication.getCurrentUser();if(current?.user?.email)return current.user;}catch{}await new Promise(resolve=>window.setTimeout(resolve,350));}return null;}
 
 export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,showToast}=useApp();const[mode,setMode]=useState<'options'|'email'|'create'>('options');const[email,setEmail]=useState('');const[password,setPassword]=useState('');const[confirmPassword,setConfirmPassword]=useState('');const[busy,setBusy]=useState(false);
- const finishFirebaseAccount=async(user:any,successMessage:string)=>{if(!user?.email||!user?.uid)throw new Error('Firebase returned no user account.');localStorage.setItem('cardiovault_google_uid',user.uid);loginWithEmail(user.email);showToast(successMessage,'success');
+ const finishFirebaseAccount=async(user:any,successMessage:string)=>{if(!user?.email||!user?.uid)throw new Error('Firebase returned no user account.');localStorage.setItem('cardiovault_google_uid',user.uid);loginWithEmail(user.email);showToast(successMessage,'success');try{if(await isMasterAccount()){await ensureOwnerWorkspace();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}}catch(error){console.warn('Master workspace bootstrap after sign-in failed:',error);}
    // Authentication must not wait for Firestore/cloud restoration. Open the app immediately;
    // cloud restoration continues in the background and the boot/session layer will retry it.
    void (async()=>{try{const cloud=await Promise.race([loadCurrentUserFromCloud(),new Promise<'timeout'>(resolve=>window.setTimeout(()=>resolve('timeout'),8000))]);if(cloud==='timeout'){showToast('Signed in. Cloud restore is still pending.','info');return;}if(cloud?.found){window.dispatchEvent(new CustomEvent('cardiovault-data-restored'));showToast('Cloud data restored successfully.','success');}else if(cloud?.access){window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));showToast('Cloud workspace ready.','success');}}catch(error){console.warn('Background cloud restore failed:',error);showToast('Signed in. Cloud sync will retry automatically.','warning');}})();
