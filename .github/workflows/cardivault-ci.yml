@@ -47,7 +47,26 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
       - name: Configure Firebase Android
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
+          if [ -f google-services.json ]; then
+            echo "Using repository google-services.json"
+          elif [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Generating google-services.json from the Firebase Android app configuration"
+            printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+            export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+            APPS_JSON="$(npx firebase-tools@latest apps:list --project ccu-notebook --json)"
+            ANDROID_APP_ID="$(printf '%s' "$APPS_JSON" | python -c 'import json,sys; d=json.load(sys.stdin); apps=d.get("result",d); apps=apps if isinstance(apps,list) else apps.get("apps",[]); print(next((a.get("appId") or a.get("app_id") for a in apps if str(a.get("platform","")).upper()=="ANDROID" and a.get("packageName")=="com.cardiovault.app"), ""))')"
+            if [ -z "$ANDROID_APP_ID" ]; then
+              echo "No Firebase Android app registered for com.cardiovault.app"
+              exit 1
+            fi
+            npx firebase-tools@latest apps:sdkconfig ANDROID "$ANDROID_APP_ID" --project ccu-notebook > google-services.json
+          else
+            echo "Firebase Android configuration is missing and FIREBASE_SERVICE_ACCOUNT is not configured"
+            exit 1
+          fi
           cp google-services.json android/app/google-services.json
           python - <<'PY'
           import json
