@@ -5,7 +5,7 @@ import { PatientStatus } from '../../types/clinical';
 import { canEditClinicalData, canManageStructure, getStoredWorkspaceAccess } from '../../services/workspaceAccess';
 
 export const UnitCensusView: React.FC = () => {
-  const { currentUnitId, getUnitById, getBedsByUnit, patients, setCurrentPatientId, setCurrentView, addBed, addPatient, setActivePatientSection, dischargePatient, showToast } = useApp();
+  const { currentUnitId, getUnitById, getBedsByUnit, units, beds, patients, setCurrentPatientId, setCurrentView, addBed, addPatient, setActivePatientSection, dischargePatient, showToast } = useApp();
   const [showAdmitModal,setShowAdmitModal]=useState(false);
   const [selectedBedId,setSelectedBedId]=useState<string|null>(null);
   const [dischargeTarget,setDischargeTarget]=useState<{id:string;name:string;bed:string}|null>(null);
