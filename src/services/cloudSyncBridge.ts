@@ -94,7 +94,7 @@ async function restoreMemberAccess(uid:string):Promise<WorkspaceAccessState|null
     }
     let team:any=null;
     try{team=readSnapshotData((await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/team/${uid}`})).snapshot);}catch{}
-    const unitIds=Array.from(new Set((Array.isArray(team?.assignedUnitIds)&&team.assignedUnitIds.length?team.assignedUnitIds:(Array.isArray(data.unitIds)?data.unitIds:[data.unitId])).map(String)));
+    const unitIds:string[]=Array.from(new Set<string>((Array.isArray(team?.assignedUnitIds)&&team.assignedUnitIds.length?team.assignedUnitIds:(Array.isArray(data.unitIds)?data.unitIds:[data.unitId])).map(String)));
     if(!unitIds.length)return null;
     const unitNames:Record<string,string>={};
     for(const unitId of unitIds){try{const unit:any=await FirebaseFirestore.getDocument({reference:`${workspacePath(MASTER_WORKSPACE_ID,'units')}/${unitId}`});unitNames[unitId]=String(readSnapshotData(unit?.snapshot)?.name||unitId);}catch{unitNames[unitId]=unitId;}}
