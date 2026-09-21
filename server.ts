@@ -151,6 +151,144 @@ app.post('/api/ai/analyze', async (req, res) => {
   }
 });
 
+// Server-side AI Clinical Assistant endpoint supporting all 12 capabilities
+app.post('/api/ai/assistant', async (req, res) => {
+  try {
+    const { task, draftType, userPrompt, patient: rawPatient, imageBase64, clinician } = req.body || {};
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        error: 'CardioVault AI requires GEMINI_API_KEY to be configured in project settings.',
+      });
+    }
+
+    const patient = rawPatient ? compactPatient(rawPatient) : null;
+    const ai = getGenAI();
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+
+    const systemInstructions = `You are CardioVault's AI Clinical Assistant, assisting Dr. ${clinician?.name || 'Physician'} (${clinician?.role || 'Clinician'}) in an inpatient Cardiology / CCU / ICU clinical setting.
+CRITICAL SAFETY RULES:
+1. You are an ASSISTANT, not an autonomous clinician. You must never autonomously prescribe, order, administer, change diagnosis, or modify records.
+2. All documentation drafts must be presented in a clean, structured format for the clinician to review, edit, and manually sign off.
+3. Keep responses objective, concise, guideline-referenced (ESC, AHA/ACC, KDIGO, Surviving Sepsis), and free of filler phrases.
+4. Ground all statements strictly in the supplied patient record. If data is absent, state that explicitly.
+5. Emphasize urgent red flags, contraindications, and drug-drug interactions when present.`;
+
+    let taskInstruction = '';
+    switch (task) {
+      case 'summary':
+        taskInstruction = 'Provide a structured Clinical Patient Summary: Current acute status, primary and secondary diagnoses, key hemodynamics, latest laboratory highlights, active interventions, and immediate clinical priorities.';
+        break;
+      case 'timeline':
+        taskInstruction = 'Construct a chronological Clinical Timeline of the patient course from admission to present, highlighting vital changes, lab trends, procedure outcomes, and clinical milestones.';
+        break;
+      case 'problems':
+        taskInstruction = 'Generate an Active Problem List with prioritized acute issues, differential diagnoses, suspected etiology, stability status, and evidence from the chart.';
+        break;
+      case 'trends':
+        taskInstruction = 'Perform a Trend Analysis across documented vitals, hemodynamics, urine output, fluid balance, lactate, biomarkers (troponin, BNP), and renal function. Highlight improving vs deteriorating parameters.';
+        break;
+      case 'labs':
+        taskInstruction = 'Perform a Laboratory Interpretation: Categorize abnormal values, identify acute patterns (e.g. AKI, electrolyte shifts, coagulopathy, inflammatory response), calculate pertinent ratios if data allows, and highlight safety checks.';
+        break;
+      case 'abg':
+        taskInstruction = 'Provide an Arterial Blood Gas (ABG) & Respiratory Interpretation: Primary acid-base disturbance, degree of compensation (expected pCO2 or HCO3), anion gap if electrolytes available, PaO2/FiO2 ratio, and ventilatory optimization suggestions.';
+        break;
+      case 'ecg':
+        taskInstruction = 'Provide an ECG Clinical Assistance Report: Rate, rhythm, axis, PR interval, QRS width, QT/QTc interval, ST-T wave morphology, ischemic / injury patterns, and clinical comparison.';
+        break;
+      case 'draft_note':
+        taskInstruction = `Draft a comprehensive, professional clinical note of type: "${draftType || 'Progress Note'}".
+Structure format:
+- For 'progress': Subjective, Objective (vitals, exam, labs), Assessment (numbered problem-based), Plan (evidence-based diagnostic and therapeutic steps).
+- For 'daily_review': 24-hour events, systems review (Neuro, CVS, Resp, GI/Renal, ID, Heme), active problems, to-do list.
+- For 'admission': Chief Complaint, HPI, Past History, Medications, Review of Systems, Initial Exam, Admission Labs/ECG, Working Diagnosis, Initial Orders.
+- For 'discharge': Admission Date, Discharge Date, Diagnoses, Hospital Course Summary, Key Investigations, Discharge Medications with changes highlighted, Follow-up instructions.
+- For 'consultation': Clinical Question, Brief Summary of Case, Current Findings, Specific input requested.
+- For 'handover': I-PASS structured summary.`;
+        break;
+      case 'handover':
+        taskInstruction = 'Generate a structured I-PASS Handover (Illness Severity, Patient Summary, Action List, Situation Awareness & Contingency Planning, Synthesis by Receiver).';
+        break;
+      case 'medication':
+        taskInstruction = 'Provide a Clinical Medication Assistance Review: For each active medication, review clinical indication, ICU/cardiology monitoring parameters, safety precautions, renal/hepatic adjustments, and critical drug-drug interactions.';
+        break;
+      case 'protocol':
+        taskInstruction = 'Identify and summarize applicable Clinical Protocols & Pathways for this patient condition (e.g. STEMI, NSTEMI, ADHF, Sepsis, Shock, Anticoagulation), detailing key protocol steps, safety contraindications, and escalation criteria.';
+        break;
+      default:
+        taskInstruction = 'Address the clinician clinical question or request with evidence-based reasoning, guideline citations, and practical bedside recommendations.';
+    }
+
+    let contentsPayload: any[] = [];
+    let promptText = `${systemInstructions}\n\nTASK: ${taskInstruction}`;
+
+    if (userPrompt) {
+      promptText += `\n\nCLINICIAN QUERY / INSTRUCTIONS:\n${userPrompt}`;
+    }
+
+    if (patient) {
+      promptText += `\n\nPATIENT RECORD:\n${JSON.stringify(patient, null, 2)}`;
+    }
+
+    if (imageBase64) {
+      const match = String(imageBase64).match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        contentsPayload = [
+          {
+            role: 'user',
+            parts: [
+              { text: promptText },
+              {
+                inlineData: {
+                  mimeType: match[1],
+                  data: match[2],
+                },
+              },
+            ],
+          },
+        ];
+      } else {
+        contentsPayload = [{ role: 'user', parts: [{ text: promptText }] }];
+      }
+    } else {
+      contentsPayload = [{ role: 'user', parts: [{ text: promptText }] }];
+    }
+
+    let raw = '';
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: contentsPayload,
+        });
+        raw = String(response.text || '').trim();
+        if (raw) break;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Assistant model ${modelName} failed, trying fallback:`, err?.message || err);
+      }
+    }
+
+    if (!raw && lastError) throw lastError;
+    if (!raw) return res.status(502).json({ error: 'AI Assistant returned an empty response.' });
+
+    return res.status(200).json({
+      text: raw,
+      task,
+      draftType: draftType || null,
+      disclaimer: "AI-generated clinical assistance. Verify against the patient's record, current guidelines, and clinical judgment before acting.",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('AI Assistant API error:', error);
+    const msg = String(error?.message || error || 'Clinical assistant request failed.');
+    return res.status(500).json({ error: msg });
+  }
+});
+
 // Vite middleware / static serving
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

@@ -38,11 +38,6 @@ export const TeamDirectoryView: React.FC = () => {
 
   const isAdmin = currentUser.role === 'department_admin';
 
-  const handleSwitchUser = (user: UserProfile) => {
-    setCurrentUser(user);
-    showToast(`Switched active test profile to ${user.name} (${user.role.toUpperCase()})`, 'info');
-  };
-
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) {
@@ -148,16 +143,16 @@ export const TeamDirectoryView: React.FC = () => {
         )}
       </div>
 
-      {/* Role testing switcher notice */}
+      {/* Department Directory Notice */}
       <div className="p-3.5 rounded-2xl bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2.5">
-          <Key className="w-4 h-4 text-cyan-500 shrink-0" />
+          <Shield className="w-4 h-4 text-cyan-500 shrink-0" />
           <span className="text-slate-700 dark:text-slate-300">
-            Currently acting as: <strong className="text-cyan-600 dark:text-cyan-400">{currentUser.name}</strong> (Role: <strong className="uppercase">{currentUser.role.replace('_', ' ')}</strong>)
+            Authenticated as: <strong className="text-cyan-600 dark:text-cyan-400">{currentUser.name}</strong> (Role: <strong className="uppercase">{currentUser.role.replace('_', ' ')}</strong>)
           </span>
         </div>
         <span className="text-[11px] text-slate-500 dark:text-slate-400">
-          Click any persona below to switch view and test RBAC permissions.
+          Departmental clinical credentials and assigned unit scopes.
         </span>
       </div>
 
@@ -187,7 +182,7 @@ export const TeamDirectoryView: React.FC = () => {
                     {user.name}
                     {isCurrentActive && (
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-500 text-slate-950">
-                        Active
+                        You
                       </span>
                     )}
                   </div>
@@ -229,16 +224,9 @@ export const TeamDirectoryView: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 pt-2">
-                <button
-                  onClick={() => handleSwitchUser(user)}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
-                    isCurrentActive
-                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-default'
-                      : 'bg-cyan-500/10 hover:bg-cyan-500 text-cyan-600 dark:text-cyan-400 hover:text-slate-950'
-                  }`}
-                >
-                  {isCurrentActive ? 'Current Persona' : 'Act as this User'}
-                </button>
+                <div className="flex-1 py-1.5 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 text-[11px] text-slate-600 dark:text-slate-400 font-medium truncate">
+                  Status: <span className="text-emerald-500 font-bold uppercase">Active</span>
+                </div>
 
                 {isAdmin && (
                   <button

@@ -51,3 +51,74 @@ export async function analyzePatientWithAI(patient:Patient):Promise<AIClinicalRe
   if(!payload?.diagnosticAnalysis)throw new Error('The AI server returned an incomplete clinical response. Tap Re-analyze to try again.');
   return payload as AIClinicalResult;
 }
+
+export type AIAssistantTask =
+  | 'summary'
+  | 'timeline'
+  | 'problems'
+  | 'trends'
+  | 'labs'
+  | 'abg'
+  | 'ecg'
+  | 'draft_note'
+  | 'handover'
+  | 'medication'
+  | 'protocol'
+  | 'general';
+
+export type AIDraftType =
+  | 'progress'
+  | 'daily_review'
+  | 'admission'
+  | 'discharge'
+  | 'consultation'
+  | 'handover';
+
+export interface AIAssistantRequest {
+  task: AIAssistantTask;
+  draftType?: AIDraftType;
+  userPrompt?: string;
+  patient?: Patient | null;
+  imageBase64?: string;
+  clinician?: { name: string; role: string };
+}
+
+export interface AIAssistantResponse {
+  text: string;
+  task: AIAssistantTask;
+  draftType?: AIDraftType;
+  disclaimer: string;
+  timestamp: string;
+}
+
+export async function callAIAssistant(req: AIAssistantRequest): Promise<AIAssistantResponse> {
+  const token = await getFirebaseIdToken();
+  let response: Response;
+  try {
+    response = await fetch('/api/ai/assistant', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(req),
+    });
+  } catch {
+    throw new Error('Could not reach the CardioVault AI server. Verify network connection and try again.');
+  }
+
+  let payload: any = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+
+  if (!response.ok) {
+    const message = String(payload?.error || 'AI Assistant request failed.');
+    throw new Error(message);
+  }
+
+  return payload as AIAssistantResponse;
+}
+

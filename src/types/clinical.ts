@@ -217,6 +217,7 @@ export interface DetailedAuditLog {
   role: ClinicalRole;
   action: string;
   patientId?: string;
+  patientName?: string;
   departmentId?: string;
   unitId?: string;
   timestamp: string;
@@ -224,6 +225,7 @@ export interface DetailedAuditLog {
   previousValue?: any;
   newValue?: any;
   reason?: string;
+  metadata?: any;
 }
 
 export interface ClinicalCorrection {
@@ -282,18 +284,22 @@ export interface Patient {
   id: string;
   mrn: string;
   fullName: string;
+  name?: string;
   age: number;
   sex: 'Male' | 'Female' | 'Other';
+  gender?: string;
   weight: number;
   height: number;
   photoUrl?: string;
   unitId: string;
   bedId: string;
+  bedNumber?: string;
   departmentId?: string;
   status: PatientStatus;
   admissionDate: string;
   admissionTime: string;
   primaryDiagnosis: string;
+  diagnosis?: string;
   secondaryDiagnoses: string[];
   allergies: string[];
   codeStatus: 'Full Code' | 'DNR' | 'DNI' | 'Comfort Measures Only';

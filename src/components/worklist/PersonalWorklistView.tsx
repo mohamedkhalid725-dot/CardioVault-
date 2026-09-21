@@ -13,7 +13,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { ClinicalWorkflowService } from '../../services/clinicalWorkflowService';
 import { AuthorizationService } from '../../services/authorizationService';
-import { ClinicalTask } from '../../types/clinical';
+import { ClinicalTask, Patient } from '../../types/clinical';
 
 export const PersonalWorklistView: React.FC = () => {
   const { currentUser, patients, beds, setCurrentPatientId, setCurrentView, showToast } = useApp();
@@ -24,7 +24,7 @@ export const PersonalWorklistView: React.FC = () => {
   const [newTaskPriority, setNewTaskPriority] = useState<'routine' | 'urgent' | 'stat'>('routine');
   const [newTaskPatientId, setNewTaskPatientId] = useState('');
 
-  const authorizedPatients = AuthorizationService.filterAuthorizedPatients(
+  const authorizedPatients: Patient[] = AuthorizationService.filterAuthorizedPatients<Patient>(
     patients.filter(p => !p.isArchived),
     currentUser
   );

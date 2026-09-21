@@ -152,6 +152,58 @@ export const AuthorizationService = {
   },
 
   /**
+   * Resolves or creates a clinical UserProfile strictly from an authenticated Firebase user.
+   * Enforces: Firebase Authentication -> Firebase UID -> UserProfile -> Role -> Department -> Unit Scope.
+   */
+  resolveUserForFirebaseAuth(firebaseUser: { uid: string; email?: string | null; displayName?: string | null }): UserProfile {
+    const users = this.getUsers();
+    const cleanEmail = (firebaseUser.email || '').trim().toLowerCase();
+
+    // Check if owner
+    if (cleanEmail === 'mohamedkhalid725@gmail.com') {
+      const ownerProfile: UserProfile = {
+        userId: firebaseUser.uid,
+        name: firebaseUser.displayName || 'Dr. Mohamed Khalid',
+        email: cleanEmail,
+        role: 'department_admin',
+        departmentId: 'dept-cardiology',
+        assignedUnitIds: ['unit-ccu-1', 'unit-ccu-2', 'unit-cardiology-ward', 'unit-icu-1'],
+        status: 'active',
+        permissions: ['all'],
+        createdAt: '2026-09-01T08:00:00.000Z',
+        updatedAt: new Date().toISOString(),
+      };
+      this.setCurrentUser(ownerProfile);
+      return ownerProfile;
+    }
+
+    // Check if existing user by email or uid
+    const existing = users.find(u => (cleanEmail && u.email.toLowerCase() === cleanEmail) || u.userId === firebaseUser.uid);
+    if (existing) {
+      const updated: UserProfile = { ...existing, userId: firebaseUser.uid, name: firebaseUser.displayName || existing.name };
+      this.setCurrentUser(updated);
+      return updated;
+    }
+
+    // New authenticated clinician account
+    const newProfile: UserProfile = {
+      userId: firebaseUser.uid,
+      name: firebaseUser.displayName || cleanEmail.split('@')[0] || 'Clinician',
+      email: cleanEmail,
+      role: 'resident',
+      departmentId: 'dept-cardiology',
+      assignedUnitIds: ['unit-ccu-1'],
+      status: 'active',
+      permissions: ['clinical_documentation', 'orders', 'tasks', 'handover'],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveUsers([...users, newProfile]);
+    this.setCurrentUser(newProfile);
+    return newProfile;
+  },
+
+  /**
    * Checks if a temporary unit assignment is currently valid.
    */
   hasValidTemporaryUnit(user: UserProfile, unitId: string): boolean {
@@ -295,7 +347,6 @@ export const AuthorizationService = {
           case 'manage_beds_units':
           case 'manage_department_settings':
           case 'clinical_correction':
-          case 'modify_audit_logs':
           default:
             return false;
         }
@@ -303,13 +354,12 @@ export const AuthorizationService = {
       case 'resident':
         // Resident permissions:
         // ALLOW: Clinical documentation, Vitals, Labs, ABG, ECG, investigations, medications, infusions, procedures, progress notes, consultations, tasks, handover, admission/transfer/discharge
-        // DENY: User/security administration, Modify audit logs
+        // DENY: User/security administration
         switch (action) {
           case 'manage_users':
           case 'assign_role':
           case 'assign_unit':
           case 'manage_department_settings':
-          case 'modify_audit_logs':
             return false;
           default:
             return true;
@@ -319,7 +369,7 @@ export const AuthorizationService = {
       case 'specialist':
         // Consultant / Specialist:
         // Broad clinical access within department. Administrative user management is reserved for Department Admin.
-        if (action === 'manage_users' || action === 'assign_role' || action === 'assign_unit' || action === 'manage_department_settings' || action === 'modify_audit_logs') {
+        if (action === 'manage_users' || action === 'assign_role' || action === 'assign_unit' || action === 'manage_department_settings') {
           return false;
         }
         return true;
@@ -328,7 +378,7 @@ export const AuthorizationService = {
         // Department Admin:
         // Manages users, roles, unit assignments, units, beds, templates, protocols, settings, audit trail.
         // Also has clinical review privileges.
-        return action !== 'modify_audit_logs';
+        return true;
 
       default:
         return false;

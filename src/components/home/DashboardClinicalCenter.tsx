@@ -126,8 +126,8 @@ export const DashboardClinicalCenter: React.FC = () => {
 
   // Attention board items (from clinical service)
   const attentionItems = useMemo(
-    () => ClinicalWorkflowService.buildAttentionBoard(scopedActive),
-    [scopedActive]
+    () => ClinicalWorkflowService.buildAttentionBoard(scopedActive, scopedBeds, currentUser),
+    [scopedActive, scopedBeds, currentUser]
   );
 
   const patientAlerts = useMemo(

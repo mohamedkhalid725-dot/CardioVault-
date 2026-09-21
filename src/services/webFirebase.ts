@@ -9,8 +9,11 @@ import {
   indexedDBLocalPersistence,
   initializeAuth,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  onAuthStateChanged,
   signOut,
   type User,
   type Auth,
@@ -81,8 +84,33 @@ function getWebDb(): Firestore {
   return webDbInstance;
 }
 
-export function webGoogleSignIn(): Promise<User> {
-  return signInWithPopup(getWebAuth(), new GoogleAuthProvider()).then(result => result.user);
+export async function webGoogleSignIn(): Promise<User> {
+  const auth = getWebAuth();
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try {
+    const result = await signInWithPopup(auth, provider);
+    return result.user;
+  } catch (err: any) {
+    if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/cancelled-popup-request') {
+      await signInWithRedirect(auth, provider);
+      throw new Error('Redirecting to Google Sign-In...');
+    }
+    throw err;
+  }
+}
+export async function checkWebRedirectResult(): Promise<User | null> {
+  if (Capacitor.isNativePlatform()) return null;
+  try {
+    const result = await getRedirectResult(getWebAuth());
+    return result?.user || null;
+  } catch {
+    return null;
+  }
+}
+export function subscribeWebAuthState(callback: (user: User | null) => void): () => void {
+  if (Capacitor.isNativePlatform()) return () => {};
+  return onAuthStateChanged(getWebAuth(), callback);
 }
 export async function webEmailSignIn(email:string,password:string):Promise<User>{
   return (await signInWithEmailAndPassword(getWebAuth(),email,password)).user;

@@ -102,53 +102,16 @@ export const DepartmentPulse: React.FC = () => {
         {/* Clinician Profile & Scope Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3.5 mb-3.5 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <button
-                onClick={() => setIsUserSwitcherOpen(!isUserSwitcherOpen)}
-                className="flex items-center gap-2 p-1.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 hover:border-cyan-500 transition text-left"
-                title="Switch test clinician persona"
-              >
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <div>
-                  <div className="text-[11px] font-black text-slate-900 dark:text-white flex items-center gap-1">
-                    {currentUser.name}
-                    <ChevronDown className="w-3 h-3 text-slate-400" />
-                  </div>
-                  <div className="text-[9px] uppercase font-bold text-cyan-600 dark:text-cyan-400">
-                    {currentUser.role.replace('_', ' ')} • {scopedUnits.map(u => u.name).join(', ') || 'All Units'}
-                  </div>
+            <div className="flex items-center gap-2.5 p-1.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-left">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <div>
+                <div className="text-[11px] font-black text-slate-900 dark:text-white">
+                  {currentUser.name}
                 </div>
-              </button>
-
-              {/* Persona Switcher Dropdown */}
-              {isUserSwitcherOpen && (
-                <div className="absolute left-0 top-full mt-2 w-72 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-2 z-50 animate-fadeIn space-y-1">
-                  <div className="px-2 py-1 text-[9px] uppercase font-black text-slate-400">
-                    Switch Active Persona (Test RBAC)
-                  </div>
-                  {availableUsers.map(u => (
-                    <button
-                      key={u.userId}
-                      onClick={() => handleSelectPersona(u)}
-                      className={`w-full text-left p-2 rounded-xl text-xs flex items-center justify-between transition ${
-                        currentUser.userId === u.userId
-                          ? 'bg-cyan-500/10 text-cyan-500 font-bold'
-                          : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div>{u.name}</div>
-                        <div className="text-[10px] text-slate-400 capitalize">
-                          {u.role.replace('_', ' ')}
-                        </div>
-                      </div>
-                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
-                        {u.role.slice(0, 4)}
-                      </span>
-                    </button>
-                  ))}
+                <div className="text-[9px] uppercase font-bold text-cyan-600 dark:text-cyan-400">
+                  {currentUser.role.replace('_', ' ')} • {scopedUnits.map(u => u.name).join(', ') || 'All Units'}
                 </div>
-              )}
+              </div>
             </div>
           </div>
 

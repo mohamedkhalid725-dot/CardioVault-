@@ -1,5 +1,7 @@
 import { DetailedAuditLog, ClinicalCorrection } from '../types/clinical';
 
+export type AuditEntry = DetailedAuditLog;
+
 const AUDIT_STORAGE_KEY = 'cardiovault_immutable_audit_logs_v2';
 const CORRECTIONS_STORAGE_KEY = 'cardiovault_clinical_corrections_v2';
 

@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState}from'react';
-import {ArrowLeft,ChevronLeft,ChevronRight,ClipboardList,ClipboardPlus,Clock3,LayoutDashboard,LockKeyhole}from'lucide-react';
+import {ArrowLeft,ChevronLeft,ChevronRight,ClipboardList,ClipboardPlus,Clock3,LayoutDashboard,LockKeyhole,Sparkles}from'lucide-react';
 import {useApp}from'../../context/AppContext';
 import {PatientFileHeader}from'./PatientFileHeader';
 import {PatientEditModal}from'./PatientEditModal';
@@ -41,6 +41,7 @@ export const PatientFileView:React.FC=()=>{const{currentPatient,activePatientSec
 {!readOnly&&<button onClick={()=>setShowQuickRecord(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500 text-white text-xs font-bold"><ClipboardPlus className="w-3.5 h-3.5"/>Quick Record</button>}
 <button onClick={()=>setShowTimeline(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 text-xs font-bold"><Clock3 className="w-3.5 h-3.5 text-cyan-500"/>Timeline</button>
 <button onClick={()=>setShowHandover(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 text-xs font-bold"><ClipboardList className="w-3.5 h-3.5 text-cyan-500"/>Handover</button>
+<button onClick={()=>setCurrentView('ai-assistant')} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold"><Sparkles className="w-3.5 h-3.5"/>AI Assistant</button>
 </div>
 <div className="grid grid-cols-3 gap-2">
 <button onClick={()=>openSection('progress')} className="min-h-[58px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] px-2.5 py-2 text-left hover:border-cyan-500/60"><div className="text-cyan-500 text-xs font-extrabold">Progress Note</div><div className="text-[10px] text-slate-400 mt-0.5">Add clinical note</div></button>
