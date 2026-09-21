@@ -1,4 +1,4 @@
-import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';\nimport { Capacitor } from '@capacitor/core';\nimport { webCurrentUser } from './webFirebase';
 import { Patient } from '../types/clinical';
 
 export interface AIClinicalResult {
@@ -101,7 +101,7 @@ export async function callAIAssistant(req: AIAssistantRequest): Promise<AIAssist
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({patient:req.patient,assistantTask:req.task,draftType:req.draftType,userPrompt:req.userPrompt}),
+      body: JSON.stringify({patient:req.patient,assistantTask:req.task,draftType:req.draftType,userPrompt:req.userPrompt,imageBase64:req.imageBase64||undefined}),
     });
   } catch {
     throw new Error('Could not reach the CardioVault AI server. Verify network connection and try again.');
