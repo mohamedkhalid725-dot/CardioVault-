@@ -9,7 +9,16 @@ service cloud.firestore {
     function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
     function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true && get(/databases/$(database)/documents/accessCodes/$(hash)).data.workspaceId == 'cardiovault_master_workspace'; }
-    function unitMember(workspaceId,unitId) { return member(workspaceId) && memberData(workspaceId).unitId == unitId && validAccessCode(memberData(workspaceId).accessCodeHash); }
+    function unitMember(workspaceId,unitId) {
+      return member(workspaceId) &&
+        (
+          (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)) &&
+           get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)).data.active == true &&
+           validAccessCode(get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)).data.accessCodeHash))
+          ||
+          (memberData(workspaceId).unitId == unitId && validAccessCode(memberData(workspaceId).accessCodeHash))
+        );
+    }
     function clinicalEditor(workspaceId,unitId) { return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor'; }
 
     match /users/{uid} {
