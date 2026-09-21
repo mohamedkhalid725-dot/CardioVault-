@@ -27,7 +27,7 @@ export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,show
           throw webErr;
         }
       }
-      const signInPromise=FirebaseAuthentication.signInWithGoogle({useCredentialManager:false}).then(result=>result?.user||null).catch(error=>{console.warn('Direct Google sign-in failed:',error);return null;});
+      const signInPromise=FirebaseAuthentication.signInWithGoogle({useCredentialManager:true}).then(result=>result?.user||null).catch(async error=>{console.warn('Credential Manager Google sign-in failed:',error);try{const fallback=await FirebaseAuthentication.signInWithGoogle({useCredentialManager:false});return fallback?.user||null;}catch(fallbackError){console.warn('Legacy Google sign-in fallback failed:',fallbackError);return null;}});
       let googleUser=await Promise.race([signInPromise,waitForNativeGoogleUser()]);
       if(!googleUser?.email)googleUser=await waitForNativeGoogleUser();
       if(!googleUser?.email){showToast('Google account selection did not complete. Please try again.','error');return;}
