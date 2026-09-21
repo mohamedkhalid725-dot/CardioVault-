@@ -2,6 +2,7 @@ import React,{useEffect,useMemo,useState}from'react';
 import {Pill,Plus,Activity,Clock,Trash2,Zap,X,History,PauseCircle,PlayCircle,SquarePen,Search,BookmarkPlus,Star}from'lucide-react';
 import {Patient,Medication,Infusion}from'../../../types/clinical';
 import {useApp}from'../../../context/AppContext';
+import {getSharedMedicationLibrary,saveSharedMedicationTemplate,SharedMedicationTemplate} from '../../../services/departmentLibraryService';
 
 interface Props{patient:Patient}
 const input='w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white';
@@ -16,7 +17,7 @@ const readSaved=():SavedMed[]=>{try{const v=JSON.parse(localStorage.getItem(save
 export const MedicationSection:React.FC<Props>=({patient})=>{
  const{updatePatient,showToast}=useApp();const[activeTab,setActiveTab]=useState<'infusions'|'scheduled'|'once'|'prn'|'history'>('infusions');const[showMed,setShowMed]=useState(false);const[showInf,setShowInf]=useState(false);const[editingId,setEditingId]=useState<string|null>(null);
  const[medName,setMedName]=useState('');const[medDose,setMedDose]=useState('');const[medRoute,setMedRoute]=useState('Oral');const[medFreq,setMedFreq]=useState('Once daily (OD)');const[medIndication,setMedIndication]=useState('');const[query,setQuery]=useState('');const[saved,setSaved]=useState<SavedMed[]>(readSaved);
- const[infDrug,setInfDrug]=useState('');const[infDose,setInfDose]=useState('');const[infUnit,setInfUnit]=useState('mcg/kg/min');const[infRate,setInfRate]=useState('');const[infConcentration,setInfConcentration]=useState('');const[infCarrier,setInfCarrier]=useState('');const[infLine,setInfLine]=useState('');
+ const[shared,setShared]=useState<SharedMedicationTemplate[]>([]);useEffect(()=>{let mounted=true;getSharedMedicationLibrary().then(v=>{if(mounted)setShared(v);}).catch(()=>{});return()=>{mounted=false;};},[]); const[infDrug,setInfDrug]=useState('');const[infDose,setInfDose]=useState('');const[infUnit,setInfUnit]=useState('mcg/kg/min');const[infRate,setInfRate]=useState('');const[infConcentration,setInfConcentration]=useState('');const[infCarrier,setInfCarrier]=useState('');const[infLine,setInfLine]=useState('');
  const meds=Array.isArray(patient.medications)?patient.medications:[];const medicationHistory=Array.isArray((patient as any).medicationHistory)?(patient as any).medicationHistory:[];const infusionHistory=Array.isArray((patient as any).infusionHistory)?(patient as any).infusionHistory:[];const infusions=Array.isArray(patient.infusions)?patient.infusions:[];const scheduled=meds.filter(m=>m.type==='Scheduled');const once=meds.filter(m=>m.type==='Once');const prn=meds.filter(m=>m.type==='PRN');const statusOf=(m:Medication):MedStatus=>m.status||'Active';
  const suggestions=useMemo(()=>{const q=query.trim().toLowerCase();if(!q)return[];const all=[...catalog,...saved,...shared].filter((m,i,a)=>a.findIndex(x=>`${x.name}|${x.dose}`===`${m.name}|${m.dose}`)===i);return all.filter(m=>m.name.toLowerCase().startsWith(q)).slice(0,10);},[query,saved]);
  const resetMed=()=>{setMedName('');setMedDose('');setMedRoute('Oral');setMedFreq('Once daily (OD)');setMedIndication('');setQuery('');setEditingId(null);};
