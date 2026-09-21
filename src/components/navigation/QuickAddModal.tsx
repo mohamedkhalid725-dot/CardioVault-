@@ -1,119 +1,23 @@
-import React from 'react';
-import {
-  Activity,
-  Droplet,
-  FileText,
-  Pill,
-  Cpu,
-  CheckSquare,
-  UserPlus,
-  Stethoscope,
-  FlaskConical,
-  MessageSquare,
-  X,
-  ShieldAlert,
-} from 'lucide-react';
-import { useApp } from '../../context/AppContext';
-import { AuthorizationService, ACCESS_DENIED_MESSAGE } from '../../services/authorizationService';
-
-interface QuickAddModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSelectAction: (action: string) => void;
-}
-
-export const QuickAddModal: React.FC<QuickAddModalProps> = ({ isOpen, onClose, onSelectAction }) => {
-  const { currentUser, showToast } = useApp();
-
-  if (!isOpen) return null;
-
-  if (currentUser.role === 'viewer') {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 shadow-2xl text-center">
-          <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-500 mx-auto flex items-center justify-center mb-3">
-            <ShieldAlert className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Quick Add Disabled</h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-            {ACCESS_DENIED_MESSAGE} Viewers have read-only access.
-          </p>
-          <button
-            onClick={onClose}
-            className="w-full py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-200"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const isNurse = currentUser.role === 'nurse';
-
-  const nurseActions = [
-    { id: 'quick-vitals', label: 'Vitals Entry', icon: Activity, color: 'text-rose-500 bg-rose-500/10' },
-    { id: 'quick-io', label: 'Intake & Output', icon: Droplet, color: 'text-sky-500 bg-sky-500/10' },
-    { id: 'quick-nursing-note', label: 'Nursing Note', icon: FileText, color: 'text-emerald-500 bg-emerald-500/10' },
-    { id: 'quick-med-admin', label: 'Med Administration', icon: Pill, color: 'text-amber-500 bg-amber-500/10' },
-    { id: 'quick-device', label: 'Device / Line', icon: Cpu, color: 'text-purple-500 bg-purple-500/10' },
-    { id: 'quick-task', label: 'Clinical Task', icon: CheckSquare, color: 'text-cyan-500 bg-cyan-500/10' },
-  ];
-
-  const physicianActions = [
-    { id: 'quick-admission', label: 'Admit Patient', icon: UserPlus, color: 'text-cyan-500 bg-cyan-500/10' },
-    { id: 'quick-progress-note', label: 'Clinical Progress Note', icon: Stethoscope, color: 'text-emerald-500 bg-emerald-500/10' },
-    { id: 'quick-med-order', label: 'Medication Order', icon: Pill, color: 'text-indigo-500 bg-indigo-500/10' },
-    { id: 'quick-investigation', label: 'Order Investigation', icon: FlaskConical, color: 'text-amber-500 bg-amber-500/10' },
-    { id: 'quick-consultation', label: 'Request Consultation', icon: MessageSquare, color: 'text-rose-500 bg-rose-500/10' },
-    { id: 'quick-task', label: 'Assign Clinical Task', icon: CheckSquare, color: 'text-purple-500 bg-purple-500/10' },
-  ];
-
-  const actions = isNurse ? nurseActions : physicianActions;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl p-5 max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-          <div>
-            <span className="text-xs uppercase tracking-wider font-semibold text-cyan-600 dark:text-cyan-400">
-              {currentUser.role.replace('_', ' ').toUpperCase()} WORKFLOW
-            </span>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Quick Add Action</h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2.5 py-4">
-          {actions.map(action => {
-            const Icon = action.icon;
-            return (
-              <button
-                key={action.id}
-                onClick={() => {
-                  onSelectAction(action.id);
-                  onClose();
-                }}
-                className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:border-cyan-500 hover:bg-cyan-500/5 transition text-left"
-              >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${action.color}`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-900 dark:text-white leading-tight">
-                    {action.label}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
+import React,{useState}from'react';
+import{Activity,Droplet,FileText,Pill,Cpu,CheckSquare,UserPlus,Stethoscope,FlaskConical,MessageSquare,X,ShieldAlert}from'lucide-react';
+import{useApp}from'../../context/AppContext';
+import{ACCESS_DENIED_MESSAGE}from'../../services/authorizationService';
+export const QuickAddModal:React.FC<{isOpen:boolean;onClose:()=>void;onSelectAction:(action:string)=>void}>=({isOpen,onClose,onSelectAction})=>{
+ const{currentUser,patients,currentPatient,updatePatient,setCurrentView,showToast}=useApp();const[selected,setSelected]=useState('');const[patientId,setPatientId]=useState(currentPatient?.id||patients.find(p=>!p.isArchived)?.id||'');const[text,setText]=useState('');const[title,setTitle]=useState('');const[priority,setPriority]=useState('routine');const[frequency,setFrequency]=useState('');const[specialty,setSpecialty]=useState('');const[type,setType]=useState('CBC');
+ if(!isOpen)return null;
+ if(currentUser.role==='viewer')return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"><div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full text-center"><ShieldAlert className="w-8 h-8 text-amber-500 mx-auto mb-3"/><h3 className="font-bold">Quick Add Disabled</h3><p className="text-sm text-slate-500 my-3">{ACCESS_DENIED_MESSAGE} Viewers have read-only access.</p><button onClick={onClose} className="px-5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800">Close</button></div></div>;
+ const actions=[{id:'quick-admission',label:'Admit Patient',icon:UserPlus},{id:'quick-progress-note',label:'Clinical Progress Note',icon:Stethoscope},{id:'quick-med-order',label:'Medication Order',icon:Pill},{id:'quick-investigation',label:'Order Investigation',icon:FlaskConical},{id:'quick-consultation',label:'Request Consultation',icon:MessageSquare},{id:'quick-task',label:'Assign Clinical Task',icon:CheckSquare}];
+ const nurse=[{id:'quick-vitals',label:'Vitals Entry',icon:Activity},{id:'quick-io',label:'Intake & Output',icon:Droplet},{id:'quick-nursing-note',label:'Nursing Note',icon:FileText},{id:'quick-med-admin',label:'Med Administration',icon:Pill},{id:'quick-device',label:'Device / Line',icon:Cpu},{id:'quick-task',label:'Clinical Task',icon:CheckSquare}];
+ const list=currentUser.role==='nurse'?nurse:actions;
+ const selectedPatient=patients.find(p=>p.id===patientId&&!p.isArchived);
+ const close=()=>{setSelected('');setText('');setTitle('');setFrequency('');setSpecialty('');setType('CBC');onClose();};
+ const submit=(e:React.FormEvent)=>{e.preventDefault();if(selected==='quick-admission'){onSelectAction(selected);close();return;}if(!selectedPatient){showToast('Select an active patient first.','error');return;}const now=new Date();const stamp=now.toISOString();if(selected==='quick-progress-note'||selected==='quick-nursing-note'){const note:any={id:`note-quick-${Date.now()}`,date:stamp.slice(0,10),time:now.toTimeString().slice(0,5),author:currentUser.name,type:selected==='quick-nursing-note'?'Nursing Note':'Progress Note',plan:text,subjective:text,clinicalStatus:'Documented'};updatePatient(selectedPatient.id,{progressNotes:[note,...(selectedPatient.progressNotes||[])]});}
+ else if(selected==='quick-med-order'||selected==='quick-med-admin'){const med:any={id:`med-quick-${Date.now()}`,name:title,dose:text,route:'Oral',frequency:frequency||'As directed',indication:'Quick workflow',status:'Active',startDate:stamp.slice(0,10)};updatePatient(selectedPatient.id,{medications:[...(selectedPatient.medications||[]),med]});}
+ else if(selected==='quick-investigation'){const inv:any={id:`inv-${Date.now()}`,patientId:selectedPatient.id,unitId:selectedPatient.unitId,type:type as any,title:type,status:'ordered',orderedAt:stamp,orderedBy:currentUser.name,flag:'normal'};updatePatient(selectedPatient.id,{investigations:[inv,...(selectedPatient.investigations||[])]});}
+ else if(selected==='quick-consultation'){const con:any={id:`consult-${Date.now()}`,patientId:selectedPatient.id,unitId:selectedPatient.unitId,specialty:specialty||'Cardiology',clinicalQuestion:text,status:'Requested',requestedBy:currentUser.name,requestedAt:stamp,priority:priority as any};updatePatient(selectedPatient.id,{consultations:[con,...(selectedPatient.consultations||[])]});}
+ else if(selected==='quick-task'){const task:any={id:`task-${Date.now()}`,patientId:selectedPatient.id,patientName:selectedPatient.fullName,unitId:selectedPatient.unitId,title:title||'Clinical task',description:text,priority:priority as any,assignedTo:currentUser.name,createdBy:currentUser.name,status:'pending',createdAt:stamp};updatePatient(selectedPatient.id,{tasks:[task,...(selectedPatient.tasks||[])]});}
+ else {showToast('This workflow is not available for the current role.','warning');return;}
+ showToast('Workflow saved successfully.','success');close();};
+ const field=<>{selected!=='quick-admission'&&<div><label className="text-xs font-bold">Patient</label><select value={patientId} onChange={e=>setPatientId(e.target.value)} className="w-full mt-1 rounded-xl border p-2.5 bg-white dark:bg-slate-800"><option value="">Select patient</option>{patients.filter(p=>!p.isArchived).map(p=><option key={p.id} value={p.id}>{p.fullName} • {p.mrn}</option>)}</select></div>}{(selected==='quick-med-order'||selected==='quick-med-admin'||selected==='quick-task')&&<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder={selected==='quick-task'?'Task title':'Medication name'} className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800 text-sm"/>}{selected==='quick-med-order'||selected==='quick-med-admin'?<><input required value={text} onChange={e=>setText(e.target.value)} placeholder="Dose / concentration" className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800 text-sm"/><input value={frequency} onChange={e=>setFrequency(e.target.value)} placeholder="Frequency" className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800 text-sm"/></>:selected==='quick-investigation'?<select value={type} onChange={e=>setType(e.target.value)} className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800"><option>CBC</option><option>ABG</option><option>ECG</option><option>Troponin</option><option>CK-MB</option><option>BNP</option><option>Echo</option><option>Imaging</option><option>Other</option></select>:selected==='quick-consultation'?<><input value={specialty} onChange={e=>setSpecialty(e.target.value)} placeholder="Specialty / consultant" className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800 text-sm"/><textarea required value={text} onChange={e=>setText(e.target.value)} placeholder="Clinical question" className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800 text-sm min-h-24"/></>:<textarea required value={text} onChange={e=>setText(e.target.value)} placeholder={selected==='quick-task'?'Task description':'Clinical documentation'} className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800 text-sm min-h-24"/>}{(selected==='quick-task'||selected==='quick-consultation')&&<select value={priority} onChange={e=>setPriority(e.target.value)} className="w-full rounded-xl border p-2.5 bg-white dark:bg-slate-800"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select>}</>;
+ return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"><div className="bg-white dark:bg-slate-900 rounded-2xl p-5 max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl"><div className="flex items-center justify-between pb-3 border-b"><div><div className="text-[10px] font-black uppercase text-cyan-500">{selected?'Clinical Workflow':'Quick Add'}</div><h3 className="text-lg font-bold">{selected?list.find(a=>a.id===selected)?.label:'Quick Add Action'}</h3></div><button onClick={close}><X/></button></div>{!selected?<div className="grid grid-cols-2 gap-2.5 py-4">{list.map(a=>{const I=a.icon;return <button key={a.id} onClick={()=>{if(a.id==='quick-admission'){onSelectAction(a.id);close();}else setSelected(a.id)}} className="flex items-center gap-3 p-3.5 rounded-xl border text-left hover:border-cyan-500"><I className="w-5 h-5 text-cyan-500"/><span className="text-xs font-semibold">{a.label}</span></button>})}</div>:<form onSubmit={submit} className="space-y-3 pt-4">{selected==='quick-admission'?<div className="text-sm text-slate-500">Opening the full admission workflow…</div>:field}<div className="flex justify-end gap-2"><button type="button" onClick={()=>setSelected('')} className="px-4 py-2 text-xs">Back</button>{selected!=='quick-admission'&&<button className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs">Create & Save</button>}</div></form>}</div></div>;
 };
