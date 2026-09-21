@@ -32,16 +32,17 @@ import {
 } from '../../services/aiClinicalService';
 import { AuditTrailService } from '../../services/auditTrailService';
 import { Patient } from '../../types/clinical';
+import { getStoredWorkspaceAccess, isOwnerAccess } from '../../services/workspaceAccess';
 
 interface AIAssistantViewProps {
   initialPatient?: Patient;
 }
 
 export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ initialPatient }) => {
-  const { patients, currentPatient, currentUser, updatePatient, showToast, setCurrentView } = useApp();
+  const { patients, currentPatient, currentUser, currentUnitId, updatePatient, showToast, setCurrentView } = useApp();
 
   const [selectedPatientId, setSelectedPatientId] = useState<string>(
-    initialPatient?.id || currentPatient?.id || patients[0]?.id || ''
+    initialPatient?.id || currentPatient?.id || visiblePatients[0]?.id || ''
   );
   const [activeTask, setActiveTask] = useState<AIAssistantTask>('summary');
   const [draftType, setDraftType] = useState<AIDraftType>('progress');
@@ -54,7 +55,16 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ initialPatient
   const [copied, setCopied] = useState(false);
   const [savedToNotes, setSavedToNotes] = useState(false);
 
-  const selectedPatient = patients.find(p => p.id === selectedPatientId) || null;
+  const workspaceAccess = getStoredWorkspaceAccess();
+  const allowedUnitIds = isOwnerAccess()
+    ? null
+    : (workspaceAccess?.unitIds?.length ? workspaceAccess.unitIds.map(String) : (currentUnitId ? [String(currentUnitId)] : []));
+  const visiblePatients = patients.filter(p => {
+    if (p.isArchived) return false;
+    if (!allowedUnitIds) return true;
+    return allowedUnitIds.includes(String(p.unitId));
+  });
+  const selectedPatient = visiblePatients.find(p => p.id === selectedPatientId) || null;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -189,10 +199,26 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ initialPatient
           </p>
         </div>
 
-        {/* Clinician badge */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-xs font-semibold text-cyan-600 dark:text-cyan-400">
-          <User className="w-4 h-4" />
-          <span>{currentUser.name} ({currentUser.role.replace('_', ' ').toUpperCase()})</span>
+        {/* Patient selector — top right */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30">
+            <User className="w-4 h-4 text-cyan-500" />
+            <select
+              value={selectedPatientId}
+              onChange={e => { setSelectedPatientId(e.target.value); setResult(null); }}
+              className="max-w-[230px] bg-transparent text-xs font-bold text-slate-900 dark:text-white outline-none"
+              aria-label="Select patient for AI Clinical Assistant"
+            >
+              <option value="">Select Patient</option>
+              {visiblePatients.map(p => (
+                <option key={p.id} value={p.id}>{p.fullName} • {p.mrn || p.id}</option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-cyan-500 pointer-events-none" />
+          </div>
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            {currentUser.name} ({currentUser.role.replace('_', ' ').toUpperCase()})
+          </div>
         </div>
       </div>
 
@@ -205,49 +231,26 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ initialPatient
         </div>
       </div>
 
-      {/* Patient Context & Selector */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-            <Building2 className="w-4 h-4 text-cyan-500" />
-            Active Clinical Context (Select Patient):
-          </label>
-
-          <select
-            value={selectedPatientId}
-            onChange={e => setSelectedPatientId(e.target.value)}
-            className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-cyan-500"
-          >
-            <option value="">No specific patient (General Clinical Q&A)</option>
-            {patients.filter(p => !p.isArchived).map(p => (
-              <option key={p.id} value={p.id}>
-                {p.name} • Bed: {p.bedNumber || 'Unassigned'} ({p.diagnosis || 'Cardiology'})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {selectedPatient && (
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+      {/* Selected Patient Context */}
+      {selectedPatient ? (
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] text-slate-400 uppercase font-bold">Patient</div>
-              <div className="font-bold text-slate-900 dark:text-white truncate">{selectedPatient.name}</div>
+              <div className="text-[10px] text-cyan-500 uppercase font-black tracking-wider">Active Patient Context</div>
+              <div className="text-sm font-black text-slate-900 dark:text-white">{selectedPatient.fullName}</div>
+              <div className="text-[11px] text-slate-500">{selectedPatient.primaryDiagnosis || 'Clinical Admission'} • MRN: {selectedPatient.mrn || selectedPatient.id}</div>
             </div>
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase font-bold">MRN / ID</div>
-              <div className="font-mono text-slate-700 dark:text-slate-300">{selectedPatient.mrn || selectedPatient.id}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase font-bold">Age / Sex</div>
-              <div className="text-slate-700 dark:text-slate-300">{selectedPatient.age}y • {selectedPatient.gender}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase font-bold">Primary Diagnosis</div>
-              <div className="text-cyan-500 font-semibold truncate">{selectedPatient.diagnosis || 'Cardiovascular'}</div>
+            <div className="text-right text-[11px] text-slate-500">
+              <div>{selectedPatient.age}y • {selectedPatient.sex}</div>
+              <div>Unit: {selectedPatient.unitId}</div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-dashed border-slate-300 dark:border-slate-700 text-xs text-slate-500">
+          Select a patient from the top-right selector to load the patient's clinical context into the AI assistant.
+        </div>
+      )}
 
       {/* Capabilities Selector */}
       <div className="space-y-2">
