@@ -37,6 +37,7 @@ export const DepartmentPulse: React.FC = () => {
     privacySafeMonitor,
     setPrivacySafeMonitor,
     showToast,
+    setCurrentView,
   } = useApp();
 
   const [isBreakGlassOpen, setIsBreakGlassOpen] = useState(false);
@@ -171,8 +172,10 @@ export const DepartmentPulse: React.FC = () => {
 
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {metrics.map(({ label, value, icon: Icon, color }) => (
-            <div
+            <button
+              type="button"
               key={label}
+              onClick={() => setCurrentView(label === 'Handover records' ? 'my-worklist' : 'patients')}
               className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/50 dark:bg-slate-900/30"
             >
               <Icon className={`w-4 h-4 ${color}`} />
@@ -180,7 +183,7 @@ export const DepartmentPulse: React.FC = () => {
               <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400 mt-1">
                 {label}
               </div>
-            </div>
+            </button>
           ))}
         </div>
 
