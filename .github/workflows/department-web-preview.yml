@@ -52,13 +52,17 @@ jobs:
           fi
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest hosting:channel:deploy department-system-v1 --project ccu-notebook --non-interactive --json > "$RUNNER_TEMP/firebase-preview.json"
+          npx firebase-tools@latest hosting:channel:deploy department-system-v1 --project ccu-notebook --non-interactive --json > "$RUNNER_TEMP/firebase-preview.json" 2> "$RUNNER_TEMP/firebase-preview.err" || {
+            echo "Firebase Hosting deploy failed. Full CLI error:"
+            cat "$RUNNER_TEMP/firebase-preview.err"
+            exit 1
+          }
+          cat "$RUNNER_TEMP/firebase-preview.json"
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-          import os\n          p=Path(os.environ["RUNNER_TEMP"]) / "firebase-preview.json"
-          raw=p.read_text()
-          data=json.loads(raw)
+          p=Path(os.environ["RUNNER_TEMP"]) / "firebase-preview.json"
+          data=json.loads(p.read_text())
           urls=[]
           def walk(v):
               if isinstance(v, dict):
@@ -72,8 +76,8 @@ jobs:
           if not urls:
               raise SystemExit("Firebase deploy succeeded but no preview URL was returned.")
           url=urls[-1]
-          print("Department preview URL:",url)
-          with open(__import__("os").environ["GITHUB_OUTPUT"],"a") as out:
+          print("Department preview URL:", url)
+          with open(os.environ["GITHUB_OUTPUT"],"a") as out:
               out.write("url="+url+"\n")
           PY
 
