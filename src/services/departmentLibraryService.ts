@@ -1,6 +1,6 @@
 import {Capacitor} from '@capacitor/core';
 import {FirebaseFirestore} from '@capacitor-firebase/firestore';
-import {webDoc,webSetDoc,webGetDocs,webCollection} from './webFirebase';
+import {webDoc,setDoc as webSetDoc,getDocs as webGetDocs,webCollection} from './webFirebase';
 import {MASTER_WORKSPACE_ID} from './workspaceAccess';
 export type SharedMedicationTemplate={id:string;name:string;dose:string;route:string;frequency:string;createdAt:string;createdBy?:string};
 export type SharedLabTemplate={id:string;name:string;unit:string;referenceRange?:string;min?:number;max?:number;createdAt:string;createdBy?:string};
