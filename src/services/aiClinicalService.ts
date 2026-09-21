@@ -95,13 +95,13 @@ export async function callAIAssistant(req: AIAssistantRequest): Promise<AIAssist
   const token = await getFirebaseIdToken();
   let response: Response;
   try {
-    response = await fetch('/api/ai/assistant', {
+    response = await fetch('https://us-central1-ccu-notebook.cloudfunctions.net/analyzeClinicalPatient', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(req),
+      body: JSON.stringify({patient:req.patient,assistantTask:req.task,draftType:req.draftType,userPrompt:req.userPrompt}),
     });
   } catch {
     throw new Error('Could not reach the CardioVault AI server. Verify network connection and try again.');
@@ -119,6 +119,13 @@ export async function callAIAssistant(req: AIAssistantRequest): Promise<AIAssist
     throw new Error(message);
   }
 
-  return payload as AIAssistantResponse;
+  const text = [
+    payload?.diagnosticAnalysis ? `Clinical synthesis:\n${payload.diagnosticAnalysis}` : '',
+    Array.isArray(payload?.differentialDiagnoses)&&payload.differentialDiagnoses.length ? `Differential considerations:\n${payload.differentialDiagnoses.map((d:any)=>`• ${d.diagnosis}: ${d.rationale} [${d.urgency}]`).join('\n')}` : '',
+    Array.isArray(payload?.recommendedActions)&&payload.recommendedActions.length ? `Suggested clinician-review actions:\n${payload.recommendedActions.map((x:any)=>`• ${x}`).join('\n')}` : '',
+    Array.isArray(payload?.safetyChecks)&&payload.safetyChecks.length ? `Safety checks:\n${payload.safetyChecks.map((x:any)=>`• ${x}`).join('\n')}` : '',
+    Array.isArray(payload?.missingData)&&payload.missingData.length ? `Missing/uncertain data:\n${payload.missingData.map((x:any)=>`• ${x}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+  return {text:text||'No clinical synthesis returned.',task:req.task,draftType:req.draftType,disclaimer:'AI-generated clinical assistance. Verify against the patient record, current guidelines and clinical judgment before acting.',timestamp:new Date().toISOString()} as AIAssistantResponse;
 }
 
