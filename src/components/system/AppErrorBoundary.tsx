@@ -10,13 +10,45 @@ export class AppErrorBoundary extends React.Component<Props, State> {
     return { error };
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  componentDidMount() {
+    window.addEventListener('error', this.handleWindowError);
+    window.addEventListener('unhandledrejection', this.handleRejection);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this.handleWindowError);
+    window.removeEventListener('unhandledrejection', this.handleRejection);
+  }
+
+  private handleWindowError = (event: ErrorEvent) => {
+    const error = event.error instanceof Error ? event.error : new Error(event.message || 'Unhandled window error');
+    this.recordRuntimeError(error);
+  };
+
+  private handleRejection = (event: PromiseRejectionEvent) => {
+    const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason || 'Unhandled promise rejection'));
+    this.recordRuntimeError(reason);
+  };
+
+  private recordRuntimeError(error: Error) {
     try {
       localStorage.setItem('cardiovault_last_runtime_error', JSON.stringify({
         message: error?.message || String(error),
         stack: error?.stack || '',
-        componentStack: info?.componentStack || '',
         timestamp: new Date().toISOString(),
+      }));
+    } catch {}
+    this.setState({ error });
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    this.recordRuntimeError(error);
+    try {
+      const raw = localStorage.getItem('cardiovault_last_runtime_error');
+      const saved = raw ? JSON.parse(raw) : {};
+      localStorage.setItem('cardiovault_last_runtime_error', JSON.stringify({
+        ...saved,
+        componentStack: info?.componentStack || '',
       }));
     } catch {}
     console.error('CardioVault runtime render error:', error, info);
