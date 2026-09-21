@@ -32,10 +32,10 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
   const [chaAge, setChaAge] = useState<number>(patient?.age || 58);
   const [chaSex, setChaSex] = useState<'Male' | 'Female'>(patient?.sex === 'Female' ? 'Female' : 'Male');
   const [chaChf, setChaChf] = useState(patient?.cardiovascularHistory?.heartFailure || false);
-  const [chaHtn, setChaHtn] = useState(patient?.cardiovascularHistory?.hypertension || true);
+  const [chaHtn, setChaHtn] = useState(patient?.cardiovascularHistory?.hypertension ?? false);
   const [chaStroke, setChaStroke] = useState(patient?.cardiovascularHistory?.previousStroke || false);
-  const [chaVascular, setChaVascular] = useState(patient?.cardiovascularHistory?.cad || true);
-  const [chaDiabetes, setChaDiabetes] = useState(patient?.cardiovascularHistory?.diabetes || true);
+  const [chaVascular, setChaVascular] = useState(patient?.cardiovascularHistory?.cad ?? false);
+  const [chaDiabetes, setChaDiabetes] = useState(patient?.cardiovascularHistory?.diabetes ?? false);
 
   // HAS-BLED State
   const [hasHtn, setHasHtn] = useState(true);
@@ -93,8 +93,8 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
   const [hemoSbp, setHemoSbp] = useState(patient?.vitalsHistory?.[0]?.sbp || 120);
   const [hemoDbp, setHemoDbp] = useState(patient?.vitalsHistory?.[0]?.dbp || 80);
   const [hemoHr, setHemoHr] = useState(patient?.vitalsHistory?.[0]?.hr || 75);
-  const [hemoCvp, setHemoCvp] = useState(patient?.cardiology?.invasiveHemodynamics?.cvp || 8);
-  const [hemoCo, setHemoCo] = useState(patient?.cardiology?.invasiveHemodynamics?.cardiacOutput || 4.5);
+  const [hemoCvp, setHemoCvp] = useState((patient?.cardiology as any)?.invasiveHemodynamics?.cvp || 8);
+  const [hemoCo, setHemoCo] = useState((patient?.cardiology as any)?.invasiveHemodynamics?.cardiacOutput || 4.5);
   const [hemoHt, setHemoHt] = useState(175);
   const [hemoWt, setHemoWt] = useState(78);
 
