@@ -3,8 +3,8 @@ import{FlaskConical,AlertTriangle,CheckCircle2,Clock,ChevronRight}from'lucide-re
 import{useApp}from'../../context/AppContext';
 import{AuthorizationService}from'../../services/authorizationService';
 export const ResultsCenterView:React.FC=()=>{
- const{patients,setCurrentPatientId,setCurrentView}=useApp();
- const active=useMemo(()=>AuthorizationService.filterAuthorizedPatients(patients.filter(p=>!p.isArchived),useApp().currentUser),[patients]);
+ const{patients,currentUser,setCurrentPatientId,setCurrentView}=useApp();
+ const active=useMemo(()=>AuthorizationService.filterAuthorizedPatients(patients.filter(p=>!p.isArchived),currentUser),[patients,currentUser]);
  const rows=active.flatMap(p=>(p.investigations||[]).filter(i=>['ordered','pending','available','reviewed','acknowledged'].includes(i.status)).map(i=>({p,i}))).sort((a,b)=>new Date(b.i.orderedAt).getTime()-new Date(a.i.orderedAt).getTime());
  const labRows=active.flatMap(p=>(p.labResults||[]).filter((l:any)=>l.status||l.flag).map((l:any)=>({p,i:{id:'lab-'+(l.id||l.name),title:l.name||l.testName||'Lab result',status:l.status==='critical'?'available':'reviewed',flag:l.status==='critical'||l.flag==='critical'?'critical':(l.status==='high'||l.status==='low'||l.flag==='abnormal'?'abnormal':'normal'),resultsSummary:String(l.value??'')+' '+String(l.unit||''),orderedAt:l.timestamp||''}}))); const critical=rows.filter(x=>x.i.flag==='critical').concat(labRows.filter(x=>x.i.flag==='critical'));const abnormal=rows.filter(x=>x.i.flag==='abnormal').concat(labRows.filter(x=>x.i.flag==='abnormal'));const pending=rows.filter(x=>x.i.status==='ordered'||x.i.status==='pending');const available=rows.filter(x=>x.i.status==='available').concat(labRows.filter(x=>x.i.flag==='critical'));
  const open=(id:string)=>{setCurrentPatientId(id);setCurrentView('patient')};
