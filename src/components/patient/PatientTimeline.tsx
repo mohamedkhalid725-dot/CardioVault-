@@ -87,8 +87,8 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
     patient.investigations?.forEach(inv =>
       out.push({
         time: inv.orderedAt,
-        label: `Investigation: ${inv.name}`,
-        detail: `Status: ${inv.status.toUpperCase()}${inv.resultSummary ? ` • Result: ${inv.resultSummary}` : ''} • Ordered by ${inv.orderedBy}`,
+        label: `Investigation: ${inv.title}`,
+        detail: `Status: ${inv.status.toUpperCase()}${inv.resultsSummary ? ` • Result: ${inv.resultSummary}` : ''} • Ordered by ${inv.orderedBy}`,
         icon: FlaskConical,
         badge: inv.status === 'reviewed' ? 'Reviewed' : 'Ordered',
         badgeColor: inv.status === 'reviewed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500',
@@ -145,9 +145,9 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
     // Med Administrations
     patient.medicationAdministrations?.forEach(adm =>
       out.push({
-        time: adm.administeredAt,
+        time: adm.time,
         label: `Med Administered: ${adm.medicationName}`,
-        detail: `${adm.dose} via ${adm.route} by ${adm.administeredBy}. Status: ${adm.status}`,
+        detail: `${adm.dosageGiven || ''} via ${adm.route || ''} by ${adm.user}. Status: ${adm.status}`,
         icon: Pill,
         badge: 'Administered',
         badgeColor: 'bg-emerald-500/10 text-emerald-500',
@@ -159,7 +159,7 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
       out.push({
         time: c.requestedAt,
         label: `Consultation: ${c.specialty}`,
-        detail: `Reason: ${c.reason} • Status: ${c.status}${c.recommendations ? ` • Reply: ${c.recommendations}` : ''}`,
+        detail: `${c.clinicalQuestion || 'Consultation requested'} • Status: ${c.status}${c.responseNotes ? ` • Reply: ${c.responseNotes}` : ''}`,
         icon: MessageSquare,
         badge: 'Consultation',
         badgeColor: 'bg-sky-500/10 text-sky-500',
@@ -172,7 +172,7 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
       out.push({
         time: a.timestamp,
         label: a.action,
-        detail: [a.reason, a.fields?.length ? `Fields: ${a.fields.join(', ')}` : ''].filter(Boolean).join(' • ') || 'System governance entry',
+        detail: [a.fields?.length ? `Fields: ${a.fields.join(', ')}` : ''].filter(Boolean).join(' • ') || 'System governance entry',
         icon: isBreakGlass ? ShieldAlert : FileText,
         badge: isBreakGlass ? 'Break-Glass' : 'Audit',
         badgeColor: isBreakGlass ? 'bg-rose-500/10 text-rose-500' : 'bg-slate-500/10 text-slate-500',
