@@ -1,9 +1,9 @@
-import React from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-interface Props { children: React.ReactNode; }
+interface Props { children: ReactNode; }
 interface State { error: Error | null; }
 
-export class AppErrorBoundary extends React.Component<Props, State> {
+export class AppErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
@@ -41,7 +41,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
     this.setState({ error });
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
     this.recordRuntimeError(error);
     try {
       const raw = localStorage.getItem('cardiovault_last_runtime_error');
