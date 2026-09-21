@@ -49,7 +49,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   let unitName=String(access.unitName||'');
   try{
     if(Capacitor.isNativePlatform()){
-      const unit:any=await FirebaseFirestore.getDocument({reference:`${MASTER_WORKSPACE_ID}/units/${access.unitId}`});
+      const unit:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/units/${access.unitId}`});
       unitName=String(safe(unit?.snapshot)?.name||unitName);
     }else{
       const unit=await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/units/${access.unitId}`));
