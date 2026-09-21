@@ -18,6 +18,7 @@ on:
 permissions:
   contents: read
 
+# Re-run this workflow whenever the department-system-v1 preview pipeline is intentionally refreshed.
 concurrency:
   group: cardiovault-department-preview
   cancel-in-progress: true
