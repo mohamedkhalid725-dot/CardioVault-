@@ -38,7 +38,7 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
   const [chaDiabetes, setChaDiabetes] = useState(patient?.cardiovascularHistory?.diabetes ?? false);
 
   // HAS-BLED State
-  const [hasHtn, setHasHtn] = useState(true);
+  const [hasHtn, setHasHtn] = useState<boolean>(true);
   const [hasRenal, setHasRenal] = useState(false);
   const [hasLiver, setHasLiver] = useState(false);
   const [hasStroke, setHasStroke] = useState(false);
