@@ -92,7 +92,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
   const handleSave = () => {
     updatePatient(patient.id, {
       examination: exam as any,
-      physicalExam: exam as any,
+      examination: exam as any,
     });
     setIsEditing(false);
     showToast('Physical Examination saved successfully', 'success');
