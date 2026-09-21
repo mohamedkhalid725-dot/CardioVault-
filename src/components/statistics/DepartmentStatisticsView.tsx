@@ -55,9 +55,9 @@ export const DepartmentStatisticsView: React.FC = () => {
   }[range];
 
   const totalBedsCount = Math.max(1, filteredBeds.length);
-  const occupiedBedsCount = filteredBeds.filter(b => b.status === 'occupied').length;
+  const occupiedBedsCount = filteredBeds.filter(b => !!b.patientId).length;
   const occupancyRate = Math.min(100, Math.round((occupiedBedsCount / totalBedsCount) * 100));
-  const availableBeds = filteredBeds.filter(b => b.status === 'available').length;
+  const availableBeds = filteredBeds.filter(b => !b.patientId).length;
 
   // Historical calculations
   const simulatedAdmissions = Math.max(1, Math.round(activePatients.length * 0.4 * (range === 'today' ? 1 : rangeConfig.factor * 0.3)));
@@ -336,7 +336,7 @@ export const DepartmentStatisticsView: React.FC = () => {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {units.map(unit => {
             const unitBeds = beds.filter(b => b.unitId === unit.id);
-            const occupied = unitBeds.filter(b => b.status === 'occupied').length;
+            const occupied = unitBeds.filter(b => !!b.patientId).length;
             const total = Math.max(1, unitBeds.length);
             const rate = Math.round((occupied / total) * 100);
             const unitPatients = activePatients.filter(p => p.unitId === unit.id);
