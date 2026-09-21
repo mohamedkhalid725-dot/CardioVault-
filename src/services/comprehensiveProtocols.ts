@@ -530,7 +530,2890 @@ export const OFFICIAL_CLINICAL_PROTOCOLS: DetailedProtocol[] = [
       'Refractory coagulopathic bleeding -> Thromboelastography (TEG/ROTEM) guided targeted component therapy.'
     ],
     references: ['European Guideline on Management of Major Bleeding, Critical Care 2023.']
-  }
+  },
+  {
+  id: "proto-dept-017",
+  title: "Failed Fibrinolysis / Rescue PCI Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Failed Fibrinolysis / Rescue PCI Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-018",
+  title: "Post-PCI Monitoring Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Post-PCI Monitoring Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-019",
+  title: "Post-Coronary Angiography Care",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Post-Coronary Angiography Care. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-020",
+  title: "Acute Heart Failure Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Heart Failure Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-021",
+  title: "Acute Decompensated Heart Failure",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Decompensated Heart Failure. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-022",
+  title: "Acute Pulmonary Edema Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Pulmonary Edema Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-023",
+  title: "Cardiogenic Shock Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Cardiogenic Shock Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-024",
+  title: "Right Ventricular Failure Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Right Ventricular Failure Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-025",
+  title: "Hypertensive Acute Heart Failure",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypertensive Acute Heart Failure. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-026",
+  title: "Hypertensive Emergency — Cardiac Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypertensive Emergency — Cardiac Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-027",
+  title: "Acute Pericarditis Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Pericarditis Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-028",
+  title: "Acute Myocarditis Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Myocarditis Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-029",
+  title: "Pericardial Tamponade Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Pericardial Tamponade Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-030",
+  title: "Atrial Fibrillation — Acute Management",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Atrial Fibrillation — Acute Management. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-031",
+  title: "Atrial Flutter — Acute Management",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Atrial Flutter — Acute Management. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-032",
+  title: "Rate Control in AF/AFlutter",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Rate Control in AF/AFlutter. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-033",
+  title: "Rhythm Control in AF",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Rhythm Control in AF. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-034",
+  title: "AF with Hemodynamic Instability",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for AF with Hemodynamic Instability. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-035",
+  title: "Supraventricular Tachycardia — Acute Management",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Supraventricular Tachycardia — Acute Management. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-036",
+  title: "Regular Narrow-Complex Tachycardia",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Regular Narrow-Complex Tachycardia. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-037",
+  title: "Wide-Complex Tachycardia",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Wide-Complex Tachycardia. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-038",
+  title: "Ventricular Tachycardia — Stable",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Ventricular Tachycardia — Stable. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-039",
+  title: "Ventricular Tachycardia — Unstable",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Ventricular Tachycardia — Unstable. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-040",
+  title: "Ventricular Fibrillation / Pulseless VT",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Ventricular Fibrillation / Pulseless VT. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-041",
+  title: "Symptomatic Bradycardia",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Symptomatic Bradycardia. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-042",
+  title: "High-Grade AV Block",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for High-Grade AV Block. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-043",
+  title: "Complete Heart Block",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Complete Heart Block. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-044",
+  title: "Temporary Pacing Pathway",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Temporary Pacing Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-045",
+  title: "Electrical Cardioversion Pathway",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Electrical Cardioversion Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-046",
+  title: "Synchronized Cardioversion",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Synchronized Cardioversion. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-047",
+  title: "Defibrillation Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Defibrillation Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-048",
+  title: "QT Prolongation / Torsades Pathway",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for QT Prolongation / Torsades Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-049",
+  title: "Digoxin Toxicity — Cardiac Pathway",
+  category: "Arrhythmia & Electrophysiology",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Digoxin Toxicity — Cardiac Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/AHA contemporary arrhythmia and resuscitation guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/AHA contemporary arrhythmia and resuscitation guidance"
+  ]
+},
+  {
+  id: "proto-dept-050",
+  title: "Cardiac Arrest — ACLS Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Cardiac Arrest — ACLS Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-051",
+  title: "Post-ROSC Care Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Post-ROSC Care Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-052",
+  title: "Undifferentiated Shock Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Undifferentiated Shock Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-053",
+  title: "Cardiogenic Shock Escalation Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Cardiogenic Shock Escalation Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-054",
+  title: "Septic Shock Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Septic Shock Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-055",
+  title: "Hypovolemic Shock Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypovolemic Shock Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-056",
+  title: "Obstructive Shock Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Obstructive Shock Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-057",
+  title: "Vasopressor Support Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Vasopressor Support Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-058",
+  title: "Invasive Hemodynamic Monitoring",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Invasive Hemodynamic Monitoring. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-059",
+  title: "Acute Hemodynamic Instability",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Hemodynamic Instability. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-060",
+  title: "Acute Respiratory Failure",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Respiratory Failure. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-061",
+  title: "Acute Hypoxemic Respiratory Failure",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Hypoxemic Respiratory Failure. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-062",
+  title: "Acute Hypercapnic Respiratory Failure",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Hypercapnic Respiratory Failure. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-063",
+  title: "Non-Invasive Ventilation Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Non-Invasive Ventilation Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-064",
+  title: "CPAP / BiPAP Initiation",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for CPAP / BiPAP Initiation. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-065",
+  title: "Mechanical Ventilation Initiation",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Mechanical Ventilation Initiation. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-066",
+  title: "Lung-Protective Ventilation",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Lung-Protective Ventilation. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-067",
+  title: "ARDS Management Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for ARDS Management Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-068",
+  title: "Difficult Oxygenation Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Difficult Oxygenation Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-069",
+  title: "Ventilator Weaning Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Ventilator Weaning Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-070",
+  title: "Spontaneous Breathing Trial",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Spontaneous Breathing Trial. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-071",
+  title: "Extubation Readiness Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Extubation Readiness Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-072",
+  title: "Post-Extubation Monitoring",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Post-Extubation Monitoring. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-073",
+  title: "Ventilator-Associated Pneumonia Prevention",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Ventilator-Associated Pneumonia Prevention. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-074",
+  title: "Difficult Airway / Emergency Airway Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Difficult Airway / Emergency Airway Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-075",
+  title: "Suspected Pulmonary Embolism",
+  category: "Pulmonary Vascular / VTE",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Suspected Pulmonary Embolism. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ERS contemporary pulmonary embolism and VTE guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ERS contemporary pulmonary embolism and VTE guidance"
+  ]
+},
+  {
+  id: "proto-dept-076",
+  title: "Confirmed Pulmonary Embolism",
+  category: "Pulmonary Vascular / VTE",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Confirmed Pulmonary Embolism. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ERS contemporary pulmonary embolism and VTE guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ERS contemporary pulmonary embolism and VTE guidance"
+  ]
+},
+  {
+  id: "proto-dept-077",
+  title: "High-Risk / Massive PE",
+  category: "Pulmonary Vascular / VTE",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for High-Risk / Massive PE. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ERS contemporary pulmonary embolism and VTE guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ERS contemporary pulmonary embolism and VTE guidance"
+  ]
+},
+  {
+  id: "proto-dept-078",
+  title: "Intermediate-Risk PE",
+  category: "Pulmonary Vascular / VTE",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Intermediate-Risk PE. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ERS contemporary pulmonary embolism and VTE guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ERS contemporary pulmonary embolism and VTE guidance"
+  ]
+},
+  {
+  id: "proto-dept-079",
+  title: "Deep Vein Thrombosis Pathway",
+  category: "Pulmonary Vascular / VTE",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Deep Vein Thrombosis Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ERS contemporary pulmonary embolism and VTE guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ERS contemporary pulmonary embolism and VTE guidance"
+  ]
+},
+  {
+  id: "proto-dept-080",
+  title: "Anticoagulation Initiation for VTE",
+  category: "Pulmonary Vascular / VTE",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Anticoagulation Initiation for VTE. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ERS contemporary pulmonary embolism and VTE guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ERS contemporary pulmonary embolism and VTE guidance"
+  ]
+},
+  {
+  id: "proto-dept-081",
+  title: "PE with Hemodynamic Instability",
+  category: "Pulmonary Vascular / VTE",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for PE with Hemodynamic Instability. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ERS contemporary pulmonary embolism and VTE guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ERS contemporary pulmonary embolism and VTE guidance"
+  ]
+},
+  {
+  id: "proto-dept-082",
+  title: "Sepsis Recognition Pathway",
+  category: "Sepsis / Infection",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Sepsis Recognition Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "Surviving Sepsis Campaign and contemporary infectious-disease guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "Surviving Sepsis Campaign and contemporary infectious-disease guidance"
+  ]
+},
+  {
+  id: "proto-dept-083",
+  title: "Septic Shock Initial Management",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Septic Shock Initial Management. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-084",
+  title: "Sepsis Reassessment Pathway",
+  category: "Sepsis / Infection",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Sepsis Reassessment Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "Surviving Sepsis Campaign and contemporary infectious-disease guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "Surviving Sepsis Campaign and contemporary infectious-disease guidance"
+  ]
+},
+  {
+  id: "proto-dept-085",
+  title: "Blood Culture & Infection Workup",
+  category: "Sepsis / Infection",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Blood Culture & Infection Workup. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "Surviving Sepsis Campaign and contemporary infectious-disease guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "Surviving Sepsis Campaign and contemporary infectious-disease guidance"
+  ]
+},
+  {
+  id: "proto-dept-086",
+  title: "Hospital-Acquired Pneumonia Pathway",
+  category: "Sepsis / Infection",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hospital-Acquired Pneumonia Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "Surviving Sepsis Campaign and contemporary infectious-disease guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "Surviving Sepsis Campaign and contemporary infectious-disease guidance"
+  ]
+},
+  {
+  id: "proto-dept-087",
+  title: "Community-Acquired Pneumonia Pathway",
+  category: "Sepsis / Infection",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Community-Acquired Pneumonia Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "Surviving Sepsis Campaign and contemporary infectious-disease guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "Surviving Sepsis Campaign and contemporary infectious-disease guidance"
+  ]
+},
+  {
+  id: "proto-dept-088",
+  title: "ICU Infection Escalation Pathway",
+  category: "Sepsis / Infection",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for ICU Infection Escalation Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "Surviving Sepsis Campaign and contemporary infectious-disease guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "Surviving Sepsis Campaign and contemporary infectious-disease guidance"
+  ]
+},
+  {
+  id: "proto-dept-089",
+  title: "Hyperkalemia Emergency Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hyperkalemia Emergency Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-090",
+  title: "Hypokalemia Management Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypokalemia Management Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-091",
+  title: "Hyponatremia Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hyponatremia Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-092",
+  title: "Hypernatremia Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypernatremia Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-093",
+  title: "Hypomagnesemia Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypomagnesemia Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-094",
+  title: "Hypermagnesemia Pathway",
+  category: "Cardiology & Acute Care",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypermagnesemia Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ESC/ACC/AHA contemporary acute cardiovascular guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ESC/ACC/AHA contemporary acute cardiovascular guidance"
+  ]
+},
+  {
+  id: "proto-dept-095",
+  title: "Metabolic Acidosis Pathway",
+  category: "Electrolytes / Renal / ABG",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Metabolic Acidosis Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "KDIGO/critical-care guidance and standard acid-base references",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "KDIGO/critical-care guidance and standard acid-base references"
+  ]
+},
+  {
+  id: "proto-dept-096",
+  title: "Metabolic Alkalosis Pathway",
+  category: "Electrolytes / Renal / ABG",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Metabolic Alkalosis Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "KDIGO/critical-care guidance and standard acid-base references",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "KDIGO/critical-care guidance and standard acid-base references"
+  ]
+},
+  {
+  id: "proto-dept-097",
+  title: "Respiratory Acidosis Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Respiratory Acidosis Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-098",
+  title: "Respiratory Alkalosis Pathway",
+  category: "Respiratory / ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Respiratory Alkalosis Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ATS/ERS/SCCM contemporary critical-care and respiratory guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ATS/ERS/SCCM contemporary critical-care and respiratory guidance"
+  ]
+},
+  {
+  id: "proto-dept-099",
+  title: "Acute Kidney Injury Pathway",
+  category: "Electrolytes / Renal / ABG",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Kidney Injury Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "KDIGO/critical-care guidance and standard acid-base references",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "KDIGO/critical-care guidance and standard acid-base references"
+  ]
+},
+  {
+  id: "proto-dept-100",
+  title: "Diabetic Ketoacidosis — DKA",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Diabetic Ketoacidosis — DKA. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-101",
+  title: "Hyperosmolar Hyperglycemic State — HHS",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hyperosmolar Hyperglycemic State — HHS. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-102",
+  title: "Hypoglycemia Emergency Pathway",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Hypoglycemia Emergency Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-103",
+  title: "Acute Stroke Recognition & Initial Pathway",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Stroke Recognition & Initial Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-104",
+  title: "Intracerebral Hemorrhage Initial Pathway",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Intracerebral Hemorrhage Initial Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-105",
+  title: "Acute Seizure / Status Epilepticus",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Seizure / Status Epilepticus. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-106",
+  title: "Acute Delirium / Agitation Pathway",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Acute Delirium / Agitation Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-107",
+  title: "GI Bleeding — Initial Stabilization",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for GI Bleeding — Initial Stabilization. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-108",
+  title: "Massive Transfusion Pathway",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for Massive Transfusion Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+},
+  {
+  id: "proto-dept-109",
+  title: "ICU Admission / Escalation / Transfer Pathway",
+  category: "Metabolic / Emergency ICU",
+  version: "1.0",
+  author: "CardioVault Clinical Governance Library",
+  lastUpdated: "2026-09-21",
+  departmentId: "dept-cardiology",
+  content: "Structured clinical pathway for ICU Admission / Escalation / Transfer Pathway. Use with the patient's documented findings, local department policy, and the cited current guideline source.",
+  sourceGuideline: "ADA/AHA/SCCM contemporary emergency and critical-care guidance",
+  keySteps: [
+    "Confirm the clinical syndrome and immediate stability using the patient record.",
+    "Review relevant history, examination, monitoring, investigations and contraindications.",
+    "Apply the current guideline pathway and document the clinical decision points.",
+    "Reassess response and repeat key investigations when clinically indicated.",
+    "Document escalation, consultation, transfer or disposition decisions when required."
+  ],
+  safetyNotes: [
+    "Verify patient identity, allergies, current medications, relevant organ function and contraindications before acting.",
+    "Use current local formulary and department-approved policy for medication details and dosing."
+  ],
+  contraindications: [
+    "Do not apply the pathway when the clinical diagnosis is not supported by the available record; reassess the differential diagnosis."
+  ],
+  escalationCriteria: [
+    "Escalate to the responsible senior clinician or appropriate specialty when instability, diagnostic uncertainty or failure to respond is present."
+  ],
+  references: [
+    "ADA/AHA/SCCM contemporary emergency and critical-care guidance"
+  ]
+}
 ];
 
 const PERSONAL_PROTOCOLS_STORAGE_KEY = 'cardiovault_personal_protocols_v1';
