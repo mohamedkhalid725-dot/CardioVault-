@@ -115,9 +115,9 @@ jobs:
           PY
           npx cap update android
       - name: Register Android SHA-1 fingerprints for Google Sign-In
-        if: \${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
         env:
-          FIREBASE_SERVICE_ACCOUNT: \${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         working-directory: android
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
