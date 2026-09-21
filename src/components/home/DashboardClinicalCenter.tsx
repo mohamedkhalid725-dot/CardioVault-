@@ -240,8 +240,12 @@ export const DashboardClinicalCenter: React.FC = () => {
         />
         {attentionItems.length ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {attentionItems.slice(0, 6).map(({ patient: p, reasons, severity }) => {
+            {attentionItems.slice(0, 6).map(item => {
+              const p = scopedActive.find(patient => patient.id === item.patientId);
+              if (!p) return null;
               const bed = beds.find(b => b.id === p.bedId);
+              const severity = item.urgency === 'critical' ? 'critical' : 'warning';
+              const reasons = [item.description];
               return (
                 <button
                   key={p.id}
