@@ -12,6 +12,10 @@ service cloud.firestore {
     function unitMember(workspaceId,unitId) {
       return member(workspaceId) &&
         (
+          (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active' &&
+           get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.assignedUnitIds.hasAny([unitId]))
+          ||
           (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)) &&
            get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)).data.active == true &&
            validAccessCode(get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)).data.accessCodeHash))
