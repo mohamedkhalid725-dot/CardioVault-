@@ -1,28 +1,115 @@
 import React,{createContext,useContext,useEffect,useState}from'react';
-import {Bed,Patient,PatientSectionId,PatientStatus,PastAdmission,Unit,AuditEvent}from'../types/clinical';
+import {Bed,Patient,PatientSectionId,PatientStatus,PastAdmission,Unit,AuditEvent,UserProfile}from'../types/clinical';
 import {StorageService}from'../services/storage';
+import {AuthorizationService, PRESET_USERS, ACCESS_DENIED_MESSAGE}from'../services/authorizationService';
+import {DepartmentService}from'../services/departmentService';
+import {AuditTrailService}from'../services/auditTrailService';
 import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {webCurrentUser,webGoogleSignIn,webEmailSignIn,webEmailCreate,webSignOut} from'../services/webFirebase';
 import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
 import {notifyClinicalData} from'../services/clinicalNotifications';
 
-export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover';
+export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
 interface ToastInfo{id:string;message:string;type:'success'|'info'|'warning'|'error';}
-interface AppContextType{theme:'dark'|'light';setTheme:(theme:'dark'|'light')=>void;toggleTheme:()=>void;auth:AuthState;loginWithGoogle:()=>Promise<void>;loginWithEmail:(email:string)=>void;unlockWithPin:(pin:string)=>boolean;lockApp:()=>void;logout:()=>void;currentView:AppView;setCurrentView:(view:AppView)=>void;currentUnitId:string|null;setCurrentUnitId:(id:string|null)=>void;currentPatientId:string|null;setCurrentPatientId:(id:string|null)=>void;currentPatient:Patient|undefined;activePatientSection:PatientSectionId;setActivePatientSection:(id:PatientSectionId)=>void;units:Unit[];beds:Bed[];patients:Patient[];archivedPatients:Patient[];getPatientById:(id:string)=>Patient|undefined;getBedsByUnit:(id:string)=>Bed[];getUnitById:(id:string)=>Unit|undefined;addPatient:(data:Partial<Patient>,targetBedId?:string)=>Patient;updatePatient:(id:string,updates:Partial<Patient>)=>void;dischargePatient:(id:string,reason:string,summary:string)=>void;transferPatient:(id:string,unitId:string,bedId:string)=>void;readmitPatient:(id:string,unitId:string,bedId:string)=>void;deletePatientPermanently:(id:string)=>void;addUnit:(name:string,type:string,initialBedsCount?:number)=>Unit;updateUnit:(id:string,name:string,type:string)=>void;deleteUnit:(id:string)=>boolean;addBed:(unitId:string,bedNumber?:string)=>Bed;removeBed:(id:string)=>boolean;isSearchOpen:boolean;setIsSearchOpen:(open:boolean)=>void;isSyncing:boolean;lastSyncTime:string;syncNow:()=>Promise<void>;toasts:ToastInfo[];showToast:(message:string,type?:ToastInfo['type'])=>void;dismissToast:(id:string)=>void;resetDatabase:()=>void;}
+interface AppContextType{
+  theme:'dark'|'light';
+  setTheme:(theme:'dark'|'light')=>void;
+  toggleTheme:()=>void;
+  auth:AuthState;
+  loginWithGoogle:()=>Promise<void>;
+  loginWithEmail:(email:string)=>void;
+  unlockWithPin:(pin:string)=>boolean;
+  lockApp:()=>void;
+  logout:()=>void;
+  currentUser:UserProfile;
+  setCurrentUser:(user:UserProfile)=>void;
+  currentView:AppView;
+  setCurrentView:(view:AppView)=>void;
+  currentUnitId:string|null;
+  setCurrentUnitId:(id:string|null)=>void;
+  currentPatientId:string|null;
+  setCurrentPatientId:(id:string|null)=>void;
+  currentPatient:Patient|undefined;
+  activePatientSection:PatientSectionId;
+  setActivePatientSection:(id:PatientSectionId)=>void;
+  units:Unit[];
+  beds:Bed[];
+  patients:Patient[];
+  archivedPatients:Patient[];
+  getPatientById:(id:string)=>Patient|undefined;
+  getBedsByUnit:(id:string)=>Bed[];
+  getUnitById:(id:string)=>Unit|undefined;
+  addPatient:(data:Partial<Patient>,targetBedId?:string)=>Patient;
+  updatePatient:(id:string,updates:Partial<Patient>)=>void;
+  dischargePatient:(id:string,reason:string,summary:string)=>void;
+  transferPatient:(id:string,unitId:string,bedId:string)=>void;
+  readmitPatient:(id:string,unitId:string,bedId:string)=>void;
+  deletePatientPermanently:(id:string)=>void;
+  addUnit:(name:string,type:string,initialBedsCount?:number)=>Unit;
+  updateUnit:(id:string,name:string,type:string)=>void;
+  deleteUnit:(id:string)=>boolean;
+  addBed:(unitId:string,bedNumber?:string)=>Bed;
+  removeBed:(id:string)=>boolean;
+  isSearchOpen:boolean;
+  setIsSearchOpen:(open:boolean)=>void;
+  isSyncing:boolean;
+  lastSyncTime:string;
+  syncNow:()=>Promise<void>;
+  toasts:ToastInfo[];
+  showToast:(message:string,type?:ToastInfo['type'])=>void;
+  dismissToast:(id:string)=>void;
+  resetDatabase:()=>void;
+  privacySafeMonitor:boolean;
+  setPrivacySafeMonitor:(v:boolean)=>void;
+  favoritePatientIds:string[];
+  toggleFavoritePatient:(id:string)=>void;
+}
 const AppContext=createContext<AppContextType|undefined>(undefined);
 
 export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[theme,setThemeState]=useState<'dark'|'light'>('dark');
  const[auth,setAuth]=useState<AuthState>({isAuthenticated:false,userEmail:'',userName:'',pinCode:'',isLocked:false});
+ const[currentUser,setCurrentUserState]=useState<UserProfile>(()=>AuthorizationService.getCurrentUser());
  const[currentView,setCurrentView]=useState<AppView>('login');
  const[currentUnitId,setCurrentUnitId]=useState<string|null>(null);
  const[currentPatientId,setCurrentPatientId]=useState<string|null>(null);
  const[activePatientSection,setActivePatientSection]=useState<PatientSectionId>('overview');
  const[units,setUnits]=useState<Unit[]>([]);const[beds,setBeds]=useState<Bed[]>([]);const[patients,setPatients]=useState<Patient[]>([]);
  const[isSearchOpen,setIsSearchOpen]=useState(false);const[isSyncing,setIsSyncing]=useState(false);const[lastSyncTime,setLastSyncTime]=useState('');const[toasts,setToasts]=useState<ToastInfo[]>([]);
- const hydrateClinicalState=()=>{const u=StorageService.getUnits(),b=StorageService.getBeds(),p=StorageService.getPatients();setUnits(u);setBeds(b);setPatients(p);setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));};
+ const[privacySafeMonitor,setPrivacySafeMonitor]=useState<boolean>(false);
+ const[favoritePatientIds,setFavoritePatientIds]=useState<string[]>(()=>{
+   try { const raw = localStorage.getItem('cardiovault_fav_patients'); return raw ? JSON.parse(raw) : []; } catch { return []; }
+ });
+
+ const toggleFavoritePatient=(id:string)=>{
+   setFavoritePatientIds(prev=>{
+     const next = prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id];
+     try { localStorage.setItem('cardiovault_fav_patients', JSON.stringify(next)); } catch {}
+     return next;
+   });
+ };
+
+ const setCurrentUser=(user:UserProfile)=>{
+   setCurrentUserState(user);
+   AuthorizationService.setCurrentUser(user);
+   // Check if currentUnitId is still permitted
+   if (currentUnitId && !AuthorizationService.canPerformAction(user, 'view_unit', { unitId: currentUnitId })) {
+     const allowedUnits = AuthorizationService.filterAuthorizedUnits(units, user);
+     setCurrentUnitId(allowedUnits[0]?.id || null);
+   }
+   showToast(`Switched active user to ${user.name} (${user.role.toUpperCase()})`, 'info');
+ };
+
+ const hydrateClinicalState=()=>{
+   const u=StorageService.getUnits();
+   const b=DepartmentService.reconcileBedsWithPatients(StorageService.getBeds(), StorageService.getPatients());
+   const p=StorageService.getPatients();
+   setUnits(u);setBeds(b);setPatients(p);
+   setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));
+   setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));
+ };
  useEffect(()=>{const onRestore=()=>hydrateClinicalState();window.addEventListener('cardiovault-data-restored',onRestore);window.addEventListener('cardiovault-workspace-access-granted',onRestore);return()=>{window.removeEventListener('cardiovault-data-restored',onRestore);window.removeEventListener('cardiovault-workspace-access-granted',onRestore);};},[]);
  useEffect(()=>{let active=true;installCloudSyncBridge();const boot=async()=>{const savedAuth=StorageService.getAuth();setThemeState(StorageService.getTheme());if(!Capacitor.isNativePlatform()){const webUser=webCurrentUser();if(webUser){const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:webUser.email||savedAuth.userEmail,userName:webUser.displayName||savedAuth.userName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');void loadCurrentUserFromCloud();}else{setAuth({...savedAuth,isAuthenticated:false,isLocked:false});setCurrentView('login');}return;}let firebaseUser:any=null;try{firebaseUser=(await FirebaseAuthentication.getCurrentUser()).user||null;}catch{}if(!firebaseUser?.uid){clearActiveClinicalWorkspace();const signedOut={...savedAuth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(signedOut);StorageService.saveAuth(signedOut);setCurrentView('login');return;}const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:firebaseUser.email||savedAuth.userEmail,userName:firebaseUser.displayName||savedAuth.userName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');try{const cloud=await loadCurrentUserFromCloud();if(!active)return;if(cloud?.found)hydrateClinicalState();setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');}catch(error){console.warn('Cloud session restore failed:',error);}};void boot();return()=>{active=false;};},[]);
  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},[theme]);
@@ -52,6 +139,6 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const syncNow=async()=>{setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);const message=String((error as any)?.message||error||'Cloud sync failed').slice(0,300);showToast(`Cloud sync failed: ${message}`,'error');}finally{setIsSyncing(false);}};
  const resetDatabase=()=>{StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset to clinical sample.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
- return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,updateUnit,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase}}>{children}</AppContext.Provider>;
+ return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,updateUnit,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient}}>{children}</AppContext.Provider>;
 };
 export const useApp=()=>{const c=useContext(AppContext);if(!c)throw new Error('useApp must be used inside AppProvider');return c;};

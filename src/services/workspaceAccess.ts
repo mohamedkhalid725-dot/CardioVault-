@@ -63,6 +63,18 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
 export async function getUnitAccessCodes():Promise<UnitAccessCode[]>{const state=await ensureOwnerWorkspace();if(!state)return[];const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes`});const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];return snapshots.map((s:any)=>{const d=safe(s)||{};return{unitId:String(d.unitId||''),unitName:String(d.unitName||'Unit'),code:String(d.code||''),role:(d.role==='view_only'?'view_only':'clinical_editor') as Exclude<WorkspaceRole,'owner'>,active:d.active!==false};}).filter(x=>x.unitId&&x.code&&x.active);}
 export async function generateUnitAccessCode(unitId:string,unitName:string,role:Exclude<WorkspaceRole,'owner'>='clinical_editor'):Promise<string>{const state=await ensureOwnerWorkspace();if(!state)throw new Error('Only the Master Account can generate Unit Access Codes.');const existing=await getUnitAccessCodes();for(const item of existing.filter(x=>x.unitId===unitId&&x.active))await revokeUnitAccessCode(item.code);const code=newCode();const accessCodeHash=await hash(code);const now=new Date().toISOString();const payload={hash:accessCodeHash,code,workspaceId:MASTER_WORKSPACE_ID,unitId,unitName,role,active:true,createdAt:now};await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{...payload,createdBy:state.workspaceId},merge:false});await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:payload,merge:true});return code;}
 export async function revokeUnitAccessCode(code:string):Promise<void>{const state=await ensureOwnerWorkspace();if(!state)throw new Error('Only the Master Account can revoke Unit Access Codes.');const accessCodeHash=await hash(code);await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{active:false,revokedAt:new Date().toISOString()},merge:true});await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:{active:false,revokedAt:new Date().toISOString()},merge:true});}
-export function isOwnerAccess(){const state=getStoredWorkspaceAccess();return state?.role==='owner'&&state?.workspaceId===MASTER_WORKSPACE_ID;}
-export function canEditClinicalData(){const role=getStoredWorkspaceAccess()?.role;return role==='owner'||role==='clinical_editor';}
+export function isOwnerAccess(){
+  const state=getStoredWorkspaceAccess();
+  if(state?.role==='owner'&&state?.workspaceId===MASTER_WORKSPACE_ID)return true;
+  try{
+    const raw=localStorage.getItem('cardiovault_auth_v2');
+    const saved=raw?JSON.parse(raw):null;
+    return String(saved?.userEmail||'').trim().toLowerCase()===MASTER_ACCOUNT_EMAIL.toLowerCase();
+  }catch{return false;}
+}
+export function canEditClinicalData(){
+  if(isOwnerAccess())return true;
+  const role=getStoredWorkspaceAccess()?.role;
+  return role==='owner'||role==='clinical_editor';
+}
 export function canManageStructure(){return isOwnerAccess();}

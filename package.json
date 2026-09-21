@@ -4,8 +4,9 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ./node_modules/vite/bin/vite.js --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
@@ -17,13 +18,17 @@
     "ios:prepare": "npm run build && npx cap sync ios"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "7.5.0",
+    "@capacitor-firebase/firestore": "7.3.0",
     "@capacitor/android": "^7.4.4",
     "@capacitor/app": "^7.1.0",
     "@capacitor/core": "^7.4.4",
     "@capacitor/filesystem": "7.1.8",
-    "@capacitor-firebase/authentication": "7.5.0",
-    "@capacitor-firebase/firestore": "7.3.0",
+    "@capacitor/ios": "^7.4.4",
+    "@capacitor/local-notifications": "^7.0.7",
     "@capawesome/capacitor-file-picker": "7.2.0",
+    "@google/genai": "^2.23.0",
+    "@supabase/supabase-js": "^2.57.4",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "capacitor-voice-recorder": "7.0.6",
@@ -36,10 +41,7 @@
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3",
-    "@capacitor/ios": "^7.4.4",
-    "@capacitor/local-notifications": "^7.0.7",
-    "@supabase/supabase-js": "^2.57.4"
+    "vite": "^6.2.3"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",

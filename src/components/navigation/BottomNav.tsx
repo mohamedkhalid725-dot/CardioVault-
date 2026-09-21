@@ -1,29 +1,113 @@
-import React from 'react';
-import { Home, Archive, Calculator, Settings, Users, Plus } from 'lucide-react';
+import React, { useState } from 'react';
+import { Home, LayoutGrid, Plus, Users, Menu } from 'lucide-react';
 import { useApp, AppView } from '../../context/AppContext';
+import { QuickAddModal } from './QuickAddModal';
+import { MoreDrawerModal } from './MoreDrawerModal';
 
-export const BottomNav: React.FC = () => {
+interface BottomNavProps {
+  onQuickAction?: (actionId: string) => void;
+}
+
+export const BottomNav: React.FC<BottomNavProps> = ({ onQuickAction }) => {
   const { currentView, setCurrentView } = useApp();
-  const items: Array<{ id: AppView; label: string; icon: React.FC<{ className?: string }> }> = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'archive', label: 'Archive', icon: Archive },
-    { id: 'patients', label: 'Patient', icon: Users },
-    { id: 'calculators', label: 'Calculators', icon: Calculator },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+
+  const isHomeActive = currentView === 'home';
+  const isUnitActive = currentView === 'census';
+  const isPatientsActive = currentView === 'patients' || currentView === 'patient';
+  const isMoreActive = [
+    'my-worklist',
+    'team',
+    'protocols',
+    'statistics',
+    'calculators',
+    'archive',
+    'audit-trail',
+    'settings',
+  ].includes(currentView);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B111E]/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800/80 px-1 pt-1.5 pb-[calc(0.375rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] shadow-lg md:flex">
-      <div className="w-full max-w-3xl mx-auto grid grid-cols-6 items-end gap-0.5">
-        {items.slice(0, 2).map(item => {
-          const Icon = item.icon;
-          const active = currentView === item.id || (item.id === 'home' && (currentView === 'census' || currentView === 'patient'));
-          return <button key={item.id} onClick={() => setCurrentView(item.id)} className={`flex flex-col items-center justify-center py-1.5 rounded-xl ${active ? 'text-cyan-500 dark:text-cyan-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}><Icon className="w-5 h-5"/><span className="text-[10px] mt-1">{item.label}</span></button>;
-        })}
-        <button onClick={() => setCurrentView('patients')} className={`flex flex-col items-center justify-center py-1.5 rounded-xl ${currentView === 'patients' || currentView === 'patient' ? 'text-cyan-500 dark:text-cyan-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}><Users className="w-5 h-5"/><span className="text-[10px] mt-1">Patient</span></button>
-        <button onClick={() => setCurrentView('add-patient')} className="flex items-center justify-center -mt-5"><span className="w-12 h-12 rounded-full bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 border-4 border-white dark:border-[#0B111E] flex items-center justify-center"><Plus className="w-6 h-6"/></span></button>
-        {items.slice(3).map(item => { const Icon = item.icon; const active = currentView === item.id; return <button key={item.id} onClick={() => setCurrentView(item.id)} className={`flex flex-col items-center justify-center py-1.5 rounded-xl ${active ? 'text-cyan-500 dark:text-cyan-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}><Icon className="w-5 h-5"/><span className="text-[10px] mt-1">{item.label}</span></button>; })}
-      </div>
-    </nav>
+    <>
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B111E]/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800/80 px-2 pt-1.5 pb-[calc(0.375rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] shadow-lg">
+        <div className="w-full max-w-lg mx-auto grid grid-cols-5 items-center">
+          {/* HOME */}
+          <button
+            id="nav-home-btn"
+            onClick={() => setCurrentView('home')}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition ${
+              isHomeActive ? 'text-cyan-500 font-semibold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Home className="w-5 h-5" />
+            <span className="text-[10px] mt-1 font-medium">HOME</span>
+          </button>
+
+          {/* UNIT */}
+          <button
+            id="nav-unit-btn"
+            onClick={() => setCurrentView('census')}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition ${
+              isUnitActive ? 'text-cyan-500 font-semibold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <LayoutGrid className="w-5 h-5" />
+            <span className="text-[10px] mt-1 font-medium">UNIT</span>
+          </button>
+
+          {/* + QUICK ADD */}
+          <div className="flex justify-center -mt-6">
+            <button
+              id="nav-quick-add-btn"
+              onClick={() => setIsQuickAddOpen(true)}
+              className="w-12 h-12 rounded-full bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 border-4 border-white dark:border-[#0B111E] flex items-center justify-center hover:scale-105 active:scale-95 transition"
+              title="Quick Add Action"
+            >
+              <Plus className="w-6 h-6 stroke-[2.5]" />
+            </button>
+          </div>
+
+          {/* PATIENTS */}
+          <button
+            id="nav-patients-btn"
+            onClick={() => setCurrentView('patients')}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition ${
+              isPatientsActive ? 'text-cyan-500 font-semibold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            <span className="text-[10px] mt-1 font-medium">PATIENTS</span>
+          </button>
+
+          {/* MORE */}
+          <button
+            id="nav-more-btn"
+            onClick={() => setIsMoreOpen(true)}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition ${
+              isMoreActive ? 'text-cyan-500 font-semibold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Menu className="w-5 h-5" />
+            <span className="text-[10px] mt-1 font-medium">MORE</span>
+          </button>
+        </div>
+      </nav>
+
+      <QuickAddModal
+        isOpen={isQuickAddOpen}
+        onClose={() => setIsQuickAddOpen(false)}
+        onSelectAction={actionId => {
+          if (onQuickAction) {
+            onQuickAction(actionId);
+          } else {
+            if (actionId === 'quick-admission') setCurrentView('add-patient');
+            else if (actionId === 'quick-task') setCurrentView('my-worklist');
+            else setCurrentView('patients');
+          }
+        }}
+      />
+
+      <MoreDrawerModal isOpen={isMoreOpen} onClose={() => setIsMoreOpen(false)} />
+    </>
   );
 };

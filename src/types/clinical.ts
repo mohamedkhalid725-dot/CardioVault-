@@ -27,7 +27,313 @@ export interface CalculatorResult { id:string; calculatorId:string; name:string;
 export interface ProgressNote { id:string; date:string; time:string; author:string; type?:string; subjective?:string; objective?:string; assessment?:string; plan:string; audioUrl?:string; audioStoragePath?:string; audioDurationSeconds?:number; clinicalStatus?:string; events?:string; examination?:string; investigations?:string; treatment?:string; response?:string; problems?:string; updatedAt?:string; }
 export interface PastAdmission { id:string; admissionDate:string; dischargeDate:string; unitName:string; dischargeReason:'Discharged Home'|'Transferred'|'Deceased'|'Other'; dischargeSummary:string; primaryDiagnosis:string; }
 export interface AuditEvent { id:string; timestamp:string; action:string; fields:string[]; actor?:string; }
-export interface Patient { id:string; mrn:string; fullName:string; age:number; sex:'Male'|'Female'|'Other'; weight:number; height:number; photoUrl?:string; unitId:string; bedId:string; status:PatientStatus; admissionDate:string; admissionTime:string; primaryDiagnosis:string; secondaryDiagnoses:string[]; allergies:string[]; codeStatus:'Full Code'|'DNR'|'DNI'|'Comfort Measures Only'; isArchived?:boolean; archiveReason?:string; archiveDate?:string; dischargeSummary?:string; pastAdmissions:PastAdmission[]; clinicalSummary:ClinicalSummary; cardiovascularHistory:CardiovascularHistory; handover?:HandoverData; vitalsHistory:VitalRecord[]; fluidRecords:FluidRecord[]; hemodynamicHistory?:HemodynamicRecord[]; fluidIntakeHistory?:FluidIntakeRecord[]; urineOutputHistory?:FluidIntakeRecord[]; examination:ExaminationData; ecgRecords:ECGRecord[]; cardiology:CardiologyData; medications:Medication[]; ventilator:VentilatorData; imaging:ImagingStudy[]; labs:LabPanel[]; labResults?:LabResult[]; procedures:ProcedureRecord[]; calculatorResults:CalculatorResult[]; progressNotes:ProgressNote[]; auditTrail?:AuditEvent[]; }
+
+export type ClinicalRole =
+  | 'department_admin'
+  | 'consultant'
+  | 'specialist'
+  | 'resident'
+  | 'nurse'
+  | 'viewer'
+  | 'pharmacist'
+  | 'lab_user'
+  | 'radiology_user'
+  | 'coordinator';
+
+export interface Department {
+  id: string;
+  name: string;
+  code?: string;
+  organizationId?: string;
+  unitIds?: string[];
+  createdAt?: string;
+}
+
+export interface UserProfile {
+  userId: string;
+  name: string;
+  email: string;
+  username?: string;
+  role: ClinicalRole;
+  departmentId: string;
+  assignedUnitIds: string[];
+  status: 'active' | 'pending' | 'inactive';
+  permissions?: string[];
+  authorizedDevices?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  lastLoginAt?: string;
+  temporaryAssignment?: {
+    unitId: string;
+    startDate: string;
+    endDate: string;
+  };
+}
+
+export interface ClinicalProblem {
+  id: string;
+  patientId: string;
+  problem: string;
+  status: 'active' | 'resolved' | 'monitoring';
+  priority: 'routine' | 'important' | 'urgent';
+  dateIdentified: string;
+  responsibleClinician: string;
+  notes?: string;
+  resolutionStatus?: string;
+  resolvedDate?: string;
+}
+
+export interface ClinicalTask {
+  id: string;
+  patientId?: string;
+  patientName?: string;
+  unitId: string;
+  departmentId?: string;
+  title: string;
+  description?: string;
+  priority: 'routine' | 'urgent' | 'stat';
+  dueDateTime?: string;
+  assignedTo?: string;
+  assignedRole?: ClinicalRole;
+  createdBy: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  createdAt: string;
+  completedAt?: string;
+  completedBy?: string;
+}
+
+export interface InvestigationItem {
+  id: string;
+  patientId: string;
+  unitId: string;
+  departmentId?: string;
+  type: 'CBC' | 'ABG' | 'ECG' | 'Troponin' | 'CK-MB' | 'BNP' | 'Echo' | 'Imaging' | 'Other';
+  title: string;
+  status: 'ordered' | 'pending' | 'available' | 'reviewed' | 'acknowledged';
+  orderedAt: string;
+  orderedBy: string;
+  availableAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  acknowledgedAt?: string;
+  acknowledgedBy?: string;
+  resultsSummary?: string;
+  flag?: 'normal' | 'abnormal' | 'critical';
+  cbcData?: {
+    hb?: number;
+    wbc?: number;
+    platelets?: number;
+    hct?: number;
+    rbc?: number;
+    mcv?: number;
+    mch?: number;
+    mchc?: number;
+    rdw?: number;
+  };
+  notes?: string;
+}
+
+export interface MedicationOrder extends Medication {
+  orderedBy?: string;
+  orderDate?: string;
+  departmentId?: string;
+}
+
+export interface MedicationAdministration {
+  id: string;
+  patientId: string;
+  medicationId: string;
+  medicationName: string;
+  status: 'Given' | 'Held' | 'Refused' | 'Not Given';
+  time: string;
+  reason?: string;
+  user: string;
+  userRole?: ClinicalRole;
+  dosageGiven?: string;
+  route?: string;
+  notes?: string;
+}
+
+export interface MedicationTemplate {
+  id: string;
+  name: string;
+  departmentId?: string;
+  medications: Partial<Medication>[];
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface Consultation {
+  id: string;
+  patientId: string;
+  unitId: string;
+  departmentId?: string;
+  specialty: string;
+  assignedClinician?: string;
+  priority: 'routine' | 'urgent' | 'stat';
+  clinicalQuestion: string;
+  status: 'Requested' | 'Accepted' | 'In Progress' | 'Completed';
+  requestedBy: string;
+  requestedAt: string;
+  acceptedAt?: string;
+  responseNotes?: string;
+  completedAt?: string;
+}
+
+export interface ShiftHandover {
+  id: string;
+  patientId: string;
+  unitId: string;
+  departmentId?: string;
+  author: string;
+  authorRole: string;
+  timestamp: string;
+  currentStatus: PatientStatus;
+  activeProblems: string[];
+  importantEvents: string;
+  pendingInvestigations: string;
+  pendingTasks: string;
+  currentTreatment: string;
+  devices: string;
+  thingsRequiringAttention: string;
+  nextShiftActions: string;
+}
+
+export interface ClinicalProtocol {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  version: string;
+  author: string;
+  lastUpdated: string;
+  departmentId?: string;
+}
+
+export interface DetailedAuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  role: ClinicalRole;
+  action: string;
+  patientId?: string;
+  departmentId?: string;
+  unitId?: string;
+  timestamp: string;
+  deviceSession?: string;
+  previousValue?: any;
+  newValue?: any;
+  reason?: string;
+}
+
+export interface ClinicalCorrection {
+  id: string;
+  patientId: string;
+  recordType: string;
+  recordId: string;
+  fieldName: string;
+  originalValue: any;
+  correctedValue: any;
+  user: string;
+  userRole: ClinicalRole;
+  timestamp: string;
+  reason: string;
+}
+
+export interface BreakGlassLog {
+  id: string;
+  userId: string;
+  userName: string;
+  role: ClinicalRole;
+  patientId: string;
+  patientName: string;
+  originalScope: { departmentId: string; unitIds: string[] };
+  emergencyScope: { unitId: string };
+  reason: string;
+  timestamp: string;
+  deviceSession: string;
+}
+
+export interface PatientTimelineEvent {
+  id: string;
+  patientId: string;
+  timestamp: string;
+  author: string;
+  role: string;
+  eventType:
+    | 'Admission'
+    | 'Clinical Assessment'
+    | 'Vitals'
+    | 'Investigation'
+    | 'Medication'
+    | 'Medication Administration'
+    | 'Procedure'
+    | 'Consultation'
+    | 'Progress Note'
+    | 'Transfer'
+    | 'Discharge'
+    | 'Clinical Correction';
+  title: string;
+  summary: string;
+  details?: any;
+}
+
+export interface Patient {
+  id: string;
+  mrn: string;
+  fullName: string;
+  age: number;
+  sex: 'Male' | 'Female' | 'Other';
+  weight: number;
+  height: number;
+  photoUrl?: string;
+  unitId: string;
+  bedId: string;
+  departmentId?: string;
+  status: PatientStatus;
+  admissionDate: string;
+  admissionTime: string;
+  primaryDiagnosis: string;
+  secondaryDiagnoses: string[];
+  allergies: string[];
+  codeStatus: 'Full Code' | 'DNR' | 'DNI' | 'Comfort Measures Only';
+  isArchived?: boolean;
+  archiveReason?: string;
+  archiveDate?: string;
+  dischargeSummary?: string;
+  pastAdmissions: PastAdmission[];
+  clinicalSummary: ClinicalSummary;
+  cardiovascularHistory: CardiovascularHistory;
+  handover?: HandoverData;
+  vitalsHistory: VitalRecord[];
+  fluidRecords: FluidRecord[];
+  hemodynamicHistory?: HemodynamicRecord[];
+  fluidIntakeHistory?: FluidIntakeRecord[];
+  urineOutputHistory?: FluidIntakeRecord[];
+  examination: ExaminationData;
+  ecgRecords: ECGRecord[];
+  cardiology: CardiologyData;
+  medications: Medication[];
+  ventilator: VentilatorData;
+  imaging: ImagingStudy[];
+  labs: LabPanel[];
+  labResults?: LabResult[];
+  procedures: ProcedureRecord[];
+  calculatorResults: CalculatorResult[];
+  progressNotes: ProgressNote[];
+  auditTrail?: AuditEvent[];
+  // Extended clinical workflow collections
+  problems?: ClinicalProblem[];
+  tasks?: ClinicalTask[];
+  investigations?: InvestigationItem[];
+  medicationAdministrations?: MedicationAdministration[];
+  consultations?: Consultation[];
+  shiftHandovers?: ShiftHandover[];
+  corrections?: ClinicalCorrection[];
+  timelineEvents?: PatientTimelineEvent[];
+  attendedClinician?: string;
+  attendedNurse?: string;
+}
 export type PatientSectionId='overview'|'history'|'ecg'|'vitals'|'examination'|'cardiology'|'medication'|'icu'|'imaging'|'labs'|'procedure'|'calculators'|'progress'|'clinical-tools'|'pdf';
 export interface PatientSectionMeta { id:PatientSectionId; order:number; label:string; iconName:string; description:string; }
 export type PhysicalExam=ExaminationData; export type CardiologyModule=CardiologyData; export type EchoReport=CardiologyData['echo']; export type CathReport=CardiologyData['coronary']; export type VentilatorSettings=VentilatorData; export type ClinicalProcedure=ProcedureRecord; export type VitalSigns=VitalRecord;

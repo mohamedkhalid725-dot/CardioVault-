@@ -15,6 +15,7 @@ import {
   CalculatorResult,
   ProgressNote,
 } from '../types/clinical';
+import { INITIAL_DEPARTMENT_UNITS, INITIAL_DEPARTMENT_BEDS, DepartmentService } from './departmentService';
 
 const STORAGE_KEYS = {
   UNITS: 'cardiovault_units_v2',
@@ -607,9 +608,9 @@ export const LEGACY_DEMO_PATIENT_IDS = new Set([
   'patient-noor', 'patient-rashid', 'patient-salma', 'patient-ibrahim',
   'patient-dalia',
 ]);
-export const INITIAL_UNITS: Unit[] = [];
+export const INITIAL_UNITS: Unit[] = INITIAL_DEPARTMENT_UNITS;
 
-export const INITIAL_BEDS: Bed[] = [];
+export const INITIAL_BEDS: Bed[] = INITIAL_DEPARTMENT_BEDS;
 
 export const INITIAL_PATIENTS: Patient[] = [];
 
@@ -635,8 +636,10 @@ export const StorageService = {
       if (data) {
         const parsed = JSON.parse(data);
         const cleaned = parsed.filter((item: Unit) => !LEGACY_DEMO_UNIT_IDS.has(String(item?.id || '')));
-        if (cleaned.length !== parsed.length) this.saveUnits(cleaned);
-        return cleaned;
+        if (cleaned.length > 0) {
+          if (cleaned.length !== parsed.length) this.saveUnits(cleaned);
+          return cleaned;
+        }
       }
     } catch (e) {
       console.error('Storage getUnits error:', e);
@@ -659,8 +662,10 @@ export const StorageService = {
       if (data) {
         const parsed = JSON.parse(data);
         const cleaned = parsed.filter((item: Bed) => !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')) && !LEGACY_DEMO_PATIENT_IDS.has(String(item?.patientId || '')));
-        if (cleaned.length !== parsed.length) this.saveBeds(cleaned);
-        return cleaned;
+        if (cleaned.length > 0) {
+          if (cleaned.length !== parsed.length) this.saveBeds(cleaned);
+          return cleaned;
+        }
       }
     } catch (e) {
       console.error('Storage getBeds error:', e);
@@ -682,7 +687,20 @@ export const StorageService = {
       const data = localStorage.getItem(STORAGE_KEYS.PATIENTS);
       if (data) {
         const parsed = JSON.parse(data);
-        const cleaned = parsed.filter((item: Patient) => !LEGACY_DEMO_PATIENT_IDS.has(String(item?.id || '')) && !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')));
+        const cleaned = parsed
+          .filter((item: Patient) => !LEGACY_DEMO_PATIENT_IDS.has(String(item?.id || '')) && !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')))
+          .map((item: Patient) => ({
+            ...item,
+            departmentId: item.departmentId || 'dept-cardiology',
+            problems: item.problems || [],
+            tasks: item.tasks || [],
+            investigations: item.investigations || [],
+            medicationAdministrations: item.medicationAdministrations || [],
+            consultations: item.consultations || [],
+            shiftHandovers: item.shiftHandovers || [],
+            corrections: item.corrections || [],
+            timelineEvents: item.timelineEvents || [],
+          }));
         if (cleaned.length !== parsed.length) this.savePatients(cleaned);
         return cleaned;
       }
