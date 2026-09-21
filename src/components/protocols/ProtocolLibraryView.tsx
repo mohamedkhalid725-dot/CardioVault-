@@ -29,7 +29,7 @@ import {
 } from '../../services/comprehensiveProtocols';
 import { AuditTrailService } from '../../services/auditTrailService';
 
-type TabCategory = 'All' | 'Cardiology' | 'ICU / Critical Care' | 'Emergency' | 'Personal' | 'Favorites';
+type TabCategory = 'All' | 'Cardiology & ACS' | 'Critical Care & Respiratory' | 'Hemodynamics & Shock' | 'Electrolytes & Metabolic' | 'Neurological Emergencies' | 'Infection & Sepsis' | 'Procedures & Emergencies' | 'Anticoagulation / Antiplatelet' | 'Personal' | 'Favorites';\nconst protocolCategory=(p:DetailedProtocol):TabCategory=>{const t=(p.title+' '+p.content).toLowerCase();if(/stemi|nstemi|acute coronary|acs|arrhythmia|atrial fibrillation|heart failure|cardiology/.test(t))return 'Cardiology & ACS';if(/ventilat|ards|respiratory failure|niv|weaning|icu|critical care/.test(t))return 'Critical Care & Respiratory';if(/shock|vasopressor|inotrope|hemodynamic/.test(t))return 'Hemodynamics & Shock';if(/hyperkal|hypokal|hyponat|hypernat|acid-base|electrolyte/.test(t))return 'Electrolytes & Metabolic';if(/stroke|seizure|neurolog|consciousness/.test(t))return 'Neurological Emergencies';if(/sepsis|infection|antibiotic/.test(t))return 'Infection & Sepsis';if(/cpr|acls|airway|central line|arterial line|procedure/.test(t))return 'Procedures & Emergencies';if(/heparin|antiplatelet|anticoag|reversal|doac/.test(t))return 'Anticoagulation / Antiplatelet';if(p.category==='Cardiology')return 'Cardiology & ACS';if(p.category==='ICU / Critical Care')return 'Critical Care & Respiratory';return 'Procedures & Emergencies';};
 
 export const ProtocolLibraryView: React.FC = () => {
   const { currentUser, showToast } = useApp();
@@ -72,7 +72,7 @@ export const ProtocolLibraryView: React.FC = () => {
   const filtered = allProtocols.filter(p => {
     if (activeTab === 'Personal' && !p.isPersonal) return false;
     if (activeTab === 'Favorites' && !ComprehensiveProtocolService.isFavorite(p.id)) return false;
-    if (activeTab !== 'All' && activeTab !== 'Personal' && activeTab !== 'Favorites' && p.category !== activeTab) {
+    if (activeTab !== 'All' && activeTab !== 'Personal' && activeTab !== 'Favorites' && protocolCategory(p) !== activeTab) {
       return false;
     }
 
@@ -80,7 +80,7 @@ export const ProtocolLibraryView: React.FC = () => {
     const query = search.toLowerCase();
     return (
       p.title.toLowerCase().includes(query) ||
-      p.category.toLowerCase().includes(query) ||
+      (p.category+' '+protocolCategory(p)).toLowerCase().includes(query) ||
       p.content.toLowerCase().includes(query) ||
       p.sourceGuideline.toLowerCase().includes(query) ||
       p.keySteps.some(s => s.toLowerCase().includes(query))
@@ -200,7 +200,7 @@ export const ProtocolLibraryView: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
-        {(['All', 'Cardiology', 'ICU / Critical Care', 'Emergency', 'Personal', 'Favorites'] as TabCategory[]).map(tab => (
+        {(['All', 'Cardiology & ACS', 'Critical Care & Respiratory', 'Hemodynamics & Shock', 'Electrolytes & Metabolic', 'Neurological Emergencies', 'Infection & Sepsis', 'Procedures & Emergencies', 'Anticoagulation / Antiplatelet', 'Personal', 'Favorites'] as TabCategory[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -356,7 +356,7 @@ export const ProtocolLibraryView: React.FC = () => {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                 <div>
                   <div className="text-[10px] text-slate-400 uppercase font-bold">Category</div>
-                  <div className="font-bold text-slate-800 dark:text-slate-200">{selectedProtocol.category}</div>
+                  <div className="font-bold text-slate-800 dark:text-slate-200">{protocolCategory(selectedProtocol)}</div>
                 </div>
                 <div>
                   <div className="text-[10px] text-slate-400 uppercase font-bold">Author / Governance</div>
