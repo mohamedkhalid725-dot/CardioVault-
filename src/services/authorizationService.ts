@@ -109,13 +109,25 @@ const BREAK_GLASS_KEY = 'cardiovault_active_break_glass_v2';
 
 export const ACCESS_DENIED_MESSAGE = 'ACCESS RESTRICTED: You do not have permission to perform this action.';
 
+const normalizeUserProfile = (user: any): UserProfile => ({
+  ...user,
+  userId: String(user?.userId || ''),
+  name: String(user?.name || user?.email?.split('@')?.[0] || 'Clinician'),
+  email: String(user?.email || '').trim().toLowerCase(),
+  role: user?.role || 'resident',
+  departmentId: String(user?.departmentId || 'dept-cardiology'),
+  assignedUnitIds: Array.isArray(user?.assignedUnitIds) ? user.assignedUnitIds.map(String) : [],
+  status: user?.status || 'active',
+  permissions: Array.isArray(user?.permissions) ? user.permissions : [],
+});
+
 export const AuthorizationService = {
   getUsers(): UserProfile[] {
     try {
       const raw = localStorage.getItem(ALL_USERS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(normalizeUserProfile);
       }
     } catch {}
     this.saveUsers(PRESET_USERS);
@@ -133,7 +145,7 @@ export const AuthorizationService = {
       const raw = localStorage.getItem(USER_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed?.userId && parsed?.role) return parsed;
+        if (parsed?.userId && parsed?.role) return normalizeUserProfile(parsed);
       }
     } catch {}
     // Default to Dr. Mohamed Khalid (Department Admin)
@@ -180,7 +192,7 @@ export const AuthorizationService = {
     // Check if existing user by email or uid
     const existing = users.find(u => (cleanEmail && u.email.toLowerCase() === cleanEmail) || u.userId === firebaseUser.uid);
     if (existing) {
-      const updated: UserProfile = { ...existing, userId: firebaseUser.uid, name: firebaseUser.displayName || existing.name };
+      const updated: UserProfile = normalizeUserProfile({ ...existing, userId: firebaseUser.uid, name: firebaseUser.displayName || existing.name });
       this.setCurrentUser(updated);
       return updated;
     }
