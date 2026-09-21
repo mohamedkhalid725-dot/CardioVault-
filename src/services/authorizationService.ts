@@ -67,7 +67,7 @@ export const AuthorizationService = {
       const raw = localStorage.getItem(ALL_USERS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(normalizeUserProfile);
+        if (Array.isArray(parsed) && parsed.length > 0) { const clean=parsed.map(normalizeUserProfile).filter((u:UserProfile)=>!String(u.userId).startsWith('user-') && !String(u.email).endsWith('@cardiovault.org')); if(clean.length!==parsed.length) this.saveUsers(clean); return clean; }
       }
     } catch {}
     return [];
