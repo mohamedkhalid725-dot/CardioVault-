@@ -53,8 +53,10 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
           npx firebase-tools@latest hosting:channel:deploy department-system-v1 --project ccu-notebook --non-interactive --json > "$RUNNER_TEMP/firebase-preview.json" 2> "$RUNNER_TEMP/firebase-preview.err" || {
-            echo "Firebase Hosting deploy failed. Full CLI error:"
-            cat "$RUNNER_TEMP/firebase-preview.err"
+            echo "Firebase Hosting deploy failed. CLI stdout:"
+            cat "$RUNNER_TEMP/firebase-preview.json" || true
+            echo "Firebase Hosting deploy failed. CLI stderr:"
+            cat "$RUNNER_TEMP/firebase-preview.err" || true
             exit 1
           }
           cat "$RUNNER_TEMP/firebase-preview.json"
