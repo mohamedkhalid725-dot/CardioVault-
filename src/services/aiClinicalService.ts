@@ -17,16 +17,21 @@ const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_END
 export const isAIBackendConfigured=()=>true;
 
 async function getFirebaseIdToken():Promise<string>{
+  if(!Capacitor.isNativePlatform()){
+    const webUser=webCurrentUser();
+    if(!webUser)throw new Error('No authenticated Firebase web user is available.');
+    const token=await webUser.getIdToken(false);
+    if(token)return token;
+  }
   try{
     const current=await FirebaseAuthentication.getCurrentUser();
     if(current?.user){
       const result=await FirebaseAuthentication.getIdToken({forceRefresh:false});
       const token=String(result?.token||'').trim();
-      if(token) return token;
+      if(token)return token;
     }
   }catch{}
-  // Web session fallback
-  return 'cardiovault-web-session';
+  throw new Error('Could not obtain a valid Firebase Auth ID token.');
 }
 
 export async function analyzePatientWithAI(patient:Patient):Promise<AIClinicalResult>{
