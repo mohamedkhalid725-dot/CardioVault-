@@ -88,7 +88,7 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
       out.push({
         time: inv.orderedAt,
         label: `Investigation: ${inv.title}`,
-        detail: `Status: ${inv.status.toUpperCase()}${inv.resultsSummary ? ` • Result: ${inv.resultSummary}` : ''} • Ordered by ${inv.orderedBy}`,
+        detail: `Status: ${inv.status.toUpperCase()}${inv.resultsSummary ? ` • Result: ${inv.resultsSummary}` : ''} • Ordered by ${inv.orderedBy}`,
         icon: FlaskConical,
         badge: inv.status === 'reviewed' ? 'Reviewed' : 'Ordered',
         badgeColor: inv.status === 'reviewed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500',
