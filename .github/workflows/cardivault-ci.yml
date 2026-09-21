@@ -7,6 +7,9 @@ on:
     branches: [main, department-system-v1]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
   VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
@@ -29,6 +32,14 @@ jobs:
       - name: Capture TypeScript diagnostics
         if: always()
         run: npm run lint > tscheck.log 2>&1 || true
+      - name: Commit TypeScript diagnostics for debugging
+        if: failure()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tscheck.log
+          git commit -m "CI debug: capture TypeScript diagnostics" || true
+          git push origin HEAD:${GITHUB_REF_NAME} || true
       - name: Upload TypeScript diagnostics
         if: always()
         uses: actions/upload-artifact@v4
