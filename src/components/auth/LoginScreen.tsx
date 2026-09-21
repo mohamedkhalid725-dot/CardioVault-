@@ -7,6 +7,7 @@ import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {loadCurrentUserFromCloud}from'../../services/cloudSyncBridge';
 import {webEmailSignIn,webEmailCreate}from'../../services/webFirebase';
 import {isMasterAccount,ensureOwnerWorkspace,setStoredWorkspaceAccess} from '../../services/workspaceAccess';
+import {AuthorizationService} from '../../services/authorizationService';
 
 async function waitForNativeGoogleUser():Promise<any|null>{for(let attempt=0;attempt<12;attempt+=1){try{const pending=await FirebaseAuthentication.getPendingAuthResult();if(pending?.user?.email)return pending.user;}catch{}try{const current=await FirebaseAuthentication.getCurrentUser();if(current?.user?.email)return current.user;}catch{}await new Promise(resolve=>window.setTimeout(resolve,350));}return null;}
 
