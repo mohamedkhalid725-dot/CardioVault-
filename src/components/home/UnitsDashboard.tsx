@@ -88,7 +88,7 @@ export const UnitsDashboard: React.FC = () => {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Active Clinical Census</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Personal multi-unit tracking across {units.length} clinical divisions
+              Personal multi-unit tracking across {visibleUnits.length} clinical divisions
             </p>
           </div>
         </div>
@@ -137,7 +137,7 @@ export const UnitsDashboard: React.FC = () => {
 
         {/* Units Grid (Reference Image 2 style) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {units.map((unit) => {
+          {visibleUnits.map((unit) => {
             const stats = getUnitStats(unit.id);
 
             return (
