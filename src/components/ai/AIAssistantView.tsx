@@ -42,7 +42,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ initialPatient
   const { patients, currentPatient, currentUser, currentUnitId, updatePatient, showToast, setCurrentView } = useApp();
 
   const [selectedPatientId, setSelectedPatientId] = useState<string>(
-    initialPatient?.id || currentPatient?.id || visiblePatients[0]?.id || ''
+    initialPatient?.id || currentPatient?.id || patients[0]?.id || ''
   );
   const [activeTask, setActiveTask] = useState<AIAssistantTask>('summary');
   const [draftType, setDraftType] = useState<AIDraftType>('progress');
@@ -65,6 +65,12 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ initialPatient
     return allowedUnitIds.includes(String(p.unitId));
   });
   const selectedPatient = visiblePatients.find(p => p.id === selectedPatientId) || null;
+  React.useEffect(() => {
+    if (!selectedPatientId || !visiblePatients.some(p => p.id === selectedPatientId)) {
+      setSelectedPatientId(visiblePatients[0]?.id || '');
+      setResult(null);
+    }
+  }, [currentUnitId, workspaceAccess?.unitIds?.join(','), patients.length]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
