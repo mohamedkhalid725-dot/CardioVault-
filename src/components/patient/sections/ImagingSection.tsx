@@ -97,7 +97,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     setShowAddModal(true);
   };
 
-  const persist = (updated: ImagingStudy[]) => updatePatient(patient.id, { imaging: updated as any, imagingStudies: updated as any });
+  const persist = (updated: ImagingStudy[]) => updatePatient(patient.id, { imaging: updated as any });
 
   const handleDeleteStudy = (studyId: string) => {
     persist(studies.filter(s => s.id !== studyId));
