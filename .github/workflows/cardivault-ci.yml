@@ -244,53 +244,11 @@ jobs:
               }
           }
           GRADLE
-      - name: Register Android SHA-1 fingerprints for Google Sign-In
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD }}
-          CARDIOVAULT_DEBUG_KEY_ALIAS: ${{ secrets.CARDIOVAULT_DEBUG_KEY_ALIAS }}
-          CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD }}
-          CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
-        working-directory: android
-        run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          APP_ID=$(python - <<'PY'
-          import json
-          from pathlib import Path
-          cfg=json.loads(Path('app/google-services.json').read_text())
-          for client in cfg.get('client',[]):
-              info=client.get('client_info',{})
-              if info.get('android_client_info',{}).get('package_name') == 'com.cardiovault.app':
-                  print(info.get('mobilesdk_app_id',''))
-                  break
-          PY
-          )
-          if [ -z "$APP_ID" ]; then exit 1; fi
-          rm -f "$RUNNER_TEMP/shas.txt"
-          touch "$RUNNER_TEMP/shas.txt"
-          if [ -f cardiovault-debug.keystore ]; then
-            keytool -list -v -keystore cardiovault-debug.keystore -storepass "$CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD" -alias "$CARDIOVAULT_DEBUG_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' >> "$RUNNER_TEMP/shas.txt" || true
-          fi
-          if [ -f cardiovault-release.keystore ]; then
-            keytool -list -v -keystore cardiovault-release.keystore -storepass "$CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD" -alias "$CARDIOVAULT_RELEASE_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' >> "$RUNNER_TEMP/shas.txt" || true
-          fi
-          if [ -f "$HOME/.android/debug.keystore" ]; then
-            keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' >> "$RUNNER_TEMP/shas.txt" || true
-          fi
-          mapfile -t SHAS < <(sed '/^[[:space:]]*$/d' "$RUNNER_TEMP/shas.txt" | sort -u)
-          echo "Detected Android SHA-1 fingerprints: ${#SHAS[@]}"
-          if [ "${#SHAS[@]}" -eq 0 ]; then
-            echo "No signing SHA-1 could be extracted; continuing with the repository Firebase config."
-            exit 0
-          fi
-          for SHA in "${SHAS[@]}"; do
-            echo "Registering Android SHA-1: $SHA"
-            npx firebase-tools@latest apps:android:sha:create "$APP_ID" "$SHA" --project ccu-notebook --non-interactive || true
-          done
-          npx firebase-tools@latest apps:sdkconfig ANDROID "$APP_ID" --project ccu-notebook -o app/google-services.json
-          echo "Firebase Android google-services.json refreshed."
+      # Android SHA-1 fingerprints are already stored in the repository's real google-services.json.
+      # Do not mutate Firebase app configuration from CI: the Firebase service account used here
+      # can deploy Firestore rules but cannot manage Android OAuth certificate hashes.
+      # SHA-1 registration is therefore managed in Firebase Console, while this build consumes
+      # the checked-in configuration unchanged.
       - name: Show Android/Firebase signing diagnostics
         working-directory: android
         run: |
