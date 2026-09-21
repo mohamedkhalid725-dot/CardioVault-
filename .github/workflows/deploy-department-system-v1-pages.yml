@@ -1,0 +1,66 @@
+name: Deploy CardioVault Web App - department-system-v1
+
+on:
+  push:
+    branches:
+      - department-system-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: cardiovault-pages-department-system-v1
+  cancel-in-progress: true
+
+env:
+  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+  VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build production web app
+        run: npm run build
+
+      - name: Verify static web output
+        run: |
+          test -f dist/index.html
+          echo "CardioVault web build is ready for GitHub Pages."
+          du -sh dist
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy department-system-v1 to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
