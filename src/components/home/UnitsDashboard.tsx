@@ -76,6 +76,7 @@ export const UnitsDashboard: React.FC = () => {
   const occupiedBeds = beds.filter((b) => b.patientId).length;
   const totalCritical = patients.filter((p) => !p.isArchived && p.status === 'Critical').length;
   const totalUnstable = patients.filter((p) => !p.isArchived && p.status === 'Unstable').length;
+  const visibleUnits = units.filter((unit) => beds.some((bed) => bed.unitId === unit.id));
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-8 animate-in fade-in duration-200">
