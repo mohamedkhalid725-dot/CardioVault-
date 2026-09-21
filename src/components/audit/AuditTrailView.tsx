@@ -21,9 +21,9 @@ export const AuditTrailView: React.FC = () => {
 
   const filteredCorrections = corrections.filter(
     c =>
-      c.correctedBy.toLowerCase().includes(search.toLowerCase()) ||
-      c.field.toLowerCase().includes(search.toLowerCase()) ||
-      c.clinicalReason.toLowerCase().includes(search.toLowerCase())
+      c.user.toLowerCase().includes(search.toLowerCase()) ||
+      c.fieldName.toLowerCase().includes(search.toLowerCase()) ||
+      c.reason.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -153,10 +153,10 @@ export const AuditTrailView: React.FC = () => {
                 <div key={c.id} className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="text-xs font-bold text-slate-900 dark:text-white">
-                      Field: <span className="text-cyan-500 uppercase">{c.field}</span> ({c.recordType})
+                      Field: <span className="text-cyan-500 uppercase">{c.fieldName}</span> ({c.recordType})
                     </div>
                     <div className="text-[10px] text-slate-400 font-mono">
-                      {new Date(c.correctedAt).toLocaleString()}
+                      {new Date(c.timestamp).toLocaleString()}
                     </div>
                   </div>
 
@@ -164,7 +164,7 @@ export const AuditTrailView: React.FC = () => {
                     <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40">
                       <div className="text-[10px] font-bold uppercase text-rose-500">Previous Value</div>
                       <div className="text-slate-800 dark:text-slate-200 mt-0.5 line-through">
-                        {String(c.previousValue)}
+                        {String(c.originalValue)}
                       </div>
                     </div>
 
