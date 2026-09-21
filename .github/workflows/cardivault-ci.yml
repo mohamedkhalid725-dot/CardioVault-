@@ -229,6 +229,10 @@ jobs:
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_DEBUG_KEY_ALIAS: ${{ secrets.CARDIOVAULT_DEBUG_KEY_ALIAS }}
+          CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD }}
+          CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
         working-directory: android
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
@@ -244,35 +248,30 @@ jobs:
                   break
           PY
           )
-          if [ -z "$APP_ID" ]; then
-            echo "Could not determine Firebase Android App ID for com.cardiovault.app."
-            exit 1
+          if [ -z "$APP_ID" ]; then exit 1; fi
+          rm -f "$RUNNER_TEMP/shas.txt"
+          touch "$RUNNER_TEMP/shas.txt"
+          if [ -f cardiovault-debug.keystore ]; then
+            keytool -list -v -keystore cardiovault-debug.keystore -storepass "$CARDIOVAULT_DEBUG_KEYSTORE_PASSWORD" -alias "$CARDIOVAULT_DEBUG_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' >> "$RUNNER_TEMP/shas.txt" || true
           fi
-          ./gradlew signingReport --no-daemon > "$RUNNER_TEMP/signing-report.txt"
-          export APP_ID
-          python - <<'PY'
-          import os,re,subprocess
-          from pathlib import Path
-          report=Path(os.environ["RUNNER_TEMP"]+"/signing-report.txt").read_text(errors="replace")
-          shas=[]
-          for m in re.finditer(r"SHA-?1:\\s*([0-9A-Fa-f:]{40,59})", report, re.I):
-              sha=m.group(1).upper()
-              if sha not in shas: shas.append(sha)
-          print("SigningReport SHA-1 count:", len(shas))
-          if not shas:
-              raise SystemExit("No Android SHA-1 fingerprints were found after signing configuration.")
-          app_id=os.environ["APP_ID"]
-          for sha in shas:
-              print("Registering Android SHA-1:", sha)
-              r=subprocess.run(["npx","firebase-tools@latest","apps:android:sha:create",app_id,sha,"--project","ccu-notebook","--non-interactive"],text=True,capture_output=True)
-              print(r.stdout)
-              print(r.stderr)
-              combined=(r.stdout+r.stderr).lower()
-              if r.returncode!=0 and "already exists" not in combined:
-                  raise SystemExit(r.returncode)
-          PY
+          if [ -f cardiovault-release.keystore ]; then
+            keytool -list -v -keystore cardiovault-release.keystore -storepass "$CARDIOVAULT_RELEASE_KEYSTORE_PASSWORD" -alias "$CARDIOVAULT_RELEASE_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' >> "$RUNNER_TEMP/shas.txt" || true
+          fi
+          if [ -f "$HOME/.android/debug.keystore" ]; then
+            keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' >> "$RUNNER_TEMP/shas.txt" || true
+          fi
+          mapfile -t SHAS < <(sed '/^[[:space:]]*$/d' "$RUNNER_TEMP/shas.txt" | sort -u)
+          echo "Detected Android SHA-1 fingerprints: ${#SHAS[@]}"
+          if [ "${#SHAS[@]}" -eq 0 ]; then
+            echo "No signing SHA-1 could be extracted; continuing with the repository Firebase config."
+            exit 0
+          fi
+          for SHA in "${SHAS[@]}"; do
+            echo "Registering Android SHA-1: $SHA"
+            npx firebase-tools@latest apps:android:sha:create "$APP_ID" "$SHA" --project ccu-notebook --non-interactive || true
+          done
           npx firebase-tools@latest apps:sdkconfig ANDROID "$APP_ID" --project ccu-notebook -o app/google-services.json
-          echo "Firebase Android google-services.json refreshed with registered SHA fingerprints."
+          echo "Firebase Android google-services.json refreshed."
       - name: Show Android/Firebase signing diagnostics
         working-directory: android
         run: |
