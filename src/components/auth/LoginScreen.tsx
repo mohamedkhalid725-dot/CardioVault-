@@ -20,30 +20,9 @@ export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,show
     setBusy(true);
     try{
       showToast('Opening Google account…','info');
-      if(!Capacitor.isNativePlatform()){
-        try {
-          await loginWithGoogle();
-          return;
-        } catch(webErr: any) {
-          throw webErr;
-        }
-      }
-      let googleUser:any=null;
-      try {
-        const result=await FirebaseAuthentication.signInWithGoogle({useCredentialManager:true});
-        googleUser=result?.user||null;
-      } catch (error) {
-        console.warn('Credential Manager Google sign-in failed:',error);
-        try {
-          const fallback=await FirebaseAuthentication.signInWithGoogle({useCredentialManager:false});
-          googleUser=fallback?.user||null;
-        } catch (fallbackError) {
-          console.warn('Legacy Google sign-in fallback failed:',fallbackError);
-        }
-      }
-      if(!googleUser?.email)googleUser=await waitForNativeGoogleUser();
-      if(!googleUser?.email){showToast('Google account selection did not complete. Please try again.','error');return;}
-      await finishFirebaseAccount(googleUser,'Signed in with Google.');
+      // Keep native and web Google authentication in one AppContext path so the
+      // Firebase session, local session state, and post-login routing cannot race.
+      await loginWithGoogle();
     }catch(error:any){
       console.error('Google Sign-In error:',error);
       showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Unknown error')}`,'error');
