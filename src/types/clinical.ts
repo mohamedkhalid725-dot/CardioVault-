@@ -320,6 +320,7 @@ export interface Patient {
   ecgRecords: ECGRecord[];
   cardiology: CardiologyData;
   medications: Medication[];
+  infusions?: Infusion[];
   ventilator: VentilatorData;
   imaging: ImagingStudy[];
   labs: LabPanel[];
