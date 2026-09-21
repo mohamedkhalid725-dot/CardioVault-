@@ -8,7 +8,7 @@ import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {webCurrentUser,webGoogleSignIn,webEmailSignIn,webEmailCreate,webSignOut} from'../services/webFirebase';
 import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
-import {isMasterAccount,validateCurrentWorkspaceAccess} from '../services/workspaceAccess';
+import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess} from '../services/workspaceAccess';
 import {notifyClinicalData} from'../services/clinicalNotifications';
 
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail'|'ai-assistant';
