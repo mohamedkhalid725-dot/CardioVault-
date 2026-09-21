@@ -88,7 +88,7 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
       return (result?.snapshots||[]).map((s:any)=>safe(s)||{}).filter((x:any)=>(x?.uid||x?.userId)&&!String(x?.userId||x?.uid).startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
     }
     const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/team`));
-    return snap.docs.map((d:any)=>d.data()).filter((x:any)=>!String(x?.userId||x?.uid||d?.id||'').startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
+    return snap.docs.map((d:any)=>d.data()).filter((x:any)=>!String(x?.userId||x?.uid||'').startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
   }catch(error){console.warn('Team directory cloud read failed:',error);return [];}
 }
 export async function updateTeamDirectoryMember(userId:string,updates:Record<string,any>):Promise<any>{
