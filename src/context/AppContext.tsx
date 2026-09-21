@@ -131,7 +131,31 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const showToast=(message:string,type:ToastInfo['type']='info')=>{const id=`toast-${Date.now()}-${Math.random()}`;setToasts(p=>[...p,{id,message,type}]);window.setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000);};
  const dismissToast=(id:string)=>setToasts(p=>p.filter(t=>t.id!==id));
  const setTheme=(t:'dark'|'light')=>{setThemeState(t);StorageService.saveTheme(t);};const toggleTheme=()=>setTheme(theme==='dark'?'light':'dark');
- const loginWithGoogle=async()=>{try{const result:any=Capacitor.isNativePlatform()?await FirebaseAuthentication.signInWithGoogle():{user:await webGoogleSignIn()};const user=result.user;if(!user?.uid)throw new Error('Google sign-in returned no Firebase user.');const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:user.email||auth.userEmail,userName:user.displayName||auth.userName};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');const cloud=await loadCurrentUserFromCloud();if(cloud?.found){hydrateClinicalState();setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in and cloud data restored.','success');}else{const synced=await syncCurrentUserNow();if(synced){setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in with Google and automatic cloud sync is ready.','success');}else showToast('Signed in, but the cloud workspace needs attention.','warning');}}catch(error:any){console.error('Native Google/Firebase sign-in failed:',error);showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');}};
+ const loginWithGoogle=async()=>{
+   try{
+     const result:any=Capacitor.isNativePlatform()?await FirebaseAuthentication.signInWithGoogle():{user:await webGoogleSignIn()};
+     const user=result.user;
+     if(!user?.uid)throw new Error('Google sign-in returned no Firebase user.');
+     const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:user.email||auth.userEmail,userName:user.displayName||auth.userName};
+     setAuth(a);
+     StorageService.saveAuth(a);
+     localStorage.setItem('cardiovault_google_uid',user.uid);
+     setCurrentView('home');
+     // Never block the post-login route on Firestore/cloud restoration.
+     void (async()=>{
+       try{
+         const cloud=await Promise.race([loadCurrentUserFromCloud(),new Promise<'timeout'>(resolve=>window.setTimeout(()=>resolve('timeout'),8000))]);
+         if(cloud==='timeout'){showToast('Signed in. Cloud restore is still pending.','info');return;}
+         if(cloud?.found){hydrateClinicalState();setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in and cloud data restored.','success');}
+         else if(cloud?.access){window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));showToast('Signed in. Cloud workspace is ready.','success');}
+         else{showToast('Signed in. Cloud workspace needs attention.','warning');}
+       }catch(error){console.warn('Post-login cloud restore failed:',error);showToast('Signed in. Cloud sync will retry automatically.','warning');}
+     })();
+   }catch(error:any){
+     console.error('Native Google/Firebase sign-in failed:',error);
+     showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');
+   }
+ };
  const loginWithEmail=(email:string)=>{const clean=email.trim().toLowerCase();if(!clean)return;const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:clean,userName:auth.userName||clean.split('@')[0]};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');};
  const unlockWithPin=(_pin:string)=>{showToast('PIN / Offline access has been disabled. Sign in with your Firebase account.','warning');return false;};const lockApp=()=>{showToast('Offline lock screen is disabled. Use Sign Out to end the session.','info');};
  const logout=()=>{void (Capacitor.isNativePlatform()?FirebaseAuthentication.signOut():webSignOut()).catch(error=>console.warn('Firebase sign-out failed:',error));localStorage.removeItem('cardiovault_google_uid');clearActiveClinicalWorkspace();setUnits([]);setBeds([]);setPatients([]);setCurrentUnitId(null);setCurrentPatientId(null);const a={...auth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(a);StorageService.saveAuth(a);setCurrentView('login');};
