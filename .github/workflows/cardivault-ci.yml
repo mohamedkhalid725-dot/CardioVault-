@@ -44,7 +44,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cardiovault-tscheck-\${{ github.sha }}
+          name: cardiovault-tscheck-${{ github.sha }}
           path: tscheck.log
           retention-days: 3
 
