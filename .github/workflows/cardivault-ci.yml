@@ -114,51 +114,23 @@ jobs:
           p.write_text(s)
           PY
           npx cap update android
-      - name: Register Android SHA-1 fingerprints for Google Sign-In
+      - name: Prepare Firebase Android SHA registration
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         working-directory: android
         run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          APP_ID=$(python - <<'PY'
+          # SHA registration is performed after CI signing configs are added.
+          python - <<'PY'
           import json
           from pathlib import Path
           cfg=json.loads(Path('app/google-services.json').read_text())
           for client in cfg.get('client',[]):
               info=client.get('client_info',{})
               if info.get('android_client_info',{}).get('package_name') == 'com.cardiovault.app':
-                  print(info.get('mobilesdk_app_id',''))
+                  print('Firebase Android App ID:', info.get('mobilesdk_app_id',''))
                   break
           PY
-          )
-          export APP_ID
-          if [ -z "$APP_ID" ]; then
-            echo "Could not determine Firebase Android App ID for com.cardiovault.app."
-            exit 1
-          fi
-          ./gradlew signingReport --no-daemon > "$RUNNER_TEMP/signing-report.txt"
-          python - <<'PY'
-          import os,re,subprocess
-          from pathlib import Path
-          text=Path(os.environ["RUNNER_TEMP"]+"/signing-report.txt").read_text()
-          shas=[]
-          for m in re.finditer(r"SHA1:\s*([0-9A-Fa-f:]{40,59})", text):
-              sha=m.group(1).upper()
-              if sha not in shas: shas.append(sha)
-          if not shas:
-              raise SystemExit("No Android SHA-1 fingerprints were found in signingReport.")
-          app_id=os.environ["APP_ID"]
-          for sha in shas:
-              print("Registering Android SHA-1:",sha)
-              r=subprocess.run(["npx","firebase-tools@latest","apps:android:sha:create",app_id,sha,"--project","ccu-notebook","--non-interactive"],text=True,capture_output=True)
-              print(r.stdout)
-              print(r.stderr)
-              if r.returncode!=0 and "already exists" not in (r.stdout+r.stderr).lower():
-                  raise SystemExit(r.returncode)
-          PY
-          npx firebase-tools@latest apps:sdkconfig ANDROID "$APP_ID" --project ccu-notebook -o app/google-services.json
       - name: Deploy Firestore rules
         # Deploy after the GitHub deploy service account has Firebase Rules Admin permission.
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
@@ -257,6 +229,54 @@ jobs:
               }
           }
           GRADLE
+      - name: Register Android SHA-1 fingerprints for Google Sign-In
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        working-directory: android
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          APP_ID=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('app/google-services.json').read_text())
+          for client in cfg.get('client',[]):
+              info=client.get('client_info',{})
+              if info.get('android_client_info',{}).get('package_name') == 'com.cardiovault.app':
+                  print(info.get('mobilesdk_app_id',''))
+                  break
+          PY
+          )
+          if [ -z "$APP_ID" ]; then
+            echo "Could not determine Firebase Android App ID for com.cardiovault.app."
+            exit 1
+          fi
+          ./gradlew signingReport --no-daemon > "$RUNNER_TEMP/signing-report.txt"
+          export APP_ID
+          python - <<'PY'
+          import os,re,subprocess
+          from pathlib import Path
+          report=Path(os.environ["RUNNER_TEMP"]+"/signing-report.txt").read_text(errors="replace")
+          shas=[]
+          for m in re.finditer(r"SHA-?1:\\s*([0-9A-Fa-f:]{40,59})", report, re.I):
+              sha=m.group(1).upper()
+              if sha not in shas: shas.append(sha)
+          print("SigningReport SHA-1 count:", len(shas))
+          if not shas:
+              raise SystemExit("No Android SHA-1 fingerprints were found after signing configuration.")
+          app_id=os.environ["APP_ID"]
+          for sha in shas:
+              print("Registering Android SHA-1:", sha)
+              r=subprocess.run(["npx","firebase-tools@latest","apps:android:sha:create",app_id,sha,"--project","ccu-notebook","--non-interactive"],text=True,capture_output=True)
+              print(r.stdout)
+              print(r.stderr)
+              combined=(r.stdout+r.stderr).lower()
+              if r.returncode!=0 and "already exists" not in combined:
+                  raise SystemExit(r.returncode)
+          PY
+          npx firebase-tools@latest apps:sdkconfig ANDROID "$APP_ID" --project ccu-notebook -o app/google-services.json
+          echo "Firebase Android google-services.json refreshed with registered SHA fingerprints."
       - name: Show Android/Firebase signing diagnostics
         working-directory: android
         run: |
