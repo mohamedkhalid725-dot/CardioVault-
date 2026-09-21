@@ -3,6 +3,7 @@ import {FirebaseAuthentication} from '@capacitor-firebase/authentication';
 import {FirebaseFirestore} from '@capacitor-firebase/firestore';
 import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc,getDocs as webGetDocs,webCollection} from './webFirebase';
 import { AuthorizationService } from './authorizationService';
+import { UserProfile, ClinicalRole } from '../types/clinical';
 import { isSupabaseStorageConfigured, registerSupabaseUnitAccessCode, revokeSupabaseUnitAccessCode, redeemSupabaseUnitAccessCode } from './supabaseStorage';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
 export interface WorkspaceAccessState{workspaceId:string;role:WorkspaceRole;unitId:string|null;unitName:string|null;unitIds?:string[];unitNames?:Record<string,string>;}
@@ -56,7 +57,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   }
   const currentProfile = AuthorizationService.getUsers().find(u=>u.userId===id) || AuthorizationService.getCurrentUser();
   const nextRole = currentProfile?.role && currentProfile.role!=='viewer' ? currentProfile.role : (access.role==='view_only'?'viewer':'resident');
-  const teamProfile = {...currentProfile,userId:id,name:currentProfile?.name||'Clinician',email:currentProfile?.email||'',role:nextRole,departmentId:'dept-cardiology',assignedUnitIds:unitIds,status:'active',updatedAt:new Date().toISOString()};
+  const teamProfile: UserProfile = {...currentProfile,userId:id,name:currentProfile?.name||'Clinician',email:currentProfile?.email||'',role:nextRole as ClinicalRole,departmentId:'dept-cardiology',assignedUnitIds:unitIds,status:'active',updatedAt:new Date().toISOString()};
   AuthorizationService.saveUsers([...AuthorizationService.getUsers().filter(u=>u.userId!==id),teamProfile]);
   try{
     const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
