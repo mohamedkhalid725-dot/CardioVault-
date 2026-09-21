@@ -112,7 +112,8 @@ export const ClinicalWorkflowService = {
       createdAt: new Date().toISOString(),
       ...task,
     };
-    this.saveTasks([newTask, ...tasks]);\n    window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
+    this.saveTasks([newTask, ...tasks]);
+    window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
     return newTask;
   },
 
@@ -128,7 +129,8 @@ export const ClinicalWorkflowService = {
           }
         : t
     );
-    this.saveTasks(updated);\n    window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
+    this.saveTasks(updated);
+    window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
   },
 
   // Protocols
