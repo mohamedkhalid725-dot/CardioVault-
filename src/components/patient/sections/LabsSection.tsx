@@ -1,4 +1,4 @@
-import React,{useMemo,useState} from 'react';
+import React,{useEffect,useMemo,useState} from 'react';
 import {FlaskConical,Plus,Trash2,ChevronDown,ChevronUp,X} from 'lucide-react';
 import {LabResult,Patient} from '../../../types/clinical';
 import {useApp} from '../../../context/AppContext';
