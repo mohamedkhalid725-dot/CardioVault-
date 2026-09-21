@@ -85,10 +85,10 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
   try{
     if(Capacitor.isNativePlatform()){
       const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/team`});
-      return (result?.snapshots||[]).map((s:any)=>safe(s)||{}).filter((x:any)=>x?.uid||x?.userId);
+      return (result?.snapshots||[]).map((s:any)=>safe(s)||{}).filter((x:any)=>(x?.uid||x?.userId)&&!String(x?.userId||x?.uid).startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
     }
     const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/team`));
-    return snap.docs.map((d:any)=>d.data());
+    return snap.docs.map((d:any)=>d.data()).filter((x:any)=>!String(x?.userId||x?.uid||d?.id||'').startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
   }catch(error){console.warn('Team directory cloud read failed:',error);return [];}
 }
 export async function updateTeamDirectoryMember(userId:string,updates:Record<string,any>):Promise<any>{
