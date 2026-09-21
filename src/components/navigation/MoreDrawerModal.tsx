@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Sparkles,
+  FlaskConical,
 } from 'lucide-react';
 import { useApp, AppView } from '../../context/AppContext';
 
