@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Plus, ChevronRight, BedDouble, UserPlus, LogOut, X, LockKeyhole } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { PatientStatus } from '../../types/clinical';
-import { canEditClinicalData, canManageStructure, getStoredWorkspaceAccess } from '../../services/workspaceAccess';
+import { PatientStatus, UserProfile } from '../../types/clinical';
+import { canEditClinicalData, canManageStructure, getStoredWorkspaceAccess, getTeamDirectoryMembers } from '../../services/workspaceAccess';
 
 export const UnitCensusView: React.FC = () => {
   const { currentUnitId, getUnitById, getBedsByUnit, units, beds, patients, setCurrentPatientId, setCurrentView, setCurrentUnitId, addBed, addPatient, setActivePatientSection, dischargePatient, showToast } = useApp();
@@ -16,7 +16,7 @@ export const UnitCensusView: React.FC = () => {
   const [newPatientSex,setNewPatientSex]=useState<'Male'|'Female'>('Male');
   const [newPatientDiagnosis,setNewPatientDiagnosis]=useState('');
   const [newPatientStatus,setNewPatientStatus]=useState<PatientStatus>('Stable');
-  const [newPatientMRN,setNewPatientMRN]=useState('');
+  const [newPatientMRN,setNewPatientMRN]=useState('');\n  const [teamUsers,setTeamUsers]=useState<UserProfile[]>([]);
 
   const access=getStoredWorkspaceAccess();
   const editable=canEditClinicalData();
@@ -51,6 +51,11 @@ export const UnitCensusView: React.FC = () => {
     <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-3"><button onClick={()=>setCurrentView('home')} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"><ArrowLeft className="w-5 h-5"/></button><div><h1 className="text-2xl font-bold text-slate-900 dark:text-white">{currentUnit.name}</h1><p className="text-xs text-slate-500 dark:text-slate-400">{unitBeds.length} Beds • {currentUnit.type}{access?.role!=='owner'&&access?.unitName?` • Access: ${access.unitName}`:''}</p><div className="mt-2"><select value={currentUnit.id} onChange={e=>setCurrentUnitId(e.target.value)} className="text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5">{units.filter(u=>beds.some(b=>b.unitId===u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div></div>
       {structureAdmin?<button onClick={()=>addBed(currentUnit.id)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-xs font-bold"><Plus className="w-4 h-4"/> Add Bed</button>:<div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-semibold"><LockKeyhole className="w-3.5 h-3.5"/> Beds managed by Owner</div>}
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] p-3">
+      <div className="flex items-center justify-between gap-2 mb-2"><div><h2 className="text-sm font-black">Who's On Duty</h2><p className="text-[9px] text-slate-400">Active team members assigned to this unit.</p></div><span className="text-[9px] text-slate-400">{teamUsers.length} active</span></div>
+      <div className="flex flex-wrap gap-2">{teamUsers.length?teamUsers.map(u=><div key={u.userId} className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"><div className="text-[10px] font-bold">{u.name}</div><div className="text-[8px] text-slate-400 uppercase">{u.role.replace('_',' ')}</div></div>):<div className="text-[10px] text-slate-400">No active unit coverage is recorded.</div>}</div>
     </div>
 
     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] overflow-hidden shadow-sm">
