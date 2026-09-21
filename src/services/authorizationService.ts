@@ -40,68 +40,8 @@ export interface ActionContext {
   targetRole?: ClinicalRole;
 }
 
-export const PRESET_USERS: UserProfile[] = [
-  {
-    userId: 'user-mkhalid',
-    name: 'Dr. Mohamed Khalid',
-    email: 'mohamedkhalid725@gmail.com',
-    role: 'department_admin',
-    departmentId: 'dept-cardiology',
-    assignedUnitIds: ['unit-ccu-1', 'unit-ccu-2', 'unit-cardiology-ward', 'unit-icu-1'],
-    status: 'active',
-    permissions: ['all'],
-    createdAt: '2026-09-01T08:00:00.000Z',
-    updatedAt: '2026-09-20T08:00:00.000Z',
-  },
-  {
-    userId: 'user-sara-nurse',
-    name: 'Sara Ahmed',
-    email: 'sara.ahmed@cardiovault.org',
-    role: 'nurse',
-    departmentId: 'dept-cardiology',
-    assignedUnitIds: ['unit-ccu-1'], // Sara can ONLY access CCU-1
-    status: 'active',
-    permissions: ['vitals', 'io', 'nursing_note', 'med_admin', 'devices', 'tasks'],
-    createdAt: '2026-09-05T08:00:00.000Z',
-    updatedAt: '2026-09-20T08:00:00.000Z',
-  },
-  {
-    userId: 'user-youssef-resident',
-    name: 'Dr. Youssef El-Sayed (Resident)',
-    email: 'youssef.res@cardiovault.org',
-    role: 'resident',
-    departmentId: 'dept-cardiology',
-    assignedUnitIds: ['unit-ccu-1', 'unit-ccu-2'], // Resident assigned to CCU-1 & CCU-2
-    status: 'active',
-    permissions: ['clinical_documentation', 'orders', 'tasks', 'handover'],
-    createdAt: '2026-09-05T08:00:00.000Z',
-    updatedAt: '2026-09-20T08:00:00.000Z',
-  },
-  {
-    userId: 'user-mona-consultant',
-    name: 'Dr. Mona Mansour (Consultant)',
-    email: 'mona.consultant@cardiovault.org',
-    role: 'consultant',
-    departmentId: 'dept-cardiology',
-    assignedUnitIds: ['unit-ccu-1', 'unit-ccu-2', 'unit-cardiology-ward'],
-    status: 'active',
-    permissions: ['clinical_all', 'oversight'],
-    createdAt: '2026-09-01T08:00:00.000Z',
-    updatedAt: '2026-09-20T08:00:00.000Z',
-  },
-  {
-    userId: 'user-viewer',
-    name: 'Clinical Auditor (Viewer)',
-    email: 'viewer@cardiovault.org',
-    role: 'viewer',
-    departmentId: 'dept-cardiology',
-    assignedUnitIds: ['unit-ccu-1', 'unit-ccu-2', 'unit-cardiology-ward'],
-    status: 'active',
-    permissions: ['read_only'],
-    createdAt: '2026-09-10T08:00:00.000Z',
-    updatedAt: '2026-09-20T08:00:00.000Z',
-  },
-];
+export const PRESET_USERS: UserProfile[] = [];
+
 
 const USER_STORAGE_KEY = 'cardiovault_current_user_profile_v2';
 const ALL_USERS_KEY = 'cardiovault_all_users_v2';
@@ -130,8 +70,7 @@ export const AuthorizationService = {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(normalizeUserProfile);
       }
     } catch {}
-    this.saveUsers(PRESET_USERS);
-    return PRESET_USERS;
+    return [];
   },
 
   saveUsers(users: UserProfile[]): void {
@@ -148,8 +87,7 @@ export const AuthorizationService = {
         if (parsed?.userId && parsed?.role) return normalizeUserProfile(parsed);
       }
     } catch {}
-    // Default to Dr. Mohamed Khalid (Department Admin)
-    return PRESET_USERS[0];
+    return { userId: '', name: 'Clinician', email: '', role: 'resident', departmentId: 'dept-cardiology', assignedUnitIds: [], status: 'pending', permissions: [], createdAt: new Date().toISOString() };
   },
 
   setCurrentUser(user: UserProfile): void {
@@ -204,8 +142,8 @@ export const AuthorizationService = {
       email: cleanEmail,
       role: 'resident',
       departmentId: 'dept-cardiology',
-      assignedUnitIds: ['unit-ccu-1'],
-      status: 'active',
+      assignedUnitIds: [],
+      status: 'pending',
       permissions: ['clinical_documentation', 'orders', 'tasks', 'handover'],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
