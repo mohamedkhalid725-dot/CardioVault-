@@ -1,0 +1,83 @@
+name: CardioVault Department Web Preview
+
+on:
+  push:
+    branches:
+      - department-system-v1
+    paths:
+      - src/**
+      - public/**
+      - index.html
+      - package.json
+      - package-lock.json
+      - vite.config.ts
+      - firebase.json
+      - .github/workflows/department-web-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cardiovault-department-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: cardiovault-department-preview
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build department web app
+        run: npm run build
+
+      - name: Deploy department preview channel
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT is required for the department web preview."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          npx firebase-tools@latest hosting:channel:deploy department-system-v1 --project ccu-notebook --non-interactive --json > "$RUNNER_TEMP/firebase-preview.json"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("$RUNNER_TEMP/firebase-preview.json")
+          raw=p.read_text()
+          data=json.loads(raw)
+          urls=[]
+          def walk(v):
+              if isinstance(v, dict):
+                  for k,x in v.items():
+                      if k.lower() in {"url","url_"} and isinstance(x,str) and ".web.app" in x:
+                          urls.append(x)
+                      walk(x)
+              elif isinstance(v,list):
+                  for x in v: walk(x)
+          walk(data)
+          if not urls:
+              raise SystemExit("Firebase deploy succeeded but no preview URL was returned.")
+          url=urls[-1]
+          print("Department preview URL:",url)
+          with open(__import__("os").environ["GITHUB_OUTPUT"],"a") as out:
+              out.write("url="+url+"\n")
+          PY
+
+      - name: Publish preview URL
+        run: |
+          echo "Department preview is deployed."
