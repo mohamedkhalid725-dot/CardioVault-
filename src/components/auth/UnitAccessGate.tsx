@@ -3,7 +3,6 @@ import {KeyRound,ShieldCheck,ArrowRight,Loader2} from 'lucide-react';
 import {redeemUnitAccessCode,getStoredWorkspaceAccess,isMasterAccount,ensureOwnerWorkspace} from '../../services/workspaceAccess';
 import {CardioLogo} from '../CardioLogo';
 import {useApp} from '../../context/AppContext';
-import {Capacitor} from '@capacitor/core';
 
 export const UnitAccessGate:React.FC=()=>{
  const{auth,logout,showToast}=useApp();
