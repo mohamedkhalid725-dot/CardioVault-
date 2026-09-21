@@ -1,7 +1,8 @@
 import React,{useState}from'react';
 import{Activity,Droplet,FileText,Pill,Cpu,CheckSquare,UserPlus,Stethoscope,FlaskConical,MessageSquare,X,ShieldAlert}from'lucide-react';
 import{useApp}from'../../context/AppContext';
-import{ACCESS_DENIED_MESSAGE}from'../../services/authorizationService';\nimport{ClinicalWorkflowService}from'../../services/clinicalWorkflowService';
+import{ACCESS_DENIED_MESSAGE}from'../../services/authorizationService';
+import{ClinicalWorkflowService}from'../../services/clinicalWorkflowService';
 export const QuickAddModal:React.FC<{isOpen:boolean;onClose:()=>void;onSelectAction:(action:string)=>void}>=({isOpen,onClose,onSelectAction})=>{
  const{currentUser,patients,currentPatient,updatePatient,setCurrentView,setCurrentPatientId,setActivePatientSection,showToast}=useApp();const[selected,setSelected]=useState('');const[patientId,setPatientId]=useState(currentPatient?.id||patients.find(p=>!p.isArchived)?.id||'');const[text,setText]=useState('');const[title,setTitle]=useState('');const[priority,setPriority]=useState('routine');const[frequency,setFrequency]=useState('');const[specialty,setSpecialty]=useState('');const[type,setType]=useState('CBC');
  if(!isOpen)return null;
