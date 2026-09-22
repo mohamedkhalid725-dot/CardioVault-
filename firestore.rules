@@ -93,6 +93,14 @@ service cloud.firestore {
         allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
+      match /tasks/{taskId} {
+        // Clinical tasks are department-shared: every active workspace member can
+        // read and update the same task board regardless of who created/was assigned the task.
+        allow get, list: if workspaceOwner(workspaceId) || member(workspaceId);
+        allow create, update: if workspaceOwner(workspaceId) || member(workspaceId);
+        allow delete: if workspaceOwner(workspaceId);
+      }
+
       match /metadata/{documentId} { allow read, write: if workspaceOwner(workspaceId); }
 
       match /media/{mediaId} {
