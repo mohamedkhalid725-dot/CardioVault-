@@ -41,18 +41,59 @@ const compact = (v: any, max = 90) => {
 
 const imageData = async (url: string): Promise<string | null> => {
   try {
-    if (url.startsWith('data:image/')) return url;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 3000);
-    const response = await fetch(url, { signal: controller.signal });
-    window.clearTimeout(timer);
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    return await new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
+    const source = url.startsWith('data:image/')
+      ? url
+      : await new Promise<string | null>(resolve => {
+          const controller = new AbortController();
+          const timer = window.setTimeout(() => controller.abort(), 5000);
+          fetch(url, { signal: controller.signal })
+            .then(response => {
+              window.clearTimeout(timer);
+              if (!response.ok) {
+                resolve(null);
+                return null;
+              }
+              return response.blob();
+            })
+            .then(blob => {
+              if (!blob) return;
+              const reader = new FileReader();
+              reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            })
+            .catch(() => {
+              window.clearTimeout(timer);
+              resolve(null);
+            });
+        });
+
+    if (!source) return null;
+
+    // jsPDF is much more reliable on Android when attached clinical images are
+    // normalized to JPEG instead of passing through PNG/WebP/SVG formats.
+    return await new Promise<string | null>(resolve => {
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, image.naturalWidth || image.width);
+          canvas.height = Math.max(1, image.naturalHeight || image.height);
+          const context = canvas.getContext('2d');
+          if (!context) {
+            resolve(source);
+            return;
+          }
+          context.fillStyle = '#ffffff';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.88));
+        } catch {
+          resolve(source);
+        }
+      };
+      image.onerror = () => resolve(source);
+      image.src = source;
     });
   } catch {
     return null;
@@ -429,7 +470,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             const data = await imageData(ecgUrl);
             if (data) {
               try {
-                doc.addImage(data, 'JPEG', 108, y, 94, 38);
+                doc.addImage(data, 108, y, 94, 38, 'JPEG', undefined, 'FAST');
               } catch {
                 paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
               }
@@ -600,7 +641,9 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       }
     } catch (error) {
       console.error('CardioVault PDF export failed:', error);
-      showToast('PDF generation failed. Please try again.', 'error');
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('CardioVault PDF export detail:', message);
+      showToast('PDF generation failed. Check the PDF data and try again.', 'error');
     } finally {
       setBusy(false);
     }
