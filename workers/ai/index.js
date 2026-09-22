@@ -1,7 +1,7 @@
 import { decodeProtectedHeader, importX509, jwtVerify } from 'jose';
 
 const PROJECT_ID = 'ccu-notebook';
-const MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash'];
+const MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const FIREBASE_ISSUER = `https://securetoken.google.com/${PROJECT_ID}`;
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const MAX_BODY_BYTES = 450000;
@@ -180,7 +180,7 @@ async function generateClinicalAnalysis(patient, apiKey) {
                 },
                 required: ['diagnosticAnalysis', 'differentialDiagnoses', 'recommendedActions', 'safetyChecks', 'missingData', 'confidence'],
               },
-              maxOutputTokens: 5000,
+              maxOutputTokens: 3500,
             },
           }),
         });
