@@ -31,12 +31,7 @@ export const PersonalWorklistView: React.FC = () => {
 
   const myTasks = tasks.filter(t => {
     if (taskFilter !== 'all' && t.status !== taskFilter) return false;
-    // Filter to tasks relevant to user's assigned units or role
-    if (currentUser.role === 'department_admin' || currentUser.role === 'consultant') return true;
-    if (t.assignedRole && t.assignedRole === currentUser.role) return true;
-    if (t.assignedTo && t.assignedTo === currentUser.userId) return true;
-    if (t.unitId && currentUser.assignedUnitIds.includes(t.unitId)) return true;
-    return false;
+    return true;
   });
 
   const handleToggleTask = (taskId: string, currentStatus: ClinicalTask['status']) => {
