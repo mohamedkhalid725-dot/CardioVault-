@@ -84,17 +84,59 @@ export async function revokeUnitAccessCode(code:string):Promise<void>{const stat
 export async function getTeamDirectoryMembers():Promise<any[]>{
   const id=await uid();
   if(!id) return [];
+  const localUsers=AuthorizationService.getUsers();
+  const localById=new Map(localUsers.map(u=>[u.userId,u]));
+  const mergeProfiles=(profiles:any[])=>{
+    const byId=new Map<string,any>();
+    profiles.forEach(profile=>{const key=String(profile?.userId||profile?.uid||'');if(key&&!key.startsWith('user-')&&!String(profile?.email||'').endsWith('@cardiovault.org'))byId.set(key,profile);});
+    localUsers.forEach(profile=>{const key=String(profile?.userId||'');if(key&&!key.startsWith('user-')&&!byId.has(key))byId.set(key,profile);});
+    return Array.from(byId.values()).filter((x:any)=>x?.status!=='inactive');
+  };
   try{
-    // The master account must bootstrap/validate the workspace before listing the team.
-    // This also guarantees that the owner's team profile exists before the directory query.
-    if(await isMasterAccount()) await ensureOwnerWorkspace();
+    const master=await isMasterAccount();
+    if(master) await ensureOwnerWorkspace();
+    const teamProfiles:any[]=[];
     if(Capacitor.isNativePlatform()){
-      const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/team`});
-      return (result?.snapshots||[]).map((s:any)=>safe(s)||{}).filter((x:any)=>(x?.uid||x?.userId)&&!String(x?.userId||x?.uid).startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
+      try{
+        const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/team`});
+        teamProfiles.push(...(result?.snapshots||[]).map((s:any)=>safe(s)||{}));
+      }catch(error){console.warn('Team directory team query failed:',error);}
+    }else{
+      try{
+        const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/team`));
+        teamProfiles.push(...snap.docs.map((d:any)=>d.data()));
+      }catch(error){console.warn('Team directory team query failed:',error);}
     }
-    const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/team`));
-    return snap.docs.map((d:any)=>d.data()).filter((x:any)=>!String(x?.userId||x?.uid||'').startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
-  }catch(error){console.warn('Team directory cloud read failed:',error);return [];}
+    // Master fallback: the membership collection is owner-readable even when an
+    // older deployment has incomplete team-profile records. Resolve each member's
+    // team document individually so one failed collection query cannot blank the directory.
+    if(master){
+      let memberIds:string[]=[];
+      try{
+        if(Capacitor.isNativePlatform()){
+          const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/members`});
+          memberIds=(result?.snapshots||[]).map((s:any)=>String(s?.id||s?.documentId||'')).filter(Boolean);
+        }else{
+          const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/members`));
+          memberIds=snap.docs.map((d:any)=>String(d.id)).filter(Boolean);
+        }
+      }catch(error){console.warn('Team directory membership fallback failed:',error);}
+      for(const memberId of memberIds){
+        if(teamProfiles.some((p:any)=>String(p?.userId||p?.uid||'')===memberId)) continue;
+        try{
+          const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${memberId}`;
+          let profile:any=null;
+          if(Capacitor.isNativePlatform()) profile=safe((await FirebaseFirestore.getDocument({reference:ref})).snapshot);
+          else {const docSnap=await webGetDoc(webDoc(ref));profile=docSnap.exists()?docSnap.data():null;}
+          if(profile) teamProfiles.push(profile);
+        }catch(error){console.warn('Team profile lookup failed:',memberId,error);}
+      }
+    }
+    return mergeProfiles(teamProfiles);
+  }catch(error){
+    console.warn('Team directory cloud read failed:',error);
+    return localUsers.filter((x:any)=>x?.userId&&x.status!=='inactive');
+  }
 }
 export async function updateTeamDirectoryMember(userId:string,updates:Record<string,any>):Promise<any>{
   const state=await ensureOwnerWorkspace(); if(!state) throw new Error('Only the Master Account can manage the Team Directory.');
