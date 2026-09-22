@@ -185,7 +185,7 @@ async function generateClinicalAnalysis(patient, apiKey) {
     if (response.status === 429 || /quota|rate.?limit|resource.?exhausted/i.test(message)) throw new Error('Gemini request limit was reached. Wait a moment and try again.');
     if (response.status === 401 || response.status === 403 || /api key|permission|unauthorized|invalid.*key/i.test(message)) throw new Error('The CardioVault AI backend credentials were rejected by Gemini.');
     if (response.status === 404 || /model.*(not found|unavailable|does not exist)/i.test(message)) throw new Error('The configured Gemini model is not available for this project.');
-    throw new Error('CardioVault AI could not complete the analysis.');
+    throw new Error(`Gemini HTTP ${response.status}: ${message.slice(0, 350)}`);
   }
 
   const raw = String(payload?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('') || '').trim();
