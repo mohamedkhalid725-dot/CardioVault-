@@ -14,7 +14,7 @@ export const TasksCenterView:React.FC=()=>{
  useEffect(()=>{const h=()=>setVersion(v=>v+1);window.addEventListener('cardiovault-task-updated',h);window.addEventListener('cardiovault-data-restored',h);return()=>{window.removeEventListener('cardiovault-task-updated',h);window.removeEventListener('cardiovault-data-restored',h)}},[]);
  const authorized=useMemo(()=>AuthorizationService.filterAuthorizedPatients<Patient>(patients.filter(p=>!p.isArchived),currentUser),[patients,currentUser]);
  const allowed=new Set(authorized.map(p=>p.id));
- const tasks=useMemo(()=>ClinicalWorkflowService.getTasks().filter(t=>!t.patientId||allowed.has(t.patientId)).filter(t=>currentUser.role==='department_admin'||currentUser.role==='consultant'||!t.unitId||currentUser.assignedUnitIds.includes(t.unitId)||t.assignedTo===currentUser.userId||t.assignedRole===currentUser.role),[version,currentUser,allowed]);
+ const tasks=useMemo(()=>ClinicalWorkflowService.getTasks().filter(t=>!t.patientId||allowed.has(t.patientId)),[version,allowed]);
  const clinicalActions=useMemo(()=>{
   const rows:{id:string;kind:'investigation'|'consult';patientId:string;patientName:string;unitId:string;title:string;status:string;priority:'routine'|'urgent'|'stat';createdAt:string;assignedTo?:string;description?:string}[]=[];
   authorized.forEach(p=>{
