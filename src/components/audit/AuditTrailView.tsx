@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ShieldCheck, Lock, Search, AlertCircle, History, Clock, FileCheck } from 'lucide-react';
 import { AuditTrailService, AuditEntry } from '../../services/auditTrailService';
 import { ClinicalCorrection } from '../../types/clinical';
+import { isMasterAccount } from '../../services/workspaceAccess';
 
 export const AuditTrailView: React.FC = () => {
   const [tab, setTab] = useState<'events' | 'corrections'>('events');
@@ -10,10 +11,21 @@ export const AuditTrailView: React.FC = () => {
     AuditTrailService.getCorrections()
   );
   const [search, setSearch] = useState('');
+  const [masterView, setMasterView] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void isMasterAccount().then(value => {
+      if (active) setMasterView(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredLogs = auditLogs.filter(
     l =>
-      l.userName.toLowerCase().includes(search.toLowerCase()) ||
+      (masterView && l.userName.toLowerCase().includes(search.toLowerCase())) ||
       l.action.toLowerCase().includes(search.toLowerCase()) ||
       (l.patientName && l.patientName.toLowerCase().includes(search.toLowerCase())) ||
       (l.reason && l.reason.toLowerCase().includes(search.toLowerCase()))
@@ -21,7 +33,7 @@ export const AuditTrailView: React.FC = () => {
 
   const filteredCorrections = corrections.filter(
     c =>
-      c.user.toLowerCase().includes(search.toLowerCase()) ||
+      (masterView && c.user.toLowerCase().includes(search.toLowerCase())) ||
       c.fieldName.toLowerCase().includes(search.toLowerCase()) ||
       c.reason.toLowerCase().includes(search.toLowerCase())
   );
@@ -113,7 +125,7 @@ export const AuditTrailView: React.FC = () => {
                       {log.role.replace('_', ' ')}
                     </span>
                     <span className="text-xs font-bold text-slate-900 dark:text-white">
-                      {log.userName}
+                      {masterView ? log.userName : 'User session active'}
                     </span>
                     <span className="text-xs text-slate-500">— {log.action}</span>
                   </div>
@@ -177,7 +189,7 @@ export const AuditTrailView: React.FC = () => {
                   </div>
 
                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                    <strong>Correction by:</strong> {c.user} • <strong>Clinical Reason:</strong>{' '}
+                    <strong>Correction by:</strong> {masterView ? c.user : 'Authorized clinician'} • <strong>Clinical Reason:</strong>{' '}
                     {c.reason}
                   </div>
                 </div>
