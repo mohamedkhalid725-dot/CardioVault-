@@ -1,7 +1,7 @@
 import {Capacitor} from '@capacitor/core';
 import {FirebaseAuthentication} from '@capacitor-firebase/authentication';
 import {FirebaseFirestore} from '@capacitor-firebase/firestore';
-import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc,getDocs as webGetDocs,webCollection} from './webFirebase';
+import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc,getDocs as webGetDocs,deleteDoc as webDeleteDoc,webCollection} from './webFirebase';
 import { AuthorizationService } from './authorizationService';
 import { UserProfile, ClinicalRole } from '../types/clinical';
 import { isSupabaseStorageConfigured, registerSupabaseUnitAccessCode, revokeSupabaseUnitAccessCode, redeemSupabaseUnitAccessCode } from './supabaseStorage';
@@ -81,6 +81,32 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
 export async function getUnitAccessCodes():Promise<UnitAccessCode[]>{const state=await ensureOwnerWorkspace();if(!state)return[];const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes`});const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];return snapshots.map((s:any)=>{const d=safe(s)||{};return{unitId:String(d.unitId||''),unitName:String(d.unitName||'Unit'),code:String(d.code||''),role:(d.role==='view_only'?'view_only':'clinical_editor') as Exclude<WorkspaceRole,'owner'>,active:d.active!==false};}).filter(x=>x.unitId&&x.code&&x.active);}
 export async function generateUnitAccessCode(unitId:string,unitName:string,role:Exclude<WorkspaceRole,'owner'>='clinical_editor'):Promise<string>{const state=await ensureOwnerWorkspace();if(!state)throw new Error('Only the Master Account can generate Unit Access Codes.');const existing=await getUnitAccessCodes();for(const item of existing.filter(x=>x.unitId===unitId&&x.active))await revokeUnitAccessCode(item.code);const code=newCode();const accessCodeHash=await hash(code);const now=new Date().toISOString();const payload={hash:accessCodeHash,code,workspaceId:MASTER_WORKSPACE_ID,unitId,unitName,role,active:true,createdAt:now};await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{...payload,createdBy:state.workspaceId},merge:false});await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:payload,merge:true});return code;}
 export async function revokeUnitAccessCode(code:string):Promise<void>{const state=await ensureOwnerWorkspace();if(!state)throw new Error('Only the Master Account can revoke Unit Access Codes.');const accessCodeHash=await hash(code);const revokedAt=new Date().toISOString();await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});try{if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/members`});const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];for(const snapshot of snapshots){const data=safe(snapshot)||{};if(String(data.accessCodeHash||'')===accessCodeHash){const memberId=String(snapshot?.id||snapshot?.documentId||snapshot?.reference?.id||'');if(memberId)await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${memberId}`,data:{active:false,forceReauth:true,revokedAt},merge:true});}}}else{const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/members`));for(const docSnap of snap.docs){const data:any=docSnap.data();if(String(data.accessCodeHash||'')===accessCodeHash)await webSetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${docSnap.id}`),{active:false,forceReauth:true,revokedAt},{merge:true});}}}catch(error){console.warn('Failed to invalidate old unit-code memberships:',error);throw new Error('The old Unit Access Code was revoked, but active memberships could not all be invalidated. Check Firestore permissions.');}}
+export type SelfClinicalRole='nurse'|'resident'|'specialist'|'consultant';
+export const SELF_CLINICAL_ROLES:SelfClinicalRole[]=['nurse','resident','specialist','consultant'];
+export async function getOwnTeamProfile():Promise<any|null>{
+  const id=await uid();
+  if(!id)return null;
+  const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
+  try{
+    if(Capacitor.isNativePlatform())return safe((await FirebaseFirestore.getDocument({reference:ref})).snapshot);
+    const snap=await webGetDoc(webDoc(ref));
+    return snap.exists()?snap.data():null;
+  }catch(error){console.warn('Own team profile lookup failed:',error);return null;}
+}
+export async function setOwnClinicalRole(role:SelfClinicalRole):Promise<any>{
+  if(!SELF_CLINICAL_ROLES.includes(role))throw new Error('Select a valid clinical role.');
+  const id=await uid();
+  if(!id)throw new Error('A Firebase account must be signed in.');
+  if(await isMasterAccount())throw new Error('The Master Account does not require a clinical role selection.');
+  const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
+  const patch={role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
+  else await webSetDoc(webDoc(ref),patch,{merge:true});
+  const users=AuthorizationService.getUsers();
+  const local=users.find(u=>u.userId===id);
+  if(local)AuthorizationService.saveUsers(users.map(u=>u.userId===id?{...u,role,updatedAt:patch.updatedAt}:u));
+  return {...(local||{}),...patch,userId:id};
+}
 export async function getTeamDirectoryMembers():Promise<any[]>{
   const id=await uid();
   if(!id) return [];
@@ -171,11 +197,34 @@ export async function updateTeamDirectoryMember(userId:string,updates:Record<str
   return patch;
 }
 export async function removeTeamDirectoryMember(userId:string):Promise<void>{
-  await updateTeamDirectoryMember(userId,{status:'inactive'});
+  const state=await ensureOwnerWorkspace();
+  if(!state)throw new Error('Only the Master Account can remove department members.');
+  if(userId===await uid())throw new Error('The Master Account cannot remove itself.');
+  const now=new Date().toISOString();
+  const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${userId}`;
+  const memberRef=`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}`;
+  const unitsRef=`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}/units`;
+  const unitIds:string[]=[];
   try{
-    if(Capacitor.isNativePlatform()) await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}`,data:{active:false,forceReauth:true,updatedAt:new Date().toISOString()},merge:true});
-    else await webSetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}`),{active:false,forceReauth:true,updatedAt:new Date().toISOString()},{merge:true});
-  }catch(error){console.warn('Member access revocation failed:',error);}
+    if(Capacitor.isNativePlatform()){
+      const result:any=await FirebaseFirestore.getCollection({reference:unitsRef});
+      for(const snapshot of result?.snapshots||[])unitIds.push(String(snapshot?.id||snapshot?.documentId||''));
+      for(const unitId of unitIds)if(unitId)await FirebaseFirestore.deleteDocument({reference:`${unitsRef}/${unitId}`});
+      await FirebaseFirestore.deleteDocument({reference:teamRef});
+      await FirebaseFirestore.deleteDocument({reference:memberRef});
+    }else{
+      const snap=await webGetDocs(webCollection(unitsRef));
+      for(const docSnap of snap.docs)await webDeleteDoc(docSnap.ref);
+      await webDeleteDoc(webDoc(teamRef));
+      await webDeleteDoc(webDoc(memberRef));
+    }
+  }catch(error){
+    console.error('Complete member removal failed:',error);
+    throw new Error('Could not completely remove this member from the department. Check Firestore permissions and try again.');
+  }
+  const users=AuthorizationService.getUsers().filter(u=>u.userId!==userId);
+  AuthorizationService.saveUsers(users);
+  void now;
 }
 export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{const id=await uid();if(!id)return null;if(await isMasterAccount())return !!(await ensureOwnerWorkspace());try{let membership:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`});membership=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`));membership=result.exists()?result.data():null;}if(!membership)return null;if(membership?.active===false||membership?.forceReauth===true)return false;if(Array.isArray(membership.unitIds)&&membership.unitIds.length)return true;const hashes=Array.from(new Set([membership.accessCodeHash,...(Array.isArray(membership.accessCodeHashes)?membership.accessCodeHashes:[])].filter(Boolean).map(String)));if(!hashes.length)return false;for(const h of hashes){let access:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${h}`});access=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`accessCodes/${h}`));access=result.exists()?result.data():null;}if(access?.active&&access.workspaceId===MASTER_WORKSPACE_ID)return true;}return false;}catch(error){console.warn('Workspace access validation failed:',error);return null;}}
 export function isOwnerAccess(){
