@@ -29,6 +29,7 @@ export interface PastAdmission { id:string; admissionDate:string; dischargeDate:
 export interface AuditEvent { id:string; timestamp:string; action:string; fields:string[]; actor?:string; }
 
 export type ClinicalRole =
+  | 'pending'
   | 'department_admin'
   | 'consultant'
   | 'specialist'
