@@ -57,7 +57,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   }
   const currentProfile = AuthorizationService.getUsers().find(u=>u.userId===id) || AuthorizationService.getCurrentUser();
   const nextRole = currentProfile?.role && !['pending','viewer'].includes(String(currentProfile.role)) ? currentProfile.role : (access.role==='view_only'?'viewer':'pending');
-  const teamProfile: UserProfile = {...currentProfile,userId:id,name:currentProfile?.name||'Clinician',email:currentProfile?.email||'',role:nextRole as ClinicalRole,departmentId:'dept-cardiology',assignedUnitIds:unitIds,status:'active',updatedAt:new Date().toISOString()};
+  const teamProfile: UserProfile = {...currentProfile,userId:id,uid:id,workspaceId:MASTER_WORKSPACE_ID,name:currentProfile?.name||'Clinician',email:currentProfile?.email||'',role:nextRole as ClinicalRole,departmentId:'dept-cardiology',assignedUnitIds:unitIds,status:'active',updatedAt:new Date().toISOString()};
   AuthorizationService.saveUsers([...AuthorizationService.getUsers().filter(u=>u.userId!==id),teamProfile]);
   try{
     const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
@@ -99,7 +99,7 @@ export async function setOwnClinicalProfile(name:string,role:SelfClinicalRole):P
   if(!id)throw new Error('A Firebase account must be signed in.');
   if(await isMasterAccount())throw new Error('The Master Account does not require a clinical role selection.');
   const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
-  const patch={name:cleanName,role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const patch={uid:id,workspaceId:MASTER_WORKSPACE_ID,name:cleanName,role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
   else await webSetDoc(webDoc(ref),patch,{merge:true});
   const users=AuthorizationService.getUsers();
