@@ -23,13 +23,24 @@ export const PersonalWorklistView: React.FC = () => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'routine' | 'urgent' | 'stat'>('routine');
   const [newTaskPatientId, setNewTaskPatientId] = useState('');
+  const [taskVersion, setTaskVersion] = useState(0);
+
+  React.useEffect(() => {
+    let active = true;
+    void ClinicalWorkflowService.hydrateTasks().finally(() => { if (active) setTaskVersion(v => v + 1); });
+    const handleTasks = () => setTaskVersion(v => v + 1);
+    window.addEventListener('cardiovault-task-updated', handleTasks);
+    return () => { active = false; window.removeEventListener('cardiovault-task-updated', handleTasks); };
+  }, []);
 
   const authorizedPatients: Patient[] = AuthorizationService.filterAuthorizedPatients<Patient>(
     patients.filter(p => !p.isArchived),
     currentUser
   );
 
-  const myTasks = tasks.filter(t => {
+  const visibleTasks = taskVersion >= 0 ? tasks : tasks;
+
+  const myTasks = visibleTasks.filter(t => {
     if (taskFilter !== 'all' && t.status !== taskFilter) return false;
     return true;
   });
