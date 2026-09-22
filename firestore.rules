@@ -65,8 +65,19 @@ service cloud.firestore {
       match /accessCodes/{hash} { allow read, write: if workspaceOwner(workspaceId); }
 
       match /team/{uid} {
-        allow get, list: if workspaceOwner(workspaceId);
-        allow create, update: if workspaceOwner(workspaceId);
+        // Department members can view the Team Directory; only the workspace owner
+        // or the member themselves can write their own profile.
+        allow get, list: if workspaceOwner(workspaceId) || member(workspaceId);
+        allow create: if workspaceOwner(workspaceId) ||
+          (signedIn() && request.auth.uid == uid &&
+           request.resource.data.uid == request.auth.uid &&
+           request.resource.data.workspaceId == workspaceId &&
+           member(workspaceId));
+        allow update: if workspaceOwner(workspaceId) ||
+          (signedIn() && request.auth.uid == uid &&
+           resource.data.uid == request.auth.uid &&
+           request.resource.data.uid == request.auth.uid &&
+           request.resource.data.workspaceId == workspaceId);
         allow delete: if workspaceOwner(workspaceId);
       }
       match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
