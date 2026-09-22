@@ -11,7 +11,7 @@ const isOverdue=(t:ClinicalTask)=>!!t.dueDateTime&&t.status!=='completed'&&t.sta
 export const TasksCenterView:React.FC=()=>{
  const{currentUser,patients,beds,setCurrentPatientId,setCurrentView,showToast}=useApp();
  const[version,setVersion]=useState(0);const[filter,setFilter]=useState<'all'|'pending'|'completed'|'overdue'>('pending');const[priority,setPriority]=useState<'all'|'stat'|'urgent'|'routine'>('all');
- useEffect(()=>{const h=()=>setVersion(v=>v+1);window.addEventListener('cardiovault-task-updated',h);window.addEventListener('cardiovault-data-restored',h);return()=>{window.removeEventListener('cardiovault-task-updated',h);window.removeEventListener('cardiovault-data-restored',h)}},[]);
+ useEffect(()=>{let active=true;void ClinicalWorkflowService.hydrateTasks().finally(()=>{if(active)setVersion(v=>v+1)});const h=()=>setVersion(v=>v+1);window.addEventListener('cardiovault-task-updated',h);window.addEventListener('cardiovault-data-restored',h);return()=>{active=false;window.removeEventListener('cardiovault-task-updated',h);window.removeEventListener('cardiovault-data-restored',h)}},[]);
  const authorized=useMemo(()=>AuthorizationService.filterAuthorizedPatients<Patient>(patients.filter(p=>!p.isArchived),currentUser),[patients,currentUser]);
  const allowed=new Set(authorized.map(p=>p.id));
  const tasks=useMemo(()=>ClinicalWorkflowService.getTasks().filter(t=>!t.patientId||allowed.has(t.patientId)),[version,allowed]);
