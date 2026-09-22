@@ -10,16 +10,27 @@ const MAX_REQUESTS_PER_WINDOW = 12;
 const requestWindows = new Map();
 let certCache = { expiresAt: 0, certs: null };
 
+function corsHeaders() {
+  return {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Cache-Control': 'no-store',
+  };
+}
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Cache-Control': 'no-store',
-    },
+    headers: corsHeaders(),
+  });
+}
+
+function optionsResponse() {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(),
   });
 }
 
@@ -185,7 +196,7 @@ async function generateClinicalAnalysis(patient, apiKey) {
 
 export default {
   async fetch(request, env) {
-    if (request.method === 'OPTIONS') return json({}, 204);
+    if (request.method === 'OPTIONS') return optionsResponse();
     if (request.method !== 'POST') return json({ error: 'POST required.' }, 405);
 
     const contentLength = Number(request.headers.get('content-length') || 0);
