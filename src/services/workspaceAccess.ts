@@ -85,7 +85,6 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
   const id=await uid();
   if(!id) return [];
   const localUsers=AuthorizationService.getUsers();
-  const localById=new Map(localUsers.map(u=>[u.userId,u]));
   const mergeProfiles=(profiles:any[])=>{
     const byId=new Map<string,any>();
     profiles.forEach(profile=>{const key=String(profile?.userId||profile?.uid||'');if(key&&!key.startsWith('user-')&&!String(profile?.email||'').endsWith('@cardiovault.org'))byId.set(key,profile);});
