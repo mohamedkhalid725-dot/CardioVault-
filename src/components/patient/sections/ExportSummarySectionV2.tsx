@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { FileDown, Eye, CheckSquare, Square, Loader2 } from 'lucide-react';
+import { FileDown, Eye, Loader2 } from 'lucide-react';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+GlobalWorkerOptions.workerSrc = pdfWorker;
 import { Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { Capacitor } from '@capacitor/core';
@@ -58,6 +62,7 @@ const imageData = async (url: string): Promise<string | null> => {
 export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient }) => {
   const { units, beds, showToast } = useApp();
   const [previewUrl, setPreviewUrl] = useState('');
+  const [previewPages, setPreviewPages] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>(sections.map(s => s[0]));
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -75,7 +80,25 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
   const closePreview = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl('');
+    setPreviewPages([]);
     setPreview(false);
+  };
+
+  const renderPdfPreview = async (pdfData: ArrayBuffer) => {
+    const pdf = await getDocument({ data: pdfData }).promise;
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const pdfPage = await pdf.getPage(pageNumber);
+      const viewport = pdfPage.getViewport({ scale: 1.35 });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) continue;
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await pdfPage.render({ canvasContext: context, viewport }).promise;
+      pages.push(canvas.toDataURL('image/png'));
+    }
+    setPreviewPages(pages);
   };
 
   const exportPdf = async (saveToDevice = true) => {
@@ -180,7 +203,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', 33, 45);
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.2);
+        doc.setFontSize(10);
         text(ink);
         doc.text(
           `MRN: ${val(patient.mrn)}   •   Age/Sex: ${val(patient.age)} / ${val(patient.sex)}   •   Unit: ${val(unit?.name)}   •   Bed: ${val(bed?.bedNumber)}`,
@@ -207,19 +230,48 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.roundedRect(x, y, w, 8, 1.8, 1.8, 'FD');
         fill(teal);
         doc.roundedRect(x, y, 2.2, 8, 1.2, 1.2, 'F');
+        fill(navy);
+        doc.circle(x + 9, y + 4, 2.2, 'F');
+        fill(white);
+        if (icon === 'patient') {
+          doc.circle(x + 9, y + 3.1, 0.7, 'F');
+          doc.roundedRect(x + 7.5, y + 4.1, 3, 2.2, 0.8, 0.8, 'F');
+        } else if (icon === 'ecg') {
+          doc.setLineWidth(0.5);
+          doc.line(x + 6.8, y + 4.2, x + 8, y + 4.2);
+          doc.line(x + 8, y + 4.2, x + 8.7, y + 2.4);
+          doc.line(x + 8.7, y + 2.4, x + 9.4, y + 5.7);
+          doc.line(x + 9.4, y + 5.7, x + 10.2, y + 3.6);
+          doc.line(x + 10.2, y + 3.6, x + 11.2, y + 3.6);
+        } else if (icon === 'meds' || icon === 'infusions') {
+          doc.roundedRect(x + 7.2, y + 3.2, 3.6, 1.6, 0.8, 0.8, 'F');
+          doc.line(x + 9, y + 3.2, x + 9, y + 4.8);
+        } else if (icon === 'labs') {
+          doc.rect(x + 7.8, y + 2.4, 2.4, 3.2, 'F');
+          doc.line(x + 7.5, y + 2.4, x + 10.5, y + 2.4);
+        } else if (icon === 'procedures' || icon === 'plan') {
+          doc.rect(x + 8.1, y + 2.4, 1.8, 3.4, 'F');
+          doc.rect(x + 7.3, y + 3.2, 3.4, 1.8, 'F');
+        } else if (icon === 'progress' || icon === 'notes') {
+          doc.rect(x + 7.5, y + 2.7, 3, 3, 'F');
+          doc.line(x + 8, y + 3.5, x + 10, y + 3.5);
+          doc.line(x + 8, y + 4.4, x + 10, y + 4.4);
+        } else {
+          doc.rect(x + 7.5, y + 2.8, 3, 2.8, 0.4, 0.4, 'F');
+        }
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         text(navy);
-        doc.text(`${icon ? icon + '  ' : ''}${label}`, x + 5, y + 5.3);
+        doc.text(label, x + 14, y + 5.3);
       };
 
       const field = (x: number, y: number, label: string, value: any, w: number) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.8);
+        doc.setFontSize(9);
         text(teal);
         doc.text(label, x, y);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.2);
+        doc.setFontSize(10);
         text(ink);
         const lines = doc.splitTextToSize(compact(value, 55) || '—', w) as string[];
         doc.text(lines.slice(0, 2), x, y + 4);
@@ -262,7 +314,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         text(teal);
         doc.text(label, x + 3, y + 4);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.6);
+        doc.setFontSize(14);
         text(ink);
         const lines = doc.splitTextToSize(compact(value, max) || '—', w - 6) as string[];
         doc.text(lines.slice(0, Math.max(1, Math.floor((h - 6) / 3.2))), x + 3, y + 8);
@@ -296,7 +348,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             draw(line);
             doc.rect(xx, yy, widths[i], rowH, 'FD');
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(6.5);
+            doc.setFontSize(10);
             text(ink);
             doc.text(compact(cell, Math.max(10, Math.floor(widths[i] / 1.8))), xx + 1.7, yy + 4.1);
             xx += widths[i];
@@ -313,7 +365,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         let y = 65;
 
         if (has('overview')) {
-          sectionTitle('Patient Information', 8, y, 194, '●');
+          sectionTitle('Patient Information', 8, y, 194, 'patient');
           y += 10;
           y = twoColumnFields(8, y, 194, [
             ['Primary Diagnosis', patient.primaryDiagnosis],
@@ -327,8 +379,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
         if (has('overview') || has('history')) {
           y += 2;
-          sectionTitle('Clinical Summary & History', 8, y, 104, '●');
-          sectionTitle('History / Examination', 108, y, 94, '●');
+          sectionTitle('Clinical Summary & History', 8, y, 104, 'history');
+          sectionTitle('History / Examination', 108, y, 94, 'exam');
           y += 10;
           const summary: any = (patient as any).clinicalSummary || {};
           paragraphBox(8, y, 104, 27, 'Clinical Summary', summary.summary || summary.hpi || patient.primaryDiagnosis, 170);
@@ -341,8 +393,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('vitals')) {
-          sectionTitle('Vitals & Balance (Latest)', 8, y, 96, '♥');
-          sectionTitle('Investigations (Latest)', 106, y, 96, '◆');
+          sectionTitle('Vitals & Balance (Latest)', 8, y, 96, 'vitals');
+          sectionTitle('Investigations (Latest)', 106, y, 96, 'labs');
           y += 10;
 
           const v: any = (patient as any).vitalsHistory?.[0] || {};
@@ -367,7 +419,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('ecg')) {
-          sectionTitle('ECG (Latest)', 8, y, 96, '∿');
+          sectionTitle('ECG (Latest)', 8, y, 96, 'ecg');
           const e: any = (patient as any).ecgRecords?.[0] || {};
           y += 10;
           paragraphBox(8, y, 96, 38, 'Interpretation', e.finalImpression || e.interpretation?.join(' • '), 160);
@@ -391,7 +443,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('cardiology')) {
-          sectionTitle('Echocardiography (Latest)', 8, y, 194, '♥');
+          sectionTitle('Echocardiography (Latest)', 8, y, 194, 'echo');
           y += 10;
           const echo: any = (patient as any).cardiology?.echo || {};
           twoColumnFields(8, y, 194, [
@@ -416,8 +468,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         let y = 65;
 
         if (has('medications')) {
-          sectionTitle('Medications (Current)', 8, y, 112, '▣');
-          sectionTitle('Infusions (Current)', 122, y, 80, '◆');
+          sectionTitle('Medications (Current)', 8, y, 112, 'meds');
+          sectionTitle('Infusions (Current)', 122, y, 80, 'infusions');
           y += 10;
 
           const meds: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
@@ -434,8 +486,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('procedures')) {
-          sectionTitle('Procedures & Interventions', 8, y, 112, '✚');
-          sectionTitle('Lines & Devices', 122, y, 80, '◆');
+          sectionTitle('Procedures & Interventions', 8, y, 112, 'procedures');
+          sectionTitle('Lines & Devices', 122, y, 80, 'devices');
           y += 10;
 
           const procedures: any[] = (patient as any).procedures || [];
@@ -452,8 +504,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('cardiology')) {
-          sectionTitle('Cardiology', 8, y, 96, '♥');
-          sectionTitle('ICU', 106, y, 96, '◆');
+          sectionTitle('Cardiology', 8, y, 96, 'cardiology');
+          sectionTitle('ICU', 106, y, 96, 'icu');
           y += 10;
 
           const c: any = (patient as any).cardiology || {};
@@ -480,7 +532,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('progress')) {
-          sectionTitle('Progress Notes (Latest)', 8, y, 194, '●');
+          sectionTitle('Progress Notes (Latest)', 8, y, 194, 'progress');
           y += 10;
           const notes: any[] = (patient as any).progressNotes || [];
           table(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notes.map(n => [
@@ -492,8 +544,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('calculators') || has('timeline') || has('overview')) {
-          sectionTitle('Plan & Follow Up', 8, y, 112, '✓');
-          sectionTitle('Additional Notes', 122, y, 80, '▣');
+          sectionTitle('Plan & Follow Up', 8, y, 112, 'plan');
+          sectionTitle('Additional Notes', 122, y, 80, 'notes');
           y += 10;
 
           const latest: any = (patient as any).progressNotes?.[0] || {};
@@ -512,10 +564,16 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       drawSecondPage();
 
       const blob = doc.output('blob');
+      const pdfData = doc.output('arraybuffer') as ArrayBuffer;
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       const objectUrl = URL.createObjectURL(blob);
       setPreviewUrl(objectUrl);
       setPreview(true);
+      setPreviewPages([]);
+      void renderPdfPreview(pdfData).catch(error => {
+        console.error('CardioVault PDF preview rendering failed:', error);
+        showToast('Preview could not be rendered. The PDF is still valid and can be saved.', 'error');
+      });
 
       const filename = `CardioVault-${patient.mrn || patient.id}.pdf`;
 
@@ -578,8 +636,11 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
                 ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
                 : 'border-slate-200 dark:border-slate-800 text-slate-500'}`}
             >
-              {has(id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-              {label}
+              <span className="w-6 h-6 rounded-lg bg-cyan-500/10 text-cyan-500 flex items-center justify-center text-[9px] font-black shrink-0">
+                {id === 'ecg' ? 'ECG' : id === 'labs' ? 'LAB' : id === 'imaging' ? 'IMG' : id === 'medications' ? 'RX' : id === 'procedures' ? 'PRO' : id === 'calculators' ? 'CAL' : id === 'progress' ? 'NOTE' : id === 'timeline' ? 'TL' : id === 'cardiology' ? '♥' : id === 'icu' ? 'ICU' : '•'}
+              </span>
+              <span className="flex-1">{label}</span>
+              <span className={has(id) ? "w-2 h-2 rounded-full bg-emerald-500 shrink-0" : "w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700 shrink-0"} />
             </button>
           ))}
         </div>
@@ -597,14 +658,18 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
               <button onClick={closePreview} className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold">Close</button>
             </div>
           </div>
-          {previewUrl ? (
-            <iframe
-              title="CardioVault PDF Preview"
-              src={previewUrl}
-              className="mt-4 w-full h-[70vh] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white"
-            />
+          {previewPages.length ? (
+            <div className="mt-4 space-y-4 max-h-[75vh] overflow-auto rounded-2xl bg-slate-100 dark:bg-slate-950 p-2">
+              {previewPages.map((pageImage, index) => (
+                <div key={index} className="bg-white rounded-xl shadow-sm overflow-hidden">
+                  <img src={pageImage} alt={`PDF page ${index + 1}`} className="block w-full h-auto" />
+                </div>
+              ))}
+            </div>
           ) : (
-            <div className="mt-4 h-40 flex items-center justify-center text-xs text-slate-400">Generating preview…</div>
+            <div className="mt-4 h-40 flex items-center justify-center text-xs text-slate-400">
+              Rendering the actual PDF pages…
+            </div>
           )}
         </div>
       )}
