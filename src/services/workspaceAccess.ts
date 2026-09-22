@@ -200,7 +200,6 @@ export async function removeTeamDirectoryMember(userId:string):Promise<void>{
   const state=await ensureOwnerWorkspace();
   if(!state)throw new Error('Only the Master Account can remove department members.');
   if(userId===await uid())throw new Error('The Master Account cannot remove itself.');
-  const now=new Date().toISOString();
   const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${userId}`;
   const memberRef=`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}`;
   const unitsRef=`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}/units`;
@@ -224,7 +223,6 @@ export async function removeTeamDirectoryMember(userId:string):Promise<void>{
   }
   const users=AuthorizationService.getUsers().filter(u=>u.userId!==userId);
   AuthorizationService.saveUsers(users);
-  void now;
 }
 export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{const id=await uid();if(!id)return null;if(await isMasterAccount())return !!(await ensureOwnerWorkspace());try{let membership:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`});membership=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`));membership=result.exists()?result.data():null;}if(!membership)return null;if(membership?.active===false||membership?.forceReauth===true)return false;if(Array.isArray(membership.unitIds)&&membership.unitIds.length)return true;const hashes=Array.from(new Set([membership.accessCodeHash,...(Array.isArray(membership.accessCodeHashes)?membership.accessCodeHashes:[])].filter(Boolean).map(String)));if(!hashes.length)return false;for(const h of hashes){let access:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${h}`});access=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`accessCodes/${h}`));access=result.exists()?result.data():null;}if(access?.active&&access.workspaceId===MASTER_WORKSPACE_ID)return true;}return false;}catch(error){console.warn('Workspace access validation failed:',error);return null;}}
 export function isOwnerAccess(){
