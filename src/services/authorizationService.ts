@@ -54,7 +54,7 @@ const normalizeUserProfile = (user: any): UserProfile => ({
   userId: String(user?.userId || ''),
   name: String(user?.name || user?.email?.split('@')?.[0] || 'Clinician'),
   email: String(user?.email || '').trim().toLowerCase(),
-  role: user?.role || 'resident',
+  role: user?.role || 'pending',
   departmentId: String(user?.departmentId || 'dept-cardiology'),
   assignedUnitIds: Array.isArray(user?.assignedUnitIds) ? user.assignedUnitIds.map(String) : [],
   status: user?.status || 'active',
