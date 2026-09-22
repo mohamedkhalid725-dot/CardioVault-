@@ -88,15 +88,9 @@ export async function webGoogleSignIn(): Promise<User> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  // Mobile browsers and embedded/in-app browsers frequently block Firebase popups.
-  // Use the redirect flow on small screens so Google can present the account chooser
-  // reliably, then restore the Firebase session from getRedirectResult() on boot.
-  const useRedirect = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
-  if (useRedirect) {
-    await signInWithRedirect(auth, provider);
-    throw new Error('Redirecting to Google Sign-In...');
-  }
-
+  // Start with the popup flow even on mobile. The button click is a direct
+  // user gesture, so Chrome can open Google's account chooser immediately.
+  // If the browser blocks the popup, fall back to redirect as a second path.
   try {
     const result = await signInWithPopup(auth, provider);
     return result.user;
