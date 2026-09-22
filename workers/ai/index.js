@@ -1,7 +1,7 @@
 import { decodeProtectedHeader, importX509, jwtVerify } from 'jose';
 
 const PROJECT_ID = 'ccu-notebook';
-const MODEL = 'gemini-3.8-flash';
+const MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash'];
 const FIREBASE_ISSUER = `https://securetoken.google.com/${PROJECT_ID}`;
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const MAX_BODY_BYTES = 450000;
@@ -143,55 +143,86 @@ function normalizeResult(data) {
 }
 
 async function generateClinicalAnalysis(patient, apiKey) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: buildPrompt(patient) }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            diagnosticAnalysis: { type: 'STRING' },
-            differentialDiagnoses: {
-              type: 'ARRAY',
-              items: {
+  const models = [...MODELS];
+  let lastError = null;
+
+  for (const model of models) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: buildPrompt(patient) }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              responseSchema: {
                 type: 'OBJECT',
                 properties: {
-                  diagnosis: { type: 'STRING' },
-                  rationale: { type: 'STRING' },
-                  urgency: { type: 'STRING', enum: ['routine', 'important', 'urgent'] },
+                  diagnosticAnalysis: { type: 'STRING' },
+                  differentialDiagnoses: {
+                    type: 'ARRAY',
+                    items: {
+                      type: 'OBJECT',
+                      properties: {
+                        diagnosis: { type: 'STRING' },
+                        rationale: { type: 'STRING' },
+                        urgency: { type: 'STRING', enum: ['routine', 'important', 'urgent'] },
+                      },
+                      required: ['diagnosis', 'rationale', 'urgency'],
+                    },
+                  },
+                  recommendedActions: { type: 'ARRAY', items: { type: 'STRING' } },
+                  safetyChecks: { type: 'ARRAY', items: { type: 'STRING' } },
+                  missingData: { type: 'ARRAY', items: { type: 'STRING' } },
+                  confidence: { type: 'STRING', enum: ['low', 'moderate', 'high'] },
                 },
-                required: ['diagnosis', 'rationale', 'urgency'],
+                required: ['diagnosticAnalysis', 'differentialDiagnoses', 'recommendedActions', 'safetyChecks', 'missingData', 'confidence'],
               },
+              maxOutputTokens: 5000,
             },
-            recommendedActions: { type: 'ARRAY', items: { type: 'STRING' } },
-            safetyChecks: { type: 'ARRAY', items: { type: 'STRING' } },
-            missingData: { type: 'ARRAY', items: { type: 'STRING' } },
-            confidence: { type: 'STRING', enum: ['low', 'moderate', 'high'] },
-          },
-          required: ['diagnosticAnalysis', 'differentialDiagnoses', 'recommendedActions', 'safetyChecks', 'missingData', 'confidence'],
-        },
-        maxOutputTokens: 5000,
-      },
-    }),
-  });
+          }),
+        });
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = String(payload?.error?.message || payload?.error || 'Gemini request failed.');
-    if (response.status === 429 || /quota|rate.?limit|resource.?exhausted/i.test(message)) throw new Error('Gemini request limit was reached. Wait a moment and try again.');
-    if (response.status === 401 || response.status === 403 || /api key|permission|unauthorized|invalid.*key/i.test(message)) throw new Error('The CardioVault AI backend credentials were rejected by Gemini.');
-    if (response.status === 404 || /model.*(not found|unavailable|does not exist)/i.test(message)) throw new Error('The configured Gemini model is not available for this project.');
-    throw new Error(`Gemini HTTP ${response.status}: ${message.slice(0, 350)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = String(payload?.error?.message || payload?.error || 'Gemini request failed.');
+          lastError = new Error(`Gemini ${model} HTTP ${response.status}: ${message.slice(0, 350)}`);
+
+          if (response.status === 429 || /quota|rate.?limit|resource.?exhausted/i.test(message)) {
+            if (attempt === 0) { await new Promise(resolve => setTimeout(resolve, 1200)); continue; }
+            break;
+          }
+          if (response.status === 500 || response.status === 502 || response.status === 503 || /high demand|temporarily unavailable|overloaded|internal server/i.test(message)) {
+            if (attempt === 0) { await new Promise(resolve => setTimeout(resolve, 1000)); continue; }
+            break;
+          }
+          if (response.status === 401 || response.status === 403 || /api key|permission|unauthorized|invalid.*key/i.test(message)) {
+            throw new Error('The CardioVault AI backend credentials were rejected by Gemini.');
+          }
+          if (response.status === 404 || /model.*(not found|unavailable|does not exist)/i.test(message)) {
+            break;
+          }
+          throw lastError;
+        }
+
+        const raw = String(payload?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('') || '').trim();
+        if (!raw) throw new Error(`Gemini ${model} returned an empty clinical response.`);
+        const cleaned = raw.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '').trim();
+        return normalizeResult(JSON.parse(cleaned));
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt === 0 && /fetch|network|timed out|temporarily unavailable/i.test(lastError.message)) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        break;
+      }
+    }
   }
 
-  const raw = String(payload?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('') || '').trim();
-  if (!raw) throw new Error('Gemini returned an empty clinical response.');
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  return normalizeResult(JSON.parse(cleaned));
+  throw lastError || new Error('All Gemini AI models are temporarily unavailable. Please try again later.');
 }
 
 export default {
