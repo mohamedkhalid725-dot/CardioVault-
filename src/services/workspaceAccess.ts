@@ -93,18 +93,18 @@ export async function getOwnTeamProfile():Promise<any|null>{
     return snap.exists()?snap.data():null;
   }catch(error){console.warn('Own team profile lookup failed:',error);return null;}
 }
-export async function setOwnClinicalRole(role:SelfClinicalRole):Promise<any>{
-  if(!SELF_CLINICAL_ROLES.includes(role))throw new Error('Select a valid clinical role.');
+export async function setOwnClinicalProfile(name:string,role:SelfClinicalRole):Promise<any>{
+  const cleanName=String(name||'').trim();if(!cleanName)throw new Error('Enter your name.');if(!SELF_CLINICAL_ROLES.includes(role))throw new Error('Select a valid clinical role.');
   const id=await uid();
   if(!id)throw new Error('A Firebase account must be signed in.');
   if(await isMasterAccount())throw new Error('The Master Account does not require a clinical role selection.');
   const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
-  const patch={role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const patch={name:cleanName,role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
   else await webSetDoc(webDoc(ref),patch,{merge:true});
   const users=AuthorizationService.getUsers();
   const local=users.find(u=>u.userId===id);
-  if(local)AuthorizationService.saveUsers(users.map(u=>u.userId===id?{...u,role,updatedAt:patch.updatedAt}:u));
+  if(local)AuthorizationService.saveUsers(users.map(u=>u.userId===id?{...u,name:cleanName,role,updatedAt:patch.updatedAt}:u));
   return {...(local||{}),...patch,userId:id};
 }
 export async function getTeamDirectoryMembers():Promise<any[]>{
@@ -164,7 +164,7 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
   }
 }
 export async function updateTeamDirectoryMember(userId:string,updates:Record<string,any>):Promise<any>{
-  const state=await ensureOwnerWorkspace(); if(!state) throw new Error('Only the Master Account can manage the Team Directory.');
+  const master=await isMasterAccount(); const own=await getOwnTeamProfile(); if(!master&&own?.role!=='department_admin') throw new Error('Only the Master Account or Department Admin can manage the Team Directory.');
   const cleanUnitIds=Array.from(new Set(Array.isArray(updates.assignedUnitIds)?updates.assignedUnitIds.map(String).filter(Boolean):[]));
   if(!cleanUnitIds.length) throw new Error('Assign at least one clinical unit.');
   const now=new Date().toISOString();
@@ -197,9 +197,8 @@ export async function updateTeamDirectoryMember(userId:string,updates:Record<str
   return patch;
 }
 export async function removeTeamDirectoryMember(userId:string):Promise<void>{
-  const state=await ensureOwnerWorkspace();
-  if(!state)throw new Error('Only the Master Account can remove department members.');
-  if(userId===await uid())throw new Error('The Master Account cannot remove itself.');
+  const master=await isMasterAccount(); const own=await getOwnTeamProfile(); if(!master&&own?.role!=='department_admin')throw new Error('Only the Master Account or Department Admin can remove department members.');
+  if(userId===await uid())throw new Error('You cannot remove your own account from the department.');
   const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${userId}`;
   const memberRef=`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}`;
   const unitsRef=`workspaces/${MASTER_WORKSPACE_ID}/members/${userId}/units`;
