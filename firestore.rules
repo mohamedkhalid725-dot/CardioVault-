@@ -79,7 +79,8 @@ service cloud.firestore {
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.workspaceId == workspaceId &&
-           !resource.data.keys().hasAll(['roleSelectedAt']));
+           request.resource.data.roleSelectedAt != null &&
+           (!('roleSelectedAt' in resource.data) || request.resource.data.roleSelectedAt == resource.data.roleSelectedAt));
         allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
       match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
