@@ -8,6 +8,7 @@ service cloud.firestore {
     function workspaceOwner(workspaceId) { return masterAccount() && masterWorkspace(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid; }
     function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
+    function departmentAdmin(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'department_admin'; }
     function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true && get(/databases/$(database)/documents/accessCodes/$(hash)).data.workspaceId == 'cardiovault_master_workspace'; }
     function unitMember(workspaceId,unitId) {
       return member(workspaceId) &&
@@ -48,18 +49,18 @@ service cloud.firestore {
         allow get: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
         allow list: if workspaceOwner(workspaceId);
         allow create: if signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
-        allow update: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId);
-        allow delete: if workspaceOwner(workspaceId);
+        allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) || (signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId);
+        allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
 
       match /members/{uid}/units/{unitId} {
         allow get, list: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
-        allow create, update: if workspaceOwner(workspaceId) ||
+        allow create, update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            validAccessCode(request.resource.data.accessCodeHash) &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.unitId == unitId);
-        allow delete: if workspaceOwner(workspaceId);
+        allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
 
       match /accessCodes/{hash} { allow read, write: if workspaceOwner(workspaceId); }
@@ -73,12 +74,12 @@ service cloud.firestore {
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.workspaceId == workspaceId &&
            member(workspaceId));
-        allow update: if workspaceOwner(workspaceId) ||
+        allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.workspaceId == workspaceId);
-        allow delete: if workspaceOwner(workspaceId);
+        allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
       match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
       match /beds/{bedId} {
