@@ -85,6 +85,9 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
   const id=await uid();
   if(!id) return [];
   try{
+    // The master account must bootstrap/validate the workspace before listing the team.
+    // This also guarantees that the owner's team profile exists before the directory query.
+    if(await isMasterAccount()) await ensureOwnerWorkspace();
     if(Capacitor.isNativePlatform()){
       const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/team`});
       return (result?.snapshots||[]).map((s:any)=>safe(s)||{}).filter((x:any)=>(x?.uid||x?.userId)&&!String(x?.userId||x?.uid).startsWith('user-')&&!String(x?.email||'').endsWith('@cardiovault.org'));
