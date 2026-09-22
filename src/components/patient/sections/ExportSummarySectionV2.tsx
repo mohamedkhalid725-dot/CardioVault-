@@ -604,8 +604,10 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       await drawFirstPage();
       drawSecondPage();
 
-      const blob = doc.output('blob');
+      // Build the Blob from the ArrayBuffer explicitly. This avoids the Android
+      // WebView/jsPDF blob-output path that can throw after the PDF was generated.
       const pdfData = doc.output('arraybuffer') as ArrayBuffer;
+      const blob = new Blob([pdfData], { type: 'application/pdf' });
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       const objectUrl = URL.createObjectURL(blob);
       setPreviewUrl(objectUrl);
