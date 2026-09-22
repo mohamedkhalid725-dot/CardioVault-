@@ -123,26 +123,26 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         logo();
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(19);
+        doc.setFontSize(21);
         text(white);
         doc.text('Cardio', 31, 15);
         text(cyan);
         doc.text('Vault', 58, 15);
 
-        doc.setFontSize(7.5);
+        doc.setFontSize(8.2);
         text(white);
         doc.text('ICU & CCU Clinical Record', 31, 21);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.8);
+        doc.setFontSize(6.8);
         text([175, 218, 225]);
         doc.text('Your Patients. Your Data. Always With You.', 31, 26);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7);
+        doc.setFontSize(8);
         text(cyan);
         doc.text('CLINICAL REPORT', 166, 11);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.5);
+        doc.setFontSize(6.6);
         text([205, 230, 235]);
         doc.text('Confidential Medical Record', 166, 17);
       };
@@ -154,13 +154,13 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.setLineWidth(0.3);
         doc.line(8, 281, 202, 281);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.7);
+        doc.setFontSize(7);
         text(muted);
         doc.text('CardioVault  •  ICU & CCU Clinical Record', 9, 288);
         doc.text('Confidential Medical Record', 9, 292);
         doc.setFont('helvetica', 'bold');
         text(navy);
-        doc.text(`Page ${page} of 2`, 178, 292);
+        doc.text(`Page ${page} of 4`, 178, 292);
       };
 
       const patientBanner = () => {
@@ -175,12 +175,12 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.roundedRect(17.5, 48, 7, 4.5, 1.5, 1.5, 'F');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10.5);
+        doc.setFontSize(13);
         text(navy);
         doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', 33, 45);
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.8);
+        doc.setFontSize(7.2);
         text(ink);
         doc.text(
           `MRN: ${val(patient.mrn)}   •   Age/Sex: ${val(patient.age)} / ${val(patient.sex)}   •   Unit: ${val(unit?.name)}   •   Bed: ${val(bed?.bedNumber)}`,
@@ -196,7 +196,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         fill(teal);
         doc.roundedRect(174, 39, 23, 7, 2, 2, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5.2);
+        doc.setFontSize(7.5);
         text(white);
         doc.text(val(patient.status, 'ACTIVE').toUpperCase(), 177, 44);
       };
@@ -208,14 +208,14 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         fill(teal);
         doc.roundedRect(x, y, 2.2, 8, 1.2, 1.2, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.1);
+        doc.setFontSize(9);
         text(navy);
         doc.text(`${icon ? icon + '  ' : ''}${label}`, x + 5, y + 5.3);
       };
 
       const field = (x: number, y: number, label: string, value: any, w: number) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5.5);
+        doc.setFontSize(6.8);
         text(teal);
         doc.text(label, x, y);
         doc.setFont('helvetica', 'normal');
@@ -262,7 +262,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         text(teal);
         doc.text(label, x + 3, y + 4);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.9);
+        doc.setFontSize(7.6);
         text(ink);
         const lines = doc.splitTextToSize(compact(value, max) || '—', w - 6) as string[];
         doc.text(lines.slice(0, Math.max(1, Math.floor((h - 6) / 3.2))), x + 3, y + 8);
@@ -283,7 +283,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         headers.forEach((h, i) => {
           doc.rect(xx, y, widths[i], rowH, 'FD');
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(5.1);
+          doc.setFontSize(6.6);
           text(navy);
           doc.text(compact(h, 18), xx + 1.7, y + 4.1);
           xx += widths[i];
@@ -296,7 +296,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             draw(line);
             doc.rect(xx, yy, widths[i], rowH, 'FD');
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(5.0);
+            doc.setFontSize(6.5);
             text(ink);
             doc.text(compact(cell, Math.max(10, Math.floor(widths[i] / 1.8))), xx + 1.7, yy + 4.1);
             xx += widths[i];
@@ -555,7 +555,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           <div>
             <h2 className="text-xl font-bold">Clinical PDF Export</h2>
             <p className="text-xs text-slate-500 mt-1">
-              CardioVault premium clinical template • maximum 2 A4 pages • Arabic patient names supported.
+              CardioVault premium clinical template • up to 4 A4 pages • Arabic patient names supported.
             </p>
           </div>
           <div className="flex gap-2">
@@ -590,7 +590,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="font-bold">PDF Preview</h3>
-              <p className="text-xs text-slate-500">Real generated PDF • fixed maximum of 2 pages.</p>
+              <p className="text-xs text-slate-500">Real generated PDF • up to 4 pages.</p>
             </div>
             <div className="flex gap-2">
               <button onClick={() => void exportPdf(true)} disabled={busy} className="px-3 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold">Save PDF</button>
