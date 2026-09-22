@@ -470,7 +470,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             const data = await imageData(ecgUrl);
             if (data) {
               try {
-                doc.addImage(data, 108, y, 94, 38, 'JPEG', undefined, 'FAST');
+                doc.addImage(data, 'JPEG', 108, y, 94, 38, undefined, 'FAST');
               } catch {
                 paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
               }
