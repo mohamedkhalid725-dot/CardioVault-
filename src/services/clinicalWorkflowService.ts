@@ -12,10 +12,71 @@ import {
   Bed,
 } from '../types/clinical';
 import { AuditTrailService } from './auditTrailService';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseFirestore } from '@capacitor-firebase/firestore';
+import { webDoc, webCollection, getDocs as webGetDocs, setDoc as webSetDoc } from './webFirebase';
 
 const TASKS_KEY = 'cardiovault_clinical_tasks_v2';
 const PROTOCOLS_KEY = 'cardiovault_clinical_protocols_v2';
 const TEMPLATES_KEY = 'cardiovault_med_templates_v2';
+const TASK_WORKSPACE_ID = 'cardiovault_master_workspace';
+const TASK_COLLECTION = `workspaces/${TASK_WORKSPACE_ID}/tasks`;
+
+const safeSnapshot = (snapshot: any): any => {
+  try { return typeof snapshot?.data === 'function' ? (snapshot.data() || null) : (snapshot?.data || null); }
+  catch { return null; }
+};
+
+async function readCloudTasks(): Promise<ClinicalTask[]> {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const result: any = await FirebaseFirestore.getCollection({ reference: TASK_COLLECTION });
+      return (result?.snapshots || [])
+        .map((snapshot: any) => safeSnapshot(snapshot))
+        .filter(Boolean) as ClinicalTask[];
+    }
+    const snap = await webGetDocs(webCollection(TASK_COLLECTION));
+    return snap.docs.map(doc => doc.data() as ClinicalTask);
+  } catch (error) {
+    console.warn('Clinical task cloud read failed:', error);
+    return [];
+  }
+}
+
+async function writeCloudTask(task: ClinicalTask): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    await FirebaseFirestore.setDocument({
+      reference: `${TASK_COLLECTION}/${task.id}`,
+      data: task,
+      merge: true,
+    });
+    return;
+  }
+  await webSetDoc(webDoc(`${TASK_COLLECTION}/${task.id}`), task, { merge: true });
+}
+
+async function writeCloudTasks(tasks: ClinicalTask[]): Promise<void> {
+  for (const task of tasks) {
+    try { await writeCloudTask(task); }
+    catch (error) { console.warn('Clinical task cloud write failed:', task.id, error); }
+  }
+}
+
+async function syncTasksFromCloud(): Promise<ClinicalTask[]> {
+  const local = ClinicalWorkflowService.getTasks();
+  const remote = await readCloudTasks();
+  if (!remote.length) return local;
+
+  const merged = new Map<string, ClinicalTask>();
+  local.forEach(task => merged.set(task.id, task));
+  remote.forEach(task => merged.set(task.id, { ...merged.get(task.id), ...task }));
+  const result = Array.from(merged.values()).sort((a, b) =>
+    String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+  );
+  ClinicalWorkflowService.saveTasks(result);
+  window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
+  return result;
+}
 
 export const DEFAULT_PROTOCOLS: ClinicalProtocol[] = [
   {
@@ -90,7 +151,6 @@ export interface AttentionItem {
 }
 
 export const ClinicalWorkflowService = {
-  // Global Tasks
   getTasks(): ClinicalTask[] {
     try {
       const raw = localStorage.getItem(TASKS_KEY);
@@ -100,9 +160,15 @@ export const ClinicalWorkflowService = {
   },
 
   saveTasks(tasks: ClinicalTask[]): void {
-    try {
-      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-    } catch {}
+    try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {}
+  },
+
+  async hydrateTasks(): Promise<ClinicalTask[]> {
+    return syncTasksFromCloud();
+  },
+
+  async publishLocalTasks(): Promise<void> {
+    await writeCloudTasks(this.getTasks());
   },
 
   addTask(task: Omit<ClinicalTask, 'id' | 'createdAt'>): ClinicalTask {
@@ -110,9 +176,11 @@ export const ClinicalWorkflowService = {
     const newTask: ClinicalTask = {
       id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       createdAt: new Date().toISOString(),
+      departmentId: task.departmentId || 'dept-cardiology',
       ...task,
     };
     this.saveTasks([newTask, ...tasks]);
+    void writeCloudTask(newTask).catch(error => console.warn('Task cloud publish failed:', error));
     window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
     return newTask;
   },
@@ -130,10 +198,11 @@ export const ClinicalWorkflowService = {
         : t
     );
     this.saveTasks(updated);
+    const changed = updated.find(t => t.id === taskId);
+    if (changed) void writeCloudTask(changed).catch(error => console.warn('Task status cloud publish failed:', error));
     window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
   },
 
-  // Protocols
   getProtocols(): ClinicalProtocol[] {
     try {
       const raw = localStorage.getItem(PROTOCOLS_KEY);
@@ -144,12 +213,9 @@ export const ClinicalWorkflowService = {
   },
 
   saveProtocols(protocols: ClinicalProtocol[]): void {
-    try {
-      localStorage.setItem(PROTOCOLS_KEY, JSON.stringify(protocols));
-    } catch {}
+    try { localStorage.setItem(PROTOCOLS_KEY, JSON.stringify(protocols)); } catch {}
   },
 
-  // Medication Templates
   getMedTemplates(): MedicationTemplate[] {
     try {
       const raw = localStorage.getItem(TEMPLATES_KEY);
@@ -160,9 +226,7 @@ export const ClinicalWorkflowService = {
   },
 
   saveMedTemplates(templates: MedicationTemplate[]): void {
-    try {
-      localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
-    } catch {}
+    try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates)); } catch {}
   },
 
   addMedTemplate(template: Omit<MedicationTemplate, 'id' | 'createdAt'>): MedicationTemplate {
@@ -181,7 +245,6 @@ export const ClinicalWorkflowService = {
     this.saveMedTemplates(templates.filter(t => t.id !== id));
   },
 
-  // Attention Board Builder
   buildAttentionBoard(patients: Patient[], beds: Bed[], user: UserProfile): AttentionItem[] {
     const items: AttentionItem[] = [];
     const tasks = this.getTasks();
@@ -189,137 +252,61 @@ export const ClinicalWorkflowService = {
 
     patients.forEach(patient => {
       if (patient.isArchived) return;
-
       const bed = beds.find(b => b.id === patient.bedId);
       const bedNumber = bed?.bedNumber || 'Unassigned';
 
-      // 1. Critical status
       if (patient.status === 'Critical') {
-        items.push({
-          patientId: patient.id,
-          patientName: patient.fullName,
-          unitId: patient.unitId,
-          bedNumber,
-          type: 'critical_status',
-          description: `Patient is clinically Critical (${patient.primaryDiagnosis})`,
-          urgency: 'critical',
-        });
+        items.push({ patientId: patient.id, patientName: patient.fullName, unitId: patient.unitId, bedNumber, type: 'critical_status', description: `Patient is clinically Critical (${patient.primaryDiagnosis})`, urgency: 'critical' });
       }
 
-      // 2. New admission today
       if (patient.admissionDate === todayStr) {
-        items.push({
-          patientId: patient.id,
-          patientName: patient.fullName,
-          unitId: patient.unitId,
-          bedNumber,
-          type: 'new_admission',
-          description: `New Admission at ${patient.admissionTime || 'today'} - Initial workup`,
-          urgency: 'important',
-        });
+        items.push({ patientId: patient.id, patientName: patient.fullName, unitId: patient.unitId, bedNumber, type: 'new_admission', description: `New Admission at ${patient.admissionTime || 'today'} - Initial workup`, urgency: 'important' });
       }
 
-      // 3. Pending tasks for this patient
       const patientTasks = tasks.filter(t => t.patientId === patient.id && t.status === 'pending');
       patientTasks.forEach(task => {
-        items.push({
-          patientId: patient.id,
-          patientName: patient.fullName,
-          unitId: patient.unitId,
-          bedNumber,
-          type: 'pending_task',
-          description: `Task pending: ${task.title} (${task.priority.toUpperCase()})`,
-          urgency: task.priority === 'stat' ? 'critical' : task.priority === 'urgent' ? 'important' : 'routine',
-        });
+        items.push({ patientId: patient.id, patientName: patient.fullName, unitId: patient.unitId, bedNumber, type: 'pending_task', description: `Task pending: ${task.title} (${task.priority.toUpperCase()})`, urgency: task.priority === 'stat' ? 'critical' : task.priority === 'urgent' ? 'important' : 'routine' });
       });
 
-      // 4. Pending investigations or unreviewed results
       const invs = patient.investigations || [];
       invs.forEach(inv => {
         if (inv.status === 'ordered' || inv.status === 'pending') {
-          items.push({
-            patientId: patient.id,
-            patientName: patient.fullName,
-            unitId: patient.unitId,
-            bedNumber,
-            type: 'pending_investigation',
-            description: `${inv.type} investigation is pending laboratory / imaging completion`,
-            urgency: 'routine',
-          });
+          items.push({ patientId: patient.id, patientName: patient.fullName, unitId: patient.unitId, bedNumber, type: 'pending_investigation', description: `${inv.type} investigation is pending laboratory / imaging completion`, urgency: 'routine' });
         } else if (inv.status === 'available') {
-          items.push({
-            patientId: patient.id,
-            patientName: patient.fullName,
-            unitId: patient.unitId,
-            bedNumber,
-            type: 'unreviewed_result',
-            description: `${inv.type} results available — awaiting physician clinical review`,
-            urgency: inv.flag === 'critical' ? 'critical' : 'important',
-          });
+          items.push({ patientId: patient.id, patientName: patient.fullName, unitId: patient.unitId, bedNumber, type: 'unreviewed_result', description: `${inv.type} results available — awaiting physician clinical review`, urgency: inv.flag === 'critical' ? 'critical' : 'important' });
         }
       });
 
-      // 5. Handover pending (if no handover created today)
       const handovers = patient.shiftHandovers || [];
       const hasTodayHandover = handovers.some(h => h.timestamp.startsWith(todayStr));
       if (!hasTodayHandover && patient.status !== 'Stable') {
-        items.push({
-          patientId: patient.id,
-          patientName: patient.fullName,
-          unitId: patient.unitId,
-          bedNumber,
-          type: 'handover_pending',
-          description: 'Shift clinical handover documentation pending update',
-          urgency: 'routine',
-        });
+        items.push({ patientId: patient.id, patientName: patient.fullName, unitId: patient.unitId, bedNumber, type: 'handover_pending', description: 'Shift clinical handover documentation pending update', urgency: 'routine' });
       }
     });
 
     return items;
   },
 
-  // Department Statistics
   computeDepartmentStatistics(patients: Patient[], beds: Bed[]) {
     const active = patients.filter(p => !p.isArchived);
     const totalBeds = beds.length;
     const occupiedBeds = beds.filter(b => b.status !== 'Empty' && b.patientId).length;
     const availableBeds = Math.max(0, totalBeds - occupiedBeds);
     const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
-
     const todayStr = new Date().toISOString().split('T')[0];
     const newAdmissionsToday = patients.filter(p => p.admissionDate === todayStr).length;
     const dischargesToday = patients.filter(p => p.isArchived && p.archiveDate === todayStr).length;
-
     const criticalCount = active.filter(p => p.status === 'Critical').length;
     const unstableCount = active.filter(p => p.status === 'Unstable').length;
     const stableCount = active.filter(p => p.status === 'Stable').length;
-
     const tasks = this.getTasks();
     const pendingTasks = tasks.filter(t => t.status === 'pending').length;
-
     let pendingInvestigations = 0;
     let unreviewedResults = 0;
-    active.forEach(p => {
-      (p.investigations || []).forEach(inv => {
-        if (inv.status === 'ordered' || inv.status === 'pending') pendingInvestigations++;
-        if (inv.status === 'available') unreviewedResults++;
-      });
-    });
-
-    return {
-      totalBeds,
-      occupiedBeds,
-      availableBeds,
-      occupancyRate,
-      newAdmissionsToday,
-      dischargesToday,
-      activePatientsCount: active.length,
-      criticalCount,
-      unstableCount,
-      stableCount,
-      pendingTasks,
-      pendingInvestigations,
-      unreviewedResults,
-    };
+    active.forEach(p => (p.investigations || []).forEach(inv => {
+      if (inv.status === 'ordered' || inv.status === 'pending') pendingInvestigations++;
+      if (inv.status === 'available') unreviewedResults++;
+    }));
+    return { totalBeds, occupiedBeds, availableBeds, occupancyRate, newAdmissionsToday, dischargesToday, activePatientsCount: active.length, criticalCount, unstableCount, stableCount, pendingTasks, pendingInvestigations, unreviewedResults };
   },
 };
