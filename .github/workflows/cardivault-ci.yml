@@ -153,6 +153,14 @@ jobs:
                   print('Firebase Android App ID:', info.get('mobilesdk_app_id',''))
                   break
           PY
+      - name: Deploy CardioVault AI Cloud Function
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          npx firebase-tools@latest deploy --only functions:analyzeClinicalPatient --project ccu-notebook --non-interactive --config firebase.json
       - name: Deploy Firestore rules
         # Deploy after the GitHub deploy service account has Firebase Rules Admin permission.
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
