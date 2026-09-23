@@ -71,15 +71,53 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   setStoredWorkspaceAccess(state);
   return state;
 }
-export async function getUnitAccessCodes():Promise<UnitAccessCode[]>{const state=await ensureOwnerWorkspace();if(!state)return[];const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes`});const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];return snapshots.map((s:any)=>{const d=safe(s)||{};return{unitId:String(d.unitId||''),unitName:String(d.unitName||'Unit'),code:String(d.code||''),role:(d.role==='view_only'?'view_only':'clinical_editor') as Exclude<WorkspaceRole,'owner'>,active:d.active!==false};}).filter(x=>x.unitId&&x.code&&x.active);}
-export async function generateUnitAccessCode(unitId:string,unitName:string,role:Exclude<WorkspaceRole,'owner'>='clinical_editor'):Promise<string>{const state=await ensureOwnerWorkspace();if(!state)throw new Error('Only the Master Account can generate Unit Access Codes.');const existing=await getUnitAccessCodes();for(const item of existing.filter(x=>x.unitId===unitId&&x.active))await revokeUnitAccessCode(item.code);const code=newCode();const accessCodeHash=await hash(code);const now=new Date().toISOString();const payload={hash:accessCodeHash,code,workspaceId:MASTER_WORKSPACE_ID,unitId,unitName,role,active:true,createdAt:now};await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{...payload,createdBy:state.workspaceId},merge:false});await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:payload,merge:true});return code;}
+export async function getUnitAccessCodes():Promise<UnitAccessCode[]>{
+  const state=await ensureOwnerWorkspace();if(!state)return[];
+  const reference=\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes\`;
+  let records:any[]=[];
+  if(Capacitor.isNativePlatform()){
+    const result:any=await FirebaseFirestore.getCollection({reference});
+    records=(result?.snapshots||[]).map((s:any)=>safe(s)||{});
+  }else{
+    const result=await webGetDocs(webCollection(reference));
+    records=result.docs.map((d:any)=>d.data());
+  }
+  return records.map((d:any)=>({
+    unitId:String(d.unitId||''),
+    unitName:String(d.unitName||'Unit'),
+    code:String(d.code||''),
+    role:(d.role==='view_only'?'view_only':'clinical_editor') as Exclude<WorkspaceRole,'owner'>,
+    active:d.active!==false,
+  })).filter(x=>x.unitId&&x.code&&x.active);
+}
+export async function generateUnitAccessCode(unitId:string,unitName:string,role:Exclude<WorkspaceRole,'owner'>='clinical_editor'):Promise<string>{
+  const state=await ensureOwnerWorkspace();
+  if(!state)throw new Error('Only the Master Account can generate Unit Access Codes.');
+  const existing=await getUnitAccessCodes();
+  for(const item of existing.filter(x=>x.unitId===unitId&&x.active))await revokeUnitAccessCode(item.code);
+  const code=newCode();const accessCodeHash=await hash(code);const now=new Date().toISOString();
+  const payload={hash:accessCodeHash,code,workspaceId:MASTER_WORKSPACE_ID,unitId,unitName,role,active:true,createdAt:now};
+  if(Capacitor.isNativePlatform()){
+    await FirebaseFirestore.setDocument({reference:\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`,data:{...payload,createdBy:state.workspaceId},merge:false});
+    await FirebaseFirestore.setDocument({reference:\`accessCodes/\${accessCodeHash}\`,data:payload,merge:true});
+  }else{
+    await webSetDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`),{...payload,createdBy:state.workspaceId},{merge:false});
+    await webSetDoc(webDoc(\`accessCodes/\${accessCodeHash}\`),payload,{merge:true});
+  }
+  return code;
+}
 export async function revokeUnitAccessCode(code:string):Promise<void>{
   const state=await ensureOwnerWorkspace();
   if(!state)throw new Error('Only the Master Account can revoke Unit Access Codes.');
   const accessCodeHash=await hash(code);
   const revokedAt=new Date().toISOString();
-  await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});
-  await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});
+  if(Capacitor.isNativePlatform()){
+    await FirebaseFirestore.setDocument({reference:\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`,data:{active:false,revokedAt},merge:true});
+    await FirebaseFirestore.setDocument({reference:\`accessCodes/\${accessCodeHash}\`,data:{active:false,revokedAt},merge:true});
+  }else{
+    await webSetDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`),{active:false,revokedAt},{merge:true});
+    await webSetDoc(webDoc(\`accessCodes/\${accessCodeHash}\`),{active:false,revokedAt},{merge:true});
+  }
   try{
     const memberCollection=`workspaces/${MASTER_WORKSPACE_ID}/members`;
     const unitIdFromCode=await (async()=>{
