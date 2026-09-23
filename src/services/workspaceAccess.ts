@@ -80,7 +80,59 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
 }
 export async function getUnitAccessCodes():Promise<UnitAccessCode[]>{const state=await ensureOwnerWorkspace();if(!state)return[];const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes`});const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];return snapshots.map((s:any)=>{const d=safe(s)||{};return{unitId:String(d.unitId||''),unitName:String(d.unitName||'Unit'),code:String(d.code||''),role:(d.role==='view_only'?'view_only':'clinical_editor') as Exclude<WorkspaceRole,'owner'>,active:d.active!==false};}).filter(x=>x.unitId&&x.code&&x.active);}
 export async function generateUnitAccessCode(unitId:string,unitName:string,role:Exclude<WorkspaceRole,'owner'>='clinical_editor'):Promise<string>{const state=await ensureOwnerWorkspace();if(!state)throw new Error('Only the Master Account can generate Unit Access Codes.');const existing=await getUnitAccessCodes();for(const item of existing.filter(x=>x.unitId===unitId&&x.active))await revokeUnitAccessCode(item.code);const code=newCode();const accessCodeHash=await hash(code);const now=new Date().toISOString();const payload={hash:accessCodeHash,code,workspaceId:MASTER_WORKSPACE_ID,unitId,unitName,role,active:true,createdAt:now};await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{...payload,createdBy:state.workspaceId},merge:false});await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:payload,merge:true});return code;}
-export async function revokeUnitAccessCode(code:string):Promise<void>{const state=await ensureOwnerWorkspace();if(!state)throw new Error('Only the Master Account can revoke Unit Access Codes.');const accessCodeHash=await hash(code);const revokedAt=new Date().toISOString();await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});try{if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/members`});const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];for(const snapshot of snapshots){const data=safe(snapshot)||{};if(String(data.accessCodeHash||'')===accessCodeHash){const memberId=String(snapshot?.id||snapshot?.documentId||snapshot?.reference?.id||'');if(memberId)await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${memberId}`,data:{active:false,forceReauth:true,revokedAt},merge:true});}}}else{const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/members`));for(const docSnap of snap.docs){const data:any=docSnap.data();if(String(data.accessCodeHash||'')===accessCodeHash)await webSetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${docSnap.id}`),{active:false,forceReauth:true,revokedAt},{merge:true});}}}catch(error){console.warn('Failed to invalidate old unit-code memberships:',error);throw new Error('The old Unit Access Code was revoked, but active memberships could not all be invalidated. Check Firestore permissions.');}}
+export async function revokeUnitAccessCode(code:string):Promise<void>{
+  const state=await ensureOwnerWorkspace();
+  if(!state)throw new Error('Only the Master Account can revoke Unit Access Codes.');
+  const accessCodeHash=await hash(code);
+  const revokedAt=new Date().toISOString();
+  await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});
+  await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});
+  try{
+    const memberCollection=`workspaces/${MASTER_WORKSPACE_ID}/members`;
+    const unitIdFromCode=await (async()=>{
+      try{
+        if(Capacitor.isNativePlatform()) return String(safe((await FirebaseFirestore.getDocument({reference:`accessCodes/${accessCodeHash}`})).snapshot)?.unitId||'');
+        const snap=await webGetDoc(webDoc(`accessCodes/${accessCodeHash}`));
+        return String(snap.data()?.unitId||'');
+      }catch{return '';}
+    })();
+    if(Capacitor.isNativePlatform()){
+      const result:any=await FirebaseFirestore.getCollection({reference:memberCollection});
+      for(const snapshot of result?.snapshots||[]){
+        const memberId=String(snapshot?.id||snapshot?.documentId||'');
+        if(!memberId)continue;
+        const data=safe(snapshot)||{};
+        const hashes=[String(data.accessCodeHash||''),...(Array.isArray(data.accessCodeHashes)?data.accessCodeHashes.map(String):[])].filter(Boolean);
+        const unitIds=Array.isArray(data.unitIds)?data.unitIds.map(String):[];
+        const matches=hashes.includes(accessCodeHash) || (unitIdFromCode && unitIds.includes(unitIdFromCode));
+        if(!matches)continue;
+        const remainingUnitIds=unitIds.filter((u:string)=>u!==unitIdFromCode);
+        const remainingHashes=hashes.filter((h:string)=>h!==accessCodeHash);
+        const patch:any={unitIds:remainingUnitIds,accessCodeHashes:remainingHashes,updatedAt:revokedAt};
+        if(String(data.accessCodeHash||'')===accessCodeHash) patch.accessCodeHash=remainingHashes[0]||'';
+        if(!remainingUnitIds.length){patch.active=false;patch.forceReauth=true;patch.revokedAt=revokedAt;}
+        await FirebaseFirestore.setDocument({reference:`${memberCollection}/${memberId}`,data:patch,merge:true});
+        if(unitIdFromCode){try{await FirebaseFirestore.setDocument({reference:`${memberCollection}/${memberId}/units/${unitIdFromCode}`,data:{active:false,revokedAt},merge:true});}catch{}}
+      }
+    }else{
+      const snap=await webGetDocs(webCollection(memberCollection));
+      for(const docSnap of snap.docs){
+        const data:any=docSnap.data();
+        const hashes=[String(data.accessCodeHash||''),...(Array.isArray(data.accessCodeHashes)?data.accessCodeHashes.map(String):[])].filter(Boolean);
+        const unitIds=Array.isArray(data.unitIds)?data.unitIds.map(String):[];
+        const matches=hashes.includes(accessCodeHash) || (unitIdFromCode && unitIds.includes(unitIdFromCode));
+        if(!matches)continue;
+        const remainingUnitIds=unitIds.filter((u:string)=>u!==unitIdFromCode);
+        const remainingHashes=hashes.filter((h:string)=>h!==accessCodeHash);
+        const patch:any={unitIds:remainingUnitIds,accessCodeHashes:remainingHashes,updatedAt:revokedAt};
+        if(String(data.accessCodeHash||'')===accessCodeHash) patch.accessCodeHash=remainingHashes[0]||'';
+        if(!remainingUnitIds.length){patch.active=false;patch.forceReauth=true;patch.revokedAt=revokedAt;}
+        await webSetDoc(webDoc(`${memberCollection}/${docSnap.id}`),patch,{merge:true});
+        if(unitIdFromCode){try{await webSetDoc(webDoc(`${memberCollection}/${docSnap.id}/units/${unitIdFromCode}`),{active:false,revokedAt},{merge:true});}catch{}}
+      }
+    }
+  }catch(error){console.warn('Failed to invalidate old unit-code memberships:',error);throw new Error('The old Unit Access Code was revoked, but active memberships could not all be invalidated. Check Firestore permissions.');}
+}
 export type SelfClinicalRole='nurse'|'resident'|'specialist'|'consultant';
 export const SELF_CLINICAL_ROLES:SelfClinicalRole[]=['nurse','resident','specialist','consultant'];
 export async function getOwnTeamProfile():Promise<any|null>{
