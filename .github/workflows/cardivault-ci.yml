@@ -153,7 +153,10 @@ jobs:
                   print('Firebase Android App ID:', info.get('mobilesdk_app_id',''))
                   break
           PY
-      - name: Deploy CardioVault AI Cloud Function
+      - name: Deploy CardioVault AI Cloud Function (optional legacy backend)
+        # The production app uses the CardioVault AI Worker. Firebase Functions deployment
+        # is kept as an optional legacy backend and must not block the web/Android build.
+        continue-on-error: true
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
