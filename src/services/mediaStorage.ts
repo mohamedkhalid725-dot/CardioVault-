@@ -200,6 +200,11 @@ async function loadFirestoreMedia(mediaId: string): Promise<string> {
   return String(metadata.header || `data:${metadata.mime || 'image/jpeg'};base64`) + ',' + chunks.map(item => String(item.data?.data || '')).join('');
 }
 
+export async function resolveClinicalMediaUrl(value: string, storagePath = ''): Promise<string> {
+  const mediaId = parseMediaId(storagePath) || parseMediaId(value);
+  return mediaId ? loadFirestoreMedia(mediaId) : value;
+}
+
 export async function refreshClinicalMediaUrls(
   imageUrls: string[] = [],
   imageStoragePaths: string[] = []
