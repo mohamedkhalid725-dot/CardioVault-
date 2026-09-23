@@ -250,7 +250,7 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
                     <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 mt-2 whitespace-pre-wrap">
                       {e.detail || 'Recorded event'}
                     </p>
-                    {e.audioUrl && <ClinicalAudioPlayer url={e.audioUrl} storagePath={e.audioStoragePath} durationSeconds={e.audioDurationSeconds} label="Voice recording" />}</div><audio controls preload="none" src={e.audioUrl} className="w-full" aria-label={`Play ${e.label} voice recording`} /></div>}
+                    {e.audioUrl && <ClinicalAudioPlayer url={e.audioUrl} storagePath={e.audioStoragePath} durationSeconds={e.audioDurationSeconds} label="Voice recording" />}
                   </div>
                 );
               })}
