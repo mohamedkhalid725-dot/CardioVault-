@@ -298,7 +298,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           doc.line(x + 8, y + 3.5, x + 10, y + 3.5);
           doc.line(x + 8, y + 4.4, x + 10, y + 4.4);
         } else {
-          doc.rect(x + 7.5, y + 2.8, 3, 2.8, 0.4, 0.4, 'F');
+          doc.rect(x + 7.5, y + 2.8, 3, 2.8, 'F');
         }
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
