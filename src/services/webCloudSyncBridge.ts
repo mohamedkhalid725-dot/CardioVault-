@@ -93,7 +93,7 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   };
   localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state)); return state;
 }
-async function collectionData(p:string,unitId?:string){
+async function collectionData(p:string,unitId?:string):Promise<Array<Record<string,any>>>{
   const ref=webCollection(p); const snap=unitId?await getDocs(query(ref,where('unitId','==',unitId))):await getDocs(ref);
   return snap.docs.map(d=>({...d.data(),id:d.id}));
 }
