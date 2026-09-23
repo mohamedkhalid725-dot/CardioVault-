@@ -131,9 +131,13 @@ async function repairOwnerWorkspaceRegistry(workspaceId:string):Promise<void>{
       const keeperPatientId=String(keeper.patientId||'');
       if(!keeperPatientId&&duplicatePatientId){
         await withTimeout(setDoc(webDoc(path(workspaceId,'beds')+'/'+keeper.id),{patientId:duplicatePatientId,status:duplicate.status||'Stable',schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
+        await withTimeout(setDoc(webDoc(path(workspaceId,'patients')+'/'+duplicatePatientId),{bedId:String(keeper.id),unitId:String(keeper.unitId),schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
+        await withTimeout(deleteDoc(webDoc(path(workspaceId,'beds')+'/'+duplicate.id)));
+        changed=true;
+      } else if(!duplicatePatientId || duplicatePatientId===keeperPatientId) {
+        await withTimeout(deleteDoc(webDoc(path(workspaceId,'beds')+'/'+duplicate.id)));
+        changed=true;
       }
-      await withTimeout(deleteDoc(webDoc(path(workspaceId,'beds')+'/'+duplicate.id)));
-      changed=true;
     }
   }
   if(changed)localStorage.setItem('cardiovault_workspace_registry_repaired_v1',new Date().toISOString());
