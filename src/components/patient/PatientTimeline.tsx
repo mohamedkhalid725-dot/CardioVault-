@@ -26,6 +26,8 @@ type Event = {
   time: string;
   label: string;
   detail: string;
+  audioUrl?: string;
+  audioDurationSeconds?: number;
   icon: React.FC<{ className?: string }>;
   badge?: string;
   badgeColor?: string;
