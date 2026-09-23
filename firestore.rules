@@ -85,13 +85,8 @@ service cloud.firestore {
            request.resource.data.workspaceId == workspaceId &&
            request.resource.data.departmentId == 'dept-cardiology' &&
            request.resource.data.status == 'active' &&
-           selfClinicalRole(request.resource.data.role) ||
-           (signedIn() && request.auth.uid == uid &&
-            request.resource.data.uid == request.auth.uid &&
-            request.resource.data.workspaceId == workspaceId &&
-            request.resource.data.departmentId == 'dept-cardiology' &&
-            request.resource.data.status == 'active' &&
-            request.resource.data.role == 'pending'));
+           member(workspaceId) &&
+           (selfClinicalRole(request.resource.data.role) || request.resource.data.role == 'pending'));
         allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
