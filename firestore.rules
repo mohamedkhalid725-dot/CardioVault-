@@ -27,6 +27,14 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
+      // The master account may read legacy bed and patient records to import
+      // them into the shared workspace. Only the owning UID may write them.
+      match /beds/{bedId} {
+        allow get, list: if workspaceOwner('cardiovault_master_workspace');
+      }
+      match /patients/{patientId} {
+        allow get, list: if workspaceOwner('cardiovault_master_workspace');
+      }
       match /{document=**} { allow read, write: if signedIn() && request.auth.uid == uid; }
     }
 
