@@ -37,7 +37,7 @@ interface Props{onSelect?:(id:PatientSectionId)=>void;patient:Patient;}
 const abnormalVitals=(p:Patient)=>{const v=p.vitalsHistory?.[0];if(!v)return false;return v.sbp<90||v.sbp>180||v.dbp<60||v.dbp>110||v.hr<50||v.hr>120||v.rr<10||v.rr>30||v.spo2<92||v.temp<36||v.temp>38||v.gcsTotal<15;};
 const abnormalLabs=(p:Patient)=>{const results=p.labResults||[];if(results.some((r:any)=>['Low','High','Critical'].includes(String(r.flag||r.status))))return true;const latest=p.labs?.[0] as any;if(!latest)return false;const ranges:[string,number,number][]=[['hb',13,17.5],['wbc',4,11],['platelets',150,400],['na',135,145],['k',3.5,5.1],['creatinine',.6,1.3],['glucose',70,99],['inr',.8,1.2],['pt',11,14],['alt',7,56],['ast',10,40]];return ranges.some(([key,lo,hi])=>{const n=Number(latest[key]);return Number.isFinite(n)&&(n<lo||n>hi);});};
 const ventilated=(p:Patient)=>String(p.ventilator?.supportType||'').toLowerCase()==='mechanical ventilation'||!!p.ventilator?.mode;
-const sectionAlert=(p:Patient,id:PatientSectionId)=>id==='vitals'?abnormalVitals(p):id==='labs'?abnormalLabs(p):id==='icu'?false:id==='orders'?abnormalLabs(p):false;
+const sectionAlert=(p:Patient,id:PatientSectionId)=>id==='vitals'?abnormalVitals(p):id==='labs'?abnormalLabs(p):id==='icu'?false:id==='orders'?false:false;
 const hasData=(p:Patient,id:PatientSectionId)=>{
 switch(id){
 case'overview':return true;
