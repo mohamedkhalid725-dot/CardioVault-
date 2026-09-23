@@ -93,7 +93,7 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   };
   localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state)); return state;
 }
-async function collectionData(p:string,unitId?:string){
+async function collectionData(p:string,unitId?:string):Promise<Array<Record<string,any>>>{
   const ref=webCollection(p); const snap=unitId?await getDocs(query(ref,where('unitId','==',unitId))):await getDocs(ref);
   return snap.docs.map(d=>({...d.data(),id:d.id}));
 }
@@ -108,10 +108,60 @@ async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessStat
   return migrated;
 }
 
+async function migrateAllLegacyMembersIntoWorkspace(workspaceId:string):Promise<number>{
+  const members=await collectionData(path(workspaceId,'members'));
+  let migrated=0;
+  for(const member of members){
+    const uid=String(member?.uid||member?.id||'');
+    if(!uid||member?.active===false||member?.forceReauth===true)continue;
+    const hashes=Array.from(new Set([
+      ...(Array.isArray(member?.accessCodeHashes)?member.accessCodeHashes:[]),
+      member?.accessCodeHash,
+    ].filter(Boolean).map(String)));
+    const activeCodes:any[]=[];
+    for(const hash of hashes){
+      try{
+        const code=await getDoc(webDoc('accessCodes/'+hash));
+        if(code.exists()&&code.data()?.active===true&&code.data()?.workspaceId===workspaceId)activeCodes.push(code.data());
+      }catch(error){console.warn('Legacy member access-code check failed:',uid,error);}
+    }
+    if(!activeCodes.length)continue;
+    const memberUnits=Array.from(new Set([
+      ...(Array.isArray(member?.unitIds)?member.unitIds:[]),
+      ...(member?.unitId?[member.unitId]:[]),
+    ].map(String).filter(Boolean)));
+    const activeUnitIds=new Set(activeCodes.map(code=>String(code.unitId||'')).filter(Boolean));
+    let unitIds=memberUnits.filter(unitId=>activeUnitIds.has(unitId));
+    try{
+      const team=await getDoc(webDoc(path(workspaceId,'team')+'/'+uid));
+      if(team.exists()){
+        const teamData=team.data();
+        if(teamData?.status!=='active')continue;
+        const assigned=Array.isArray(teamData?.assignedUnitIds)?teamData.assignedUnitIds.map(String):[];
+        if(assigned.length)unitIds=unitIds.filter(unitId=>assigned.includes(unitId));
+        if(teamData?.role==='view_only'||member?.role==='view_only')continue;
+      }else if(member?.role==='view_only')continue;
+    }catch(error){console.warn('Legacy member team check failed:',uid,error);continue;}
+    if(!unitIds.length)continue;
+    try{
+      migrated+=await migrateLegacyMemberPatients(uid,{
+        workspaceId,
+        role:'clinical_editor',
+        unitId:unitIds.includes(String(member?.unitId||''))?String(member.unitId):unitIds[0],
+        unitName:'',
+        unitIds,
+      });
+    }catch(error){
+      console.warn('Legacy member migration skipped:',uid,error);
+    }
+  }
+  return migrated;
+}
+
 export async function webLoadCurrentUserFromCloud(){
   const user=webCurrentUser(); if(!user?.uid)return null;
   try{
-    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role!=='owner'&&access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
+    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role==='owner'){try{await migrateAllLegacyMembersIntoWorkspace(access.workspaceId);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member workspace migration failed:',error);}}else if(access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
     let units:any[]=[],beds:any[]=[],patients:any[]=[];
     if(access.role==='owner'){
       [units,beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'units')),collectionData(path(access.workspaceId,'beds')),collectionData(path(access.workspaceId,'patients'))]);
