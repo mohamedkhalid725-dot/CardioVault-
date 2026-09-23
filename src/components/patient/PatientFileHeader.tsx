@@ -1,4 +1,4 @@
-import React,{useEffect,useState}from'react';
+import React,{useEffect,useRef,useState}from'react';
 import{ArrowLeft,Edit,ArrowRightLeft,LogOut,ChevronDown}from'lucide-react';
 import{useApp}from'../../context/AppContext';
 import{Patient,PatientStatus}from'../../types/clinical';
@@ -9,12 +9,13 @@ export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEdit
  const[showTransferModal,setShowTransferModal]=useState(false),[showDischargeModal,setShowDischargeModal]=useState(false),[compact,setCompact]=useState(false);
  const[targetUnitId,setTargetUnitId]=useState(patient.unitId),[targetBedId,setTargetBedId]=useState(''),[dischargeReason,setDischargeReason]=useState('Discharged Home'),[dischargeSummary,setDischargeSummary]=useState('');
  const currentUnit=getUnitById(patient.unitId);const currentBed=beds.find(b=>b.id===patient.bedId);const availableBeds=beds.filter(b=>b.unitId===targetUnitId&&!b.patientId);
- useEffect(()=>{let frame=0;const onScroll=()=>{if(frame)return;frame=requestAnimationFrame(()=>{setCompact(prev=>prev?(window.scrollY<36?false:true):(window.scrollY>110));frame=0;});};onScroll();window.addEventListener('scroll',onScroll,{passive:true});return()=>{cancelAnimationFrame(frame);window.removeEventListener('scroll',onScroll);};},[]);
+ const topSentinel=useRef<HTMLDivElement|null>(null); useEffect(()=>{const node=topSentinel.current;if(!node)return;const observer=new IntersectionObserver(([entry])=>setCompact(!entry.isIntersecting),{root:null,threshold:0,rootMargin:'-58px 0px 0px 0px'});observer.observe(node);return()=>observer.disconnect();},[]);
  const handleTransfer=(e:React.FormEvent)=>{e.preventDefault();if(!targetBedId)return;transferPatient(patient.id,targetUnitId,targetBedId);setShowTransferModal(false);};
  const handleDischarge=(e:React.FormEvent)=>{e.preventDefault();dischargePatient(patient.id,dischargeReason,dischargeSummary);setShowDischargeModal(false);};
  const handleStatusChange=(newStatus:PatientStatus)=>{if(!readOnly)updatePatient(patient.id,{status:newStatus});};
  const openTransfer=()=>{setTargetUnitId(patient.unitId);setTargetBedId('');setShowTransferModal(true);};
  return <>
+  <div ref={topSentinel} className="h-px w-full" aria-hidden="true" />
   <div className="sticky z-40 w-full bg-white/96 dark:bg-[#111C2E]/96 backdrop-blur-xl border-b border-slate-200/90 dark:border-slate-800/90 shadow-sm" style={{top:'3.65rem'}}>
    <div className="max-w-7xl mx-auto w-full px-3 sm:px-6">
     <div className="relative h-[4.05rem]">
