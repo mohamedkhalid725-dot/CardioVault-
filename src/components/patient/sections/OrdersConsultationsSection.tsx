@@ -4,8 +4,8 @@ import{Patient}from'../../../types/clinical';
 import{useApp}from'../../../context/AppContext';
 import{ClinicalWorkflowService}from'../../../services/clinicalWorkflowService';
 interface Props{patient:Patient}
-const invStatus=(status:string)=>status==='available'||status==='reviewed'||status==='acknowledged'?'Completed':status==='pending'?'In Progress':'Pending';
-const consultStatus=(status:string)=>status==='Completed'?'Completed':status==='In Progress'||status==='Accepted'?'In Progress':'Pending';
+const invStatus=(status:string)=>status==='cancelled'?'Cancelled':status==='available'||status==='reviewed'||status==='acknowledged'?'Completed':status==='pending'?'In Progress':'Pending';
+const consultStatus=(status:string)=>status==='Cancelled'?'Cancelled':status==='Completed'?'Completed':status==='In Progress'||status==='Accepted'?'In Progress':'Pending';
 const statusClass=(status:string)=>status==='Completed'?'bg-emerald-500/10 text-emerald-600 border-emerald-500/30':status==='In Progress'?'bg-cyan-500/10 text-cyan-600 border-cyan-500/30':'bg-amber-500/10 text-amber-600 border-amber-500/30';
 
 export const OrdersConsultationsSection:React.FC<Props>=({patient})=>{
@@ -19,7 +19,7 @@ export const OrdersConsultationsSection:React.FC<Props>=({patient})=>{
  const investigations=useMemo(()=>patient.investigations||[],[patient.investigations]);
  const consultations=useMemo(()=>patient.consultations||[],[patient.consultations]);
 
- const syncTask=(sourceType:'investigation'|'consultation',sourceId:string,status:'Pending'|'In Progress'|'Completed')=>{
+ const syncTask=(sourceType:'investigation'|'consultation',sourceId:string,status:'Pending'|'In Progress'|'Completed'|'Cancelled')=>{
    const target=ClinicalWorkflowService.getTasks().find(t=>t.patientId===patient.id&&t.sourceType===sourceType&&t.sourceId===sourceId);
    if(target){const next=status==='Completed'?'completed':status==='In Progress'?'in_progress':'pending';if(target.status!==next)ClinicalWorkflowService.updateTaskStatus(target.id,next,currentUser);}
  };
@@ -41,8 +41,8 @@ export const OrdersConsultationsSection:React.FC<Props>=({patient})=>{
    setShowAdd(false);setQuestion('');
  };
 
- const updateInvestigation=(id:string,status:'ordered'|'pending'|'available'|'reviewed'|'acknowledged')=>{updatePatient(patient.id,{investigations:investigations.map(x=>x.id===id?{...x,status}:x)});syncTask('investigation',id,invStatus(status));showToast('Investigation status updated.','success');};
- const updateConsultation=(id:string,status:'Requested'|'Accepted'|'In Progress'|'Completed')=>{updatePatient(patient.id,{consultations:consultations.map(x=>x.id===id?{...x,status,...(status==='Completed'?{completedAt:new Date().toISOString()}: {})}:x)});syncTask('consultation',id,consultStatus(status));showToast('Consultation status updated.','success');};
+ const updateInvestigation=(id:string,status:'ordered'|'pending'|'available'|'reviewed'|'acknowledged'|'cancelled')=>{updatePatient(patient.id,{investigations:investigations.map(x=>x.id===id?{...x,status}:x)});syncTask('investigation',id,invStatus(status));showToast('Investigation status updated.','success');};
+ const updateConsultation=(id:string,status:'Requested'|'Accepted'|'In Progress'|'Completed'|'Cancelled')=>{updatePatient(patient.id,{consultations:consultations.map(x=>x.id===id?{...x,status,...(status==='Completed'?{completedAt:new Date().toISOString()}: {})}:x)});syncTask('consultation',id,consultStatus(status));showToast('Consultation status updated.','success');};
 
  return <div className="space-y-5 max-w-5xl mx-auto">
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold flex items-center gap-2"><FlaskConical className="w-5 h-5 text-cyan-500"/>Orders & Consultations</h2><p className="text-xs text-slate-500">Track investigations and consultations from request through completion.</p></div><div className="flex gap-2"><button onClick={()=>setTab('investigations')} className={`px-3 py-2 rounded-xl text-xs font-bold ${tab==='investigations'?'bg-cyan-500 text-slate-950':'bg-slate-100 dark:bg-slate-800'}`}>Investigations ({investigations.length})</button><button onClick={()=>setTab('consultations')} className={`px-3 py-2 rounded-xl text-xs font-bold ${tab==='consultations'?'bg-cyan-500 text-slate-950':'bg-slate-100 dark:bg-slate-800'}`}>Consultations ({consultations.length})</button><button onClick={()=>setShowAdd(true)} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-3.5 h-3.5"/>New</button></div></div>
