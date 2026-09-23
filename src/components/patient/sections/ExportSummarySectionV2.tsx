@@ -224,7 +224,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.text('Confidential Medical Record', 9, 292);
         doc.setFont('helvetica', 'bold');
         text(navy);
-        doc.text(`Page ${page} of 2`, 178, 292);
+        doc.text(`Page ${page}`, 178, 292);
       };
 
       const patientBanner = () => {
@@ -349,16 +349,22 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       ) => {
         fill(white);
         draw(line);
-        doc.roundedRect(x, y, w, h, 1.4, 1.4, 'FD');
+        const safeValue = compact(value, max) || '—';
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        const lines = doc.splitTextToSize(safeValue, w - 6) as string[];
+        const lineH = 3.6;
+        const neededH = Math.max(h, 10 + Math.min(lines.length, 10) * lineH);
+        doc.roundedRect(x, y, w, neededH, 1.4, 1.4, 'FD');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(5.7);
         text(teal);
         doc.text(label, x + 3, y + 4);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(14);
+        doc.setFontSize(10);
         text(ink);
-        const lines = doc.splitTextToSize(compact(value, max) || '—', w - 6) as string[];
-        doc.text(lines.slice(0, Math.max(1, Math.floor((h - 6) / 3.2))), x + 3, y + 8);
+        doc.text(lines.slice(0, Math.max(1, Math.floor((neededH - 7) / lineH))), x + 3, y + 8);
+        return neededH;
       };
 
       const table = (
@@ -371,8 +377,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         maxRows = 6
       ) => {
         let xx = x;
-        fill([224, 239, 244]);
-        draw(line);
+        fill([225, 241, 245]);
+        draw([184, 208, 218]);
         headers.forEach((h, i) => {
           doc.rect(xx, y, widths[i], rowH, 'FD');
           doc.setFont('helvetica', 'bold');
@@ -385,8 +391,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         rows.slice(0, maxRows).forEach(row => {
           xx = x;
           row.forEach((cell, i) => {
-            fill(white);
-            draw(line);
+            fill([255, 255, 255]);
+            draw([205, 222, 230]);
             doc.rect(xx, yy, widths[i], rowH, 'FD');
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(10);
@@ -424,13 +430,13 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           sectionTitle('History / Examination', 108, y, 94, 'exam');
           y += 10;
           const summary: any = (patient as any).clinicalSummary || {};
-          paragraphBox(8, y, 104, 27, 'Clinical Summary', summary.summary || summary.hpi || patient.primaryDiagnosis, 170);
-          paragraphBox(108, y, 94, 27, 'Chief Complaint', summary.chiefComplaint, 130);
-          y += 30;
-          paragraphBox(8, y, 104, 27, 'History of Present Illness', summary.hpi, 170);
+          const summaryH = paragraphBox(8, y, 104, 27, 'Clinical Summary', summary.summary || summary.hpi || patient.primaryDiagnosis, 170);
+          const complaintH = paragraphBox(108, y, 94, 27, 'Chief Complaint', summary.chiefComplaint, 130);
+          y += Math.max(summaryH, complaintH) + 3;
+          const hpiH = paragraphBox(8, y, 104, 27, 'History of Present Illness', summary.hpi, 170);
           const ex: any = (patient as any).examination || {};
-          paragraphBox(108, y, 94, 27, 'Examination', ex.general?.appearance || ex.neurological?.gcs || ex.cardiovascular?.heartSounds, 130);
-          y += 30;
+          const examH = paragraphBox(108, y, 94, 27, 'Examination', ex.general?.appearance || ex.neurological?.gcs || ex.cardiovascular?.heartSounds, 130);
+          y += Math.max(hpiH, examH) + 3;
         }
 
         if (has('vitals')) {
@@ -603,6 +609,19 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
       await drawFirstPage();
       drawSecondPage();
+
+      // The document length is data-driven. Update every footer after all pages
+      // have been created so the displayed total always matches the real PDF.
+      const totalPages = doc.getNumberOfPages();
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        doc.setPage(pageNumber);
+        fill([248, 251, 252]);
+        doc.rect(172, 284, 30, 11, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        text(navy);
+        doc.text('Page ' + pageNumber + ' of ' + totalPages, 178, 292);
+      }
 
       // Generate the PDF exactly once as a Blob. This is more reliable in Android
       // WebView than mixing arraybuffer/data-uri output paths.
