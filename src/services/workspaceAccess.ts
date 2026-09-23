@@ -50,7 +50,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   }
   const currentProfile = AuthorizationService.getUsers().find(u=>u.userId===id) || AuthorizationService.getCurrentUser();
   const nextRole = currentProfile?.role && !['pending','viewer'].includes(String(currentProfile.role)) ? currentProfile.role : (access.role==='view_only'?'viewer':'pending');
-  const teamProfile: UserProfile = {...currentProfile,userId:id,uid:id,workspaceId:MASTER_WORKSPACE_ID,name:currentProfile?.name||'Clinician',email:currentProfile?.email||'',role:nextRole as ClinicalRole,departmentId:'dept-cardiology',assignedUnitIds:unitIds,status:'active',updatedAt:new Date().toISOString()};
+  const teamProfile: UserProfile = {...currentProfile,userId:id,name:currentProfile?.name||'Clinician',email:currentProfile?.email||'',role:nextRole as ClinicalRole,departmentId:'dept-cardiology',assignedUnitIds:unitIds,status:'active',updatedAt:new Date().toISOString()};
   AuthorizationService.saveUsers([...AuthorizationService.getUsers().filter(u=>u.userId!==id),teamProfile]);
   try{
     const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
