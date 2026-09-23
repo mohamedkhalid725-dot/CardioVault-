@@ -63,10 +63,29 @@ async function collectionData(p:string,unitId?:string){
   const ref=webCollection(p); const snap=unitId?await getDocs(query(ref,where('unitId','==',unitId))):await getDocs(ref);
   return snap.docs.map(d=>({...d.data(),id:d.id}));
 }
+async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessState):Promise<number>{
+  if(access.role==='owner'||access.role==='view_only')return 0;
+  const unitIds=new Set<string>((Array.isArray((access as any).unitIds)?(access as any).unitIds:[access.unitId]).filter(Boolean).map(String));
+  if(!unitIds.size)return 0;
+  const legacy=await collectionData(\`users/\${uid}/patients\`);
+  let migrated=0;
+  for(const item of legacy){
+    const existing=await getDoc(webDoc(\`\${path(access.workspaceId,'patients')}/\${item.id}\`));
+    if(existing.exists())continue;
+    const sourceUnit=String(item.unitId||'');
+    const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');
+    if(!targetUnit)continue;
+    const patient={...safe(item),id:String(item.id),unitId:targetUnit,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
+    await withTimeout(setDoc(webDoc(\`\${path(access.workspaceId,'patients')}/\${item.id}\`),patient,{merge:false}));
+    migrated++;
+  }
+  return migrated;
+}
+
 export async function webLoadCurrentUserFromCloud(){
   const user=webCurrentUser(); if(!user?.uid)return null;
   try{
-    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null};
+    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role!=='owner'&&access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
     let units:any[]=[],beds:any[]=[],patients:any[]=[];
     if(access.role==='owner'){
       [units,beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'units')),collectionData(path(access.workspaceId,'beds')),collectionData(path(access.workspaceId,'patients'))]);
