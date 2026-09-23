@@ -162,14 +162,26 @@ jobs:
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
           npx firebase-tools@latest deploy --only functions:analyzeClinicalPatient --project ccu-notebook --non-interactive --config firebase.json
       - name: Deploy Firestore rules
-        # Deploy after the GitHub deploy service account has Firebase Rules Admin permission.
+        # Use the Admin SDK directly so rules deployment does not depend on the CLI
+        # Service Usage preflight permission that blocked the Pages workflow.
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
+          set -euo pipefail
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest deploy --only firestore:rules --project ccu-notebook --non-interactive --config firebase.json
+          cd functions
+          npm install --no-audit --no-fund
+          FIREBASE_SERVICE_ACCOUNT_PATH="$RUNNER_TEMP/firebase-service-account.json" node <<'NODE'
+          const fs = require('fs');
+          const admin = require('firebase-admin');
+          const serviceAccount = JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH, 'utf8'));
+          admin.initializeApp({ credential: admin.credential.cert(serviceAccount), projectId: 'ccu-notebook' });
+          const source = fs.readFileSync('../firestore.rules', 'utf8');
+          admin.securityRules().releaseFirestoreRulesetFromSource(source)
+            .then(() => console.log('Firestore rules deployed successfully via Firebase Admin SDK.'))
+            .catch(error => { console.error(error); process.exit(1); });
+          NODE
       # Firebase Authentication providers are managed in Firebase Console.
       # The CLI auth deploy currently requires listing Firebase Web apps, which this CI
       # service account does not have permission to do. Keeping auth deployment out of
