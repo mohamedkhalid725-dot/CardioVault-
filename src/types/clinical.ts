@@ -342,7 +342,7 @@ export interface Patient {
   attendedClinician?: string;
   attendedNurse?: string;
 }
-export type PatientSectionId='overview'|'history'|'ecg'|'vitals'|'examination'|'cardiology'|'medication'|'icu'|'imaging'|'labs'|'procedure'|'calculators'|'progress'|'clinical-tools'|'pdf';
+export type PatientSectionId='overview'|'history'|'ecg'|'vitals'|'examination'|'cardiology'|'medication'|'icu'|'imaging'|'labs'|'procedure'|'orders'|'calculators'|'progress'|'clinical-tools'|'pdf';
 export interface PatientSectionMeta { id:PatientSectionId; order:number; label:string; iconName:string; description:string; }
 export type PhysicalExam=ExaminationData; export type CardiologyModule=CardiologyData; export type EchoReport=CardiologyData['echo']; export type CathReport=CardiologyData['coronary']; export type VentilatorSettings=VentilatorData; export type ClinicalProcedure=ProcedureRecord; export type VitalSigns=VitalRecord;
 export interface LabResult { id?:string; name?:string; testName?:string; value:string|number; unit:string; referenceRange?:string; status?:'normal'|'low'|'high'|'critical'; flag?:string; panel?:string; timestamp?:string; }
