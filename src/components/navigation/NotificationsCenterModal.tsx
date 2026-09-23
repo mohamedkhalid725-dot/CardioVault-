@@ -11,7 +11,7 @@ export const NotificationsCenterModal:React.FC<{isOpen:boolean;onClose:()=>void}
  ClinicalWorkflowService.getTasks().filter(t=>t.status!=='completed'&&(!t.patientId||active.some(p=>p.id===t.patientId))).forEach(t=>out.push({id:'task-'+t.id,type:t.priority==='stat'?'STAT task':'Task assigned',title:t.title,detail:t.patientName||'Unit task',patientId:t.patientId,icon:CheckSquare,color:t.priority==='stat'?'text-rose-500':'text-cyan-500'}));
  active.forEach(p=>(p.investigations||[]).filter(i=>i.status==='available'||i.flag==='critical').forEach(i=>out.push({id:'inv-'+i.id,type:i.flag==='critical'?'Critical result':'Investigation result',title:i.title,detail:p.fullName+' • '+(i.resultsSummary||i.status),patientId:p.id,icon:FlaskConical,color:i.flag==='critical'?'text-rose-500':'text-amber-500'})));
  active.forEach(p=>(p.labResults||[]).filter((l:any)=>l.status==='critical'||l.flag==='critical').forEach((l:any)=>out.push({id:'lab-'+(l.id||l.name),type:'Critical lab result',title:l.name||l.testName||'Lab result',detail:p.fullName+' • '+String(l.value||'')+' '+String(l.unit||''),patientId:p.id,icon:FlaskConical,color:'text-rose-500'})));
- active.forEach(p=>(p.consultations||[]).filter(c=>c.status!=='Completed').forEach(c=>out.push({id:'consult-'+c.id,type:'Consult request',title:c.specialty,detail:p.fullName+' • '+c.status,patientId:p.id,icon:MessageSquare,color:'text-violet-500'})));
+ active.forEach(p=>(p.consultations||[]).filter(c=>c.status!=='Completed'&&c.status!=='Cancelled').forEach(c=>out.push({id:'consult-'+c.id,type:'Consult request',title:c.specialty,detail:p.fullName+' • '+c.status,patientId:p.id,icon:MessageSquare,color:'text-violet-500'})));
  return out.slice(0,50);
  },[patients,currentUser]);
  if(!isOpen)return null;
