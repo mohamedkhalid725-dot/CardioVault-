@@ -56,6 +56,7 @@ default:return false;
 }
 };
 
+// CardioVault clinical alert hierarchy: result -> section -> parent group.
 export const PatientFileNav:React.FC<Props>=({onSelect,patient})=>{
 const{setActivePatientSection}=useApp();
 const[query,setQuery]=useState('');
