@@ -74,12 +74,12 @@ return <nav className="w-full px-3 sm:px-6 py-2 sm:py-3">
 :
 <div className="space-y-2">
 {GROUPS.map(group=>{
-const expanded=open===group.title;
+const expanded=open===group.title;const groupAlert=group.items.some(id=>sectionAlert(patient,id));
 return <section key={group.title} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0E1626] overflow-hidden">
 <button type="button" onClick={()=>setOpen(expanded?'':group.title)} className="w-full flex items-center gap-3 px-4 py-3.5 text-left">
-<div className="w-9 h-9 rounded-xl bg-cyan-500/10 flex items-center justify-center"><span className="text-cyan-500 text-xs font-black">{group.title==='CORE'?'1':group.title==='INVESTIGATIONS'?'2':group.title==='MANAGEMENT'?'3':group.title==='CARDIOLOGY'?'4':'5'}</span></div>
+<div className={`w-9 h-9 rounded-xl flex items-center justify-center ${groupAlert?'bg-rose-500/10':'bg-cyan-500/10'}`}><span className={`${groupAlert?'text-rose-500':'text-cyan-500'} text-xs font-black`}>{group.title==='CORE'?'1':group.title==='INVESTIGATIONS'?'2':group.title==='MANAGEMENT'?'3':group.title==='CARDIOLOGY'?'4':'5'}</span></div>
 <div className="min-w-0 flex-1"><div className="text-[11px] font-black tracking-[0.14em] text-cyan-500">{group.title}</div><div className="text-[10px] text-slate-400 mt-0.5 truncate">{group.subtitle}</div></div>
-{expanded?<ChevronDown className="w-5 h-5 text-cyan-500"/>:<ChevronRight className="w-5 h-5 text-slate-400"/>}
+{groupAlert&&<span className="px-2 py-1 rounded-full bg-rose-500/10 text-rose-500 text-[8px] font-black">ALERT</span>}{expanded?<ChevronDown className="w-5 h-5 text-cyan-500"/>:<ChevronRight className="w-5 h-5 text-slate-400"/>}
 </button>
 {expanded&&<div className="px-2 pb-2 space-y-1.5 border-t border-slate-200 dark:border-slate-800 pt-2">
 {group.items.map(id=>{const sec=find(id);const Icon=sec.icon;const alert=sectionAlert(patient,id);const vent=id==='icu'&&ventilated(patient);return <button key={id} type="button" onClick={()=>select(id)} className={`w-full min-h-[58px] flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-cyan-500/5 active:scale-[.995] transition-all ${alert?'border border-rose-400/60 bg-rose-500/5':vent?'border border-cyan-400/50 bg-cyan-500/5':''}`}>
