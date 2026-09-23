@@ -99,40 +99,12 @@ async function collectionData(p:string,unitId?:string){
 }
 async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessState):Promise<number>{
   if(access.role==='owner'||access.role==='view_only')return 0;
-  const unitIds=new Set<string>((Array.isArray((access as any).unitIds)?(access as any).unitIds:[access.unitId]).filter(Boolean).map(String));
-  if(!unitIds.size)return 0;
-  const legacy=await collectionData(`users/${uid}/patients`);
-  let migrated=0;
-  for(const item of legacy){
-    const existing=await getDoc(webDoc(`${path(access.workspaceId,'patients')}/${item.id}`));
-    if(existing.exists())continue;
-    const sourceUnit=String(item.unitId||'');
-    const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');
-    if(!targetUnit)continue;
-    const patient={...safe(item),id:String(item.id),unitId:targetUnit,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
-    await withTimeout(setDoc(webDoc(`${path(access.workspaceId,'patients')}/${item.id}`),patient,{merge:false}));
-    migrated++;
-  }
-  try{
-    const legacyBeds=await collectionData(`users/${uid}/beds`);
-    for(const item of legacyBeds){
-      const sourceUnit=String(item.unitId||'');
-      const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');
-      if(!targetUnit)continue;
-      const existing=await getDoc(webDoc(`${path(access.workspaceId,'beds')}/${item.id}`));
-      if(existing.exists()){
-        const existingPatientId=String(existing.data()?.patientId||'');
-        const legacyPatientId=String(item.patientId||'');
-        if(existingPatientId&&existingPatientId!==legacyPatientId)continue;
-      }
-      const bed={...safe(item),id:String(item.id),unitId:targetUnit,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
-      await withTimeout(setDoc(webDoc(`${path(access.workspaceId,'beds')}/${item.id}`),bed,{merge:true}));
-    }
-  }catch(error){
-    localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
-    localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));
-    console.warn('Legacy member bed migration failed:',error);
-  }
+  const unitIds=new Set<string>((Array.isArray((access as any).unitIds)?(access as any).unitIds:[access.unitId]).filter(Boolean).map(String));if(!unitIds.size)return 0;
+  const legacyBeds=await collectionData('users/'+uid+'/beds');const legacyPatients=await collectionData('users/'+uid+'/patients');const workspaceBeds=await collectionData(path(access.workspaceId,'beds'));
+  const canonicalBeds=new Map<string,{id:string;data:any}>();for(const item of workspaceBeds){const unit=String(item.unitId||'');const number=String(item.bedNumber||'').trim().toLowerCase();if(unit&&number)canonicalBeds.set(unit+'::'+number,{id:String(item.id),data:item});}
+  const legacyBedMap=new Map<string,string>();
+  for(const item of legacyBeds){const sourceUnit=String(item.unitId||'');const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');if(!targetUnit)continue;const bedNumber=String(item.bedNumber||'').trim();if(!bedNumber)continue;const key=targetUnit+'::'+bedNumber.toLowerCase();let canonical=canonicalBeds.get(key);if(!canonical){const canonicalId='bed-'+targetUnit+'-'+bedNumber.replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase();canonical={id:canonicalId,data:{id:canonicalId,unitId:targetUnit,bedNumber,status:'Empty',schemaVersion:SCHEMA_VERSION}};canonicalBeds.set(key,canonical);}legacyBedMap.set(String(item.id),canonical.id);const legacyPatientId=String(item.patientId||'');const existingPatientId=String(canonical.data?.patientId||'');if((legacyPatientId&&(!existingPatientId||existingPatientId===legacyPatientId))||!existingPatientId){const bed={...canonical.data,...item,id:canonical.id,unitId:targetUnit,bedNumber,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION,status:item.status||canonical.data?.status||'Stable'};await withTimeout(setDoc(webDoc(path(access.workspaceId,'beds')+'/'+canonical.id),bed,{merge:true}));canonical.data=bed;}}
+  let migrated=0;for(const item of legacyPatients){const sourceUnit=String(item.unitId||'');const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');if(!targetUnit)continue;let targetBedId='';const legacyBedId=String(item.bedId||'');if(legacyBedId)targetBedId=legacyBedMap.get(legacyBedId)||'';if(!targetBedId&&legacyBedId){const lb=legacyBeds.find(b=>String(b.id)===legacyBedId);const bn=String(lb?.bedNumber||'').trim();if(bn)targetBedId=canonicalBeds.get(targetUnit+'::'+bn.toLowerCase())?.id||'';}const existing=await getDoc(webDoc(path(access.workspaceId,'patients')+'/'+item.id));const patient={...safe(item),id:String(item.id),unitId:targetUnit,bedId:targetBedId||String(item.bedId||''),migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};if(existing.exists()){const existingUnit=String(existing.data()?.unitId||'');if(existingUnit&&existingUnit!==targetUnit)continue;await withTimeout(setDoc(webDoc(path(access.workspaceId,'patients')+'/'+item.id),{unitId:targetUnit,...(targetBedId?{bedId:targetBedId}:{}),migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true}));}else{await withTimeout(setDoc(webDoc(path(access.workspaceId,'patients')+'/'+item.id),patient,{merge:false}));migrated++;}if(targetBedId){const bedRef=path(access.workspaceId,'beds')+'/'+targetBedId;const bedSnap=await getDoc(webDoc(bedRef));const bedData=bedSnap.exists()?bedSnap.data():{};const occupiedBy=String(bedData?.patientId||'');if(!occupiedBy||occupiedBy===String(item.id))await withTimeout(setDoc(webDoc(bedRef),{patientId:String(item.id),status:item.status||bedData?.status||'Stable',unitId:targetUnit,bedNumber:bedData?.bedNumber||item.bedNumber||'',schemaVersion:SCHEMA_VERSION},{merge:true}));}}
   return migrated;
 }
 
