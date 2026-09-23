@@ -95,8 +95,6 @@ service cloud.firestore {
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
-           resource.data.workspaceId == workspaceId &&
-           request.resource.data.workspaceId == workspaceId &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt']) &&
            selfClinicalRole(request.resource.data.role));
 
