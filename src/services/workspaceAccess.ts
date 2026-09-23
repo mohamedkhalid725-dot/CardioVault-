@@ -182,7 +182,16 @@ export async function setOwnClinicalProfile(name:string,role:SelfClinicalRole):P
   if(!id)throw new Error('A Firebase account must be signed in.');
   if(await isMasterAccount())throw new Error('The Master Account does not require a clinical role selection.');
   const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
-  const patch={uid:id,workspaceId:MASTER_WORKSPACE_ID,name:cleanName,role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  let teamExists=false;
+  try {
+    if(Capacitor.isNativePlatform()) {
+      const existing=await FirebaseFirestore.getDocument({reference:ref});
+      teamExists=!!safe(existing?.snapshot);
+    } else {
+      teamExists=(await webGetDoc(webDoc(ref))).exists();
+    }
+  } catch {}
+  const patch={uid:id,workspaceId:MASTER_WORKSPACE_ID,...(!teamExists?{departmentId:'dept-cardiology',status:'active'}:{}),name:cleanName,role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   try {
     if(Capacitor.isNativePlatform()) {
       await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
