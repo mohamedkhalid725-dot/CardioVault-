@@ -107,11 +107,11 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
   const handleSaveStudy = (e: React.FormEvent) => {
     e.preventDefault();
     if (savingStudy) return;
-    setSavingStudy(true);
     if (!findings.trim() || !impression.trim()) {
       showToast('Please provide findings and impression', 'error');
       return;
     }
+    setSavingStudy(true);
 
     if (editingStudyId) {
       const updated = studies.map(s => s.id === editingStudyId ? {
