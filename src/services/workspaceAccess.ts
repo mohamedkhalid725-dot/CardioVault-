@@ -211,62 +211,80 @@ export async function setOwnClinicalProfile(name:string,role:SelfClinicalRole):P
 }
 export async function getTeamDirectoryMembers():Promise<any[]>{
   const id=await uid();
-  if(!id) return [];
+  if(!id)return[];
   const localUsers=AuthorizationService.getUsers();
-  const mergeProfiles=(profiles:any[])=>{
-    const byId=new Map<string,any>();
-    profiles.forEach(profile=>{const key=String(profile?.userId||profile?.uid||'');if(key&&!key.startsWith('user-')&&!String(profile?.email||'').endsWith('@cardiovault.org'))byId.set(key,profile);});
-    localUsers.forEach(profile=>{const key=String(profile?.userId||'');if(key&&!key.startsWith('user-')&&!byId.has(key))byId.set(key,profile);});
-    return Array.from(byId.values()).filter((x:any)=>x?.status!=='inactive');
-  };
+  const master=await isMasterAccount();
   try{
-    const master=await isMasterAccount();
-    if(master) await ensureOwnerWorkspace();
-    const teamProfiles:any[]=[];
+    if(master)await ensureOwnerWorkspace();
+    let teamProfiles:any[]=[];
+    let memberRecords:any[]=[];
     if(Capacitor.isNativePlatform()){
-      try{
-        const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/team`});
-        teamProfiles.push(...(result?.snapshots||[]).map((s:any)=>safe(s)||{}));
-      }catch(error){console.warn('Team directory team query failed:',error);}
+      const [teamResult,memberResult]=await Promise.all([
+        FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/team`}).catch(error=>{console.warn('Team directory team query failed:',error);return null;}),
+        master?FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/members`}).catch(error=>{console.warn('Team directory membership query failed:',error);return null;}):Promise.resolve(null),
+      ]);
+      teamProfiles=(teamResult?.snapshots||[]).map((snapshot:any)=>({...safe(snapshot),uid:String(snapshot?.id||snapshot?.documentId||'')}));
+      memberRecords=(memberResult?.snapshots||[]).map((snapshot:any)=>({...safe(snapshot),uid:String(snapshot?.id||snapshot?.documentId||'')}));
     }else{
-      try{
-        const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/team`));
-        teamProfiles.push(...snap.docs.map((d:any)=>d.data()));
-      }catch(error){console.warn('Team directory team query failed:',error);}
+      const [teamSnapshot,memberSnapshot]=await Promise.all([
+        webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/team`)).catch(error=>{console.warn('Team directory team query failed:',error);return null;}),
+        master?webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/members`)).catch(error=>{console.warn('Team directory membership query failed:',error);return null;}):Promise.resolve(null),
+      ]);
+      teamProfiles=(teamSnapshot?.docs||[]).map((doc:any)=>({...doc.data(),uid:doc.id}));
+      memberRecords=(memberSnapshot?.docs||[]).map((doc:any)=>({...doc.data(),uid:doc.id}));
     }
-    // Master fallback: the membership collection is owner-readable even when an
-    // older deployment has incomplete team-profile records. Resolve each member's
-    // team document individually so one failed collection query cannot blank the directory.
+    const localById=new Map(localUsers.map(profile=>[String(profile?.userId||''),profile]));
+    const profilesById=new Map<string,any>();
+    const validRoles=['pending','department_admin','consultant','specialist','resident','nurse','viewer','pharmacist','lab_user','radiology_user','coordinator'];
+    for(const profile of teamProfiles){
+      const profileId=String(profile?.userId||profile?.uid||'');
+      if(!profileId||profileId.startsWith('user-'))continue;
+      const local=localById.get(profileId);
+      profilesById.set(profileId,{
+        ...local,
+        ...profile,
+        userId:profileId,
+        uid:profileId,
+        email:'',
+        name:String(profile?.name||local?.name||'Team member'),
+        role:validRoles.includes(String(profile?.role))?profile.role:(local?.role||'pending'),
+        departmentId:String(profile?.departmentId||'dept-cardiology'),
+        assignedUnitIds:Array.isArray(profile?.assignedUnitIds)?profile.assignedUnitIds.map(String):[],
+        status:profile?.status||'active',
+      });
+    }
     if(master){
-      let memberIds:string[]=[];
-      try{
-        if(Capacitor.isNativePlatform()){
-          const result:any=await FirebaseFirestore.getCollection({reference:`workspaces/${MASTER_WORKSPACE_ID}/members`});
-          memberIds=(result?.snapshots||[]).map((s:any)=>String(s?.id||s?.documentId||'')).filter(Boolean);
-        }else{
-          const snap=await webGetDocs(webCollection(`workspaces/${MASTER_WORKSPACE_ID}/members`));
-          memberIds=snap.docs.map((d:any)=>String(d.id)).filter(Boolean);
-        }
-      }catch(error){console.warn('Team directory membership fallback failed:',error);}
-      for(const memberId of memberIds){
-        if(teamProfiles.some((p:any)=>String(p?.userId||p?.uid||'')===memberId)) continue;
-        try{
-          const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${memberId}`;
-          let profile:any=null;
-          if(Capacitor.isNativePlatform()) profile=safe((await FirebaseFirestore.getDocument({reference:ref})).snapshot);
-          else {const docSnap=await webGetDoc(webDoc(ref));profile=docSnap.exists()?docSnap.data():null;}
-          if(profile) teamProfiles.push(profile);
-        }catch(error){console.warn('Team profile lookup failed:',memberId,error);}
+      for(const member of memberRecords){
+        const memberId=String(member?.uid||member?.userId||'');
+        if(!memberId||memberId.startsWith('user-')||member?.active===false||member?.forceReauth===true)continue;
+        const local=localById.get(memberId);
+        const existing=profilesById.get(memberId)||{};
+        profilesById.set(memberId,{
+          ...local,
+          ...existing,
+          userId:memberId,
+          uid:memberId,
+          email:'',
+          name:String(existing?.name||member?.name||local?.name||'Team member'),
+          role:validRoles.includes(String(existing?.role))?existing.role:(validRoles.includes(String(local?.role))?local?.role:'pending'),
+          departmentId:String(existing?.departmentId||'dept-cardiology'),
+          assignedUnitIds:Array.isArray(existing?.assignedUnitIds)&&existing.assignedUnitIds.length?existing.assignedUnitIds.map(String):Array.from(new Set([...(Array.isArray(member?.unitIds)?member.unitIds:[]),...(member?.unitId?[member.unitId]:[])].map(String).filter(Boolean))),
+          status:existing?.status||'active',
+        });
       }
     }
-    return mergeProfiles(teamProfiles);
+    for(const local of localUsers){
+      const localId=String(local?.userId||'');
+      if(localId&&!localId.startsWith('user-')&&!profilesById.has(localId)&&local?.status!=='inactive')profilesById.set(localId,{...local,email:''});
+    }
+    return Array.from(profilesById.values()).filter(profile=>profile?.status!=='inactive');
   }catch(error){
     console.warn('Team directory cloud read failed:',error);
-    return localUsers.filter((x:any)=>x?.userId&&x.status!=='inactive');
+    return localUsers.filter((profile:any)=>profile?.userId&&profile.status!=='inactive').map((profile:any)=>({...profile,email:''}));
   }
 }
 export async function updateTeamDirectoryMember(userId:string,updates:Record<string,any>):Promise<any>{
-  const master=await isMasterAccount(); const own=await getOwnTeamProfile(); if(!master&&own?.role!=='department_admin') throw new Error('Only the Master Account or Department Admin can manage the Team Directory.');
+  const master=await isMasterAccount(); const own=await getOwnTeamProfile(); const consultant=own?.role==='consultant'&&own?.status==='active'; if(!master&&own?.role!=='department_admin'&&!consultant) throw new Error('Only the Master Account, Department Admin, or Consultant can manage the Team Directory.'); const target=Capacitor.isNativePlatform()?safe((await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/team/${userId}`})).snapshot):(await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/team/${userId}`))).data(); if(consultant&&target?.role==='department_admin')throw new Error('Consultants cannot change a Department Admin.'); if(updates.role==='department_admin'&&!master)throw new Error('Only the Master Account can assign Department Admin.');
   const cleanUnitIds=Array.from(new Set(Array.isArray(updates.assignedUnitIds)?updates.assignedUnitIds.map(String).filter(Boolean):[]));
   if(!cleanUnitIds.length) throw new Error('Assign at least one clinical unit.');
   const now=new Date().toISOString();

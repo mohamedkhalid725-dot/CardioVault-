@@ -308,14 +308,15 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
       const field = (x: number, y: number, label: string, value: any, w: number) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         text(teal);
         doc.text(label, x, y);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
+        doc.setFontSize(10.5);
         text(ink);
-        const lines = doc.splitTextToSize(compact(value, 55) || '—', w) as string[];
-        doc.text(lines.slice(0, 2), x, y + 4);
+        const lines = doc.splitTextToSize(val(value, '—'), w) as string[];
+        doc.text(lines, x, y + 4);
+        return 4 + Math.max(1, lines.length) * 4.1;
       };
 
       const twoColumnFields = (
@@ -325,17 +326,23 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         rows: Array<[string, any]>
       ) => {
         const half = (w - 4) / 2;
-        rows.slice(0, 6).forEach((row, i) => {
-          const col = i % 2;
-          const r = Math.floor(i / 2);
-          const xx = x + col * (half + 4);
-          const yy = y + r * 11;
-          fill(white);
-          draw(line);
-          doc.roundedRect(xx, yy, half, 9, 1.2, 1.2, 'FD');
-          field(xx + 3, yy + 3.2, row[0], row[1], half - 6);
-        });
-        return y + Math.ceil(Math.min(rows.length, 6) / 2) * 11;
+        let yy = y;
+        for (let i = 0; i < Math.min(rows.length, 6); i += 2) {
+          const pair = rows.slice(i, i + 2);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10.5);
+          const lineSets = pair.map(row => doc.splitTextToSize(val(row[1], '—'), half - 6) as string[]);
+          const boxH = Math.max(11, ...lineSets.map(lines => 8 + lines.length * 4.1));
+          pair.forEach((row, col) => {
+            const xx = x + col * (half + 4);
+            fill(white);
+            draw(line);
+            doc.roundedRect(xx, yy, half, boxH, 1.2, 1.2, 'FD');
+            field(xx + 3, yy + 4, row[0], row[1], half - 6);
+          });
+          yy += boxH + 2;
+        }
+        return yy;
       };
 
       const paragraphBox = (
@@ -349,21 +356,21 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       ) => {
         fill(white);
         draw(line);
-        const safeValue = compact(value, max) || '—';
+        const safeValue = val(value, '—');
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         const lines = doc.splitTextToSize(safeValue, w - 6) as string[];
         const lineH = 3.6;
-        const neededH = Math.max(h, 10 + Math.min(lines.length, 10) * lineH);
+        const neededH = Math.max(h, 12 + lines.length * lineH);
         doc.roundedRect(x, y, w, neededH, 1.4, 1.4, 'FD');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5.7);
+        doc.setFontSize(7.5);
         text(teal);
         doc.text(label, x + 3, y + 4);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         text(ink);
-        doc.text(lines.slice(0, Math.max(1, Math.floor((neededH - 7) / lineH))), x + 3, y + 8);
+        doc.text(lines, x + 3, y + 8);
         return neededH;
       };
 
@@ -382,25 +389,29 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         headers.forEach((h, i) => {
           doc.rect(xx, y, widths[i], rowH, 'FD');
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(6.6);
+          doc.setFontSize(8);
           text(navy);
-          doc.text(compact(h, 18), xx + 1.7, y + 4.1);
+          doc.text(h, xx + 1.7, y + Math.min(rowH - 1.5, 4.5));
           xx += widths[i];
         });
         let yy = y + rowH;
         rows.slice(0, maxRows).forEach(row => {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          const cellLines = widths.map((width, i) =>
+            doc.splitTextToSize(val(row[i], '—'), width - 3.4) as string[]
+          );
+          const dynamicH = Math.max(rowH, 3 + Math.max(...cellLines.map(lines => lines.length)) * 3.7);
           xx = x;
-          row.forEach((cell, i) => {
-            fill([255, 255, 255]);
+          widths.forEach((width, i) => {
+            fill(white);
             draw([205, 222, 230]);
-            doc.rect(xx, yy, widths[i], rowH, 'FD');
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
+            doc.rect(xx, yy, width, dynamicH, 'FD');
             text(ink);
-            doc.text(compact(cell, Math.max(10, Math.floor(widths[i] / 1.8))), xx + 1.7, yy + 4.1);
-            xx += widths[i];
+            doc.text(cellLines[i], xx + 1.7, yy + 2.8);
+            xx += width;
           });
-          yy += rowH;
+          yy += dynamicH;
         });
         return yy;
       };

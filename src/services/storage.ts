@@ -599,6 +599,7 @@ export const LEGACY_DEMO_UNIT_IDS = new Set([
   'unit-pediatric-icu',
   'unit-neuro-icu',
   'unit-surgical-icu',
+  'unit-ccu-1', 'unit-ccu-2', 'unit-cardiology-ward', 'unit-icu-1',
 ]);
 export const LEGACY_DEMO_PATIENT_IDS = new Set([
   'patient-2025001', 'patient-sara', 'patient-mohamed-h', 'patient-nada',
@@ -608,9 +609,9 @@ export const LEGACY_DEMO_PATIENT_IDS = new Set([
   'patient-noor', 'patient-rashid', 'patient-salma', 'patient-ibrahim',
   'patient-dalia',
 ]);
-export const INITIAL_UNITS: Unit[] = INITIAL_DEPARTMENT_UNITS;
+export const INITIAL_UNITS: Unit[] = [];
 
-export const INITIAL_BEDS: Bed[] = INITIAL_DEPARTMENT_BEDS;
+export const INITIAL_BEDS: Bed[] = [];
 
 export const INITIAL_PATIENTS: Patient[] = [];
 
@@ -760,6 +761,10 @@ export const StorageService = {
     this.saveAuth(defaultAuth);
     return defaultAuth;
   },
+
+  getProfileName(): string { try { return localStorage.getItem('cardiovault_profile_name_v1') || ''; } catch { return ''; } },
+
+  saveProfileName(name: string): void { try { localStorage.setItem('cardiovault_profile_name_v1', name.trim()); } catch {} },
 
   saveAuth(authData: any): void {
     try {
