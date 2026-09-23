@@ -113,6 +113,8 @@ export interface InvestigationItem {
   type: 'CBC' | 'ABG' | 'ECG' | 'Troponin' | 'CK-MB' | 'BNP' | 'Echo' | 'Imaging' | 'Other';
   title: string;
   status: 'ordered' | 'pending' | 'available' | 'reviewed' | 'acknowledged' | 'cancelled';
+  collectionStatus?: 'not_collected' | 'collected';
+  collectionUpdatedAt?: string;
   orderedAt: string;
   orderedBy: string;
   availableAt?: string;
