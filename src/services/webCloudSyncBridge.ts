@@ -43,20 +43,54 @@ function mergeClinicalMedia(localPatient:any, cloudPatient:any): any {
 async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   const user=webCurrentUser();
   if(user?.email?.toLowerCase()===MASTER_ACCOUNT_EMAIL.toLowerCase()){
-    await setDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}`),{ownerUid:uid,ownerEmail:MASTER_ACCOUNT_EMAIL,schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString()},{merge:true});
+    await setDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}\`),{ownerUid:uid,ownerEmail:MASTER_ACCOUNT_EMAIL,schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString()},{merge:true});
     const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};
     localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state)); return state;
   }
-  // Never trust a cached workspace access state across Firebase accounts.
-  // Resolve membership from the currently authenticated UID every time.
-  const member=await getDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${uid}`));
+  const member=await getDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}/members/\${uid}\`));
   if(!member.exists())return null;
   const m=member.data();
-  if(!m?.unitId||!m?.accessCodeHash)return null;
-  const code=await getDoc(webDoc(`accessCodes/${m.accessCodeHash}`)); if(!code.exists())return null;
-  const c=code.data(); if(!c?.active||c.workspaceId!==MASTER_WORKSPACE_ID)return null;
-  const unit=await getDoc(webDoc(`${path(MASTER_WORKSPACE_ID,'units')}/${m.unitId}`));
-  const state:WorkspaceAccessState={workspaceId:MASTER_WORKSPACE_ID,role:m.role==='view_only'?'view_only':'clinical_editor',unitId:String(m.unitId),unitName:String(unit.data()?.name||c.unitName||'')};
+  if(m?.active===false||m?.forceReauth===true)return null;
+  const hashes=Array.from(new Set([
+    ...(Array.isArray(m?.accessCodeHashes)?m.accessCodeHashes:[]),
+    m?.accessCodeHash,
+  ].filter(Boolean).map(String)));
+  if(!hashes.length)return null;
+  const activeCodes:any[]=[];
+  for(const hash of hashes){
+    const code=await getDoc(webDoc(\`accessCodes/\${hash}\`));
+    if(code.exists()){
+      const data=code.data();
+      if(data?.active===true&&data.workspaceId===MASTER_WORKSPACE_ID)activeCodes.push({hash,data});
+    }
+  }
+  if(!activeCodes.length)return null;
+  const unitIds=Array.from(new Set([
+    ...(Array.isArray(m?.unitIds)?m.unitIds:[]),
+    ...(m?.unitId?[m.unitId]:[]),
+  ].map(String).filter(Boolean)));
+  if(!unitIds.length)return null;
+  const unitNames:Record<string,string>={};
+  await Promise.all(unitIds.map(async unitId=>{
+    try{
+      const unit=await getDoc(webDoc(\`\${path(MASTER_WORKSPACE_ID,'units')}/\${unitId}\`));
+      const codeForUnit=activeCodes.find(x=>String(x.data?.unitId)===unitId);
+      unitNames[unitId]=String(unit.data()?.name||codeForUnit?.data?.unitName||unitId);
+    }catch{
+      const codeForUnit=activeCodes.find(x=>String(x.data?.unitId)===unitId);
+      unitNames[unitId]=String(codeForUnit?.data?.unitName||unitId);
+    }
+  }));
+  const currentUnitId=String(m?.unitId&&unitIds.includes(String(m.unitId))?m.unitId:unitIds[0]);
+  const currentCode=activeCodes.find(x=>String(x.data?.unitId)===currentUnitId)||activeCodes[0];
+  const state:WorkspaceAccessState={
+    workspaceId:MASTER_WORKSPACE_ID,
+    role:m.role==='view_only'?'view_only':'clinical_editor',
+    unitId:currentUnitId,
+    unitName:unitNames[currentUnitId]||String(currentCode?.data?.unitName||currentUnitId),
+    unitIds,
+    unitNames,
+  };
   localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state)); return state;
 }
 async function collectionData(p:string,unitId?:string){
@@ -70,10 +104,21 @@ export async function webLoadCurrentUserFromCloud(){
     let units:any[]=[],beds:any[]=[],patients:any[]=[];
     if(access.role==='owner'){
       [units,beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'units')),collectionData(path(access.workspaceId,'beds')),collectionData(path(access.workspaceId,'patients'))]);
-    }else if(access.unitId){
-      const unit=await getDoc(webDoc(`${path(access.workspaceId,'units')}/${access.unitId}`));
-      units=unit.exists()?[{...unit.data(),id:access.unitId}]:[];
-      [beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'beds'),access.unitId),collectionData(path(access.workspaceId,'patients'),access.unitId)]);
+    }else{
+      const unitIds=Array.from(new Set((access.unitIds?.length?access.unitIds:[access.unitId]).filter(Boolean).map(String)));
+      const loaded=await Promise.all(unitIds.map(async unitId=>{
+        const unit=await getDoc(webDoc(\`\${path(access.workspaceId,'units')}/\${unitId}\`));
+        const [scopedBeds,scopedPatients]=await Promise.all([
+          collectionData(path(access.workspaceId,'beds'),unitId),
+          collectionData(path(access.workspaceId,'patients'),unitId),
+        ]);
+        return {
+          unit:unit.exists()?{...unit.data(),id:unitId}:null,
+          beds:scopedBeds,
+          patients:scopedPatients,
+        };
+      }));
+      loaded.forEach(item=>{if(item.unit)units.push(item.unit);beds.push(...item.beds);patients.push(...item.patients);});
     }
     // Never let an incomplete owner cloud snapshot erase a larger local unit registry.
     // If local has more units than cloud, keep the local registry and upload it on the next sync.
@@ -118,11 +163,18 @@ export async function webSyncCurrentUserNow(){
       localStorage.setItem(LAST_ERROR_DETAIL_KEY,'This CardioVault account has view-only access and cannot upload changes.');
       return false;
     }
-    const sync=async(name:string,records:any[],unitFilter:boolean)=>{
+    const allowedUnitIds=new Set((access.unitIds?.length?access.unitIds:[access.unitId]).filter(Boolean).map(String));
+    const sync=async(name:string,records:any[],unitScoped:boolean)=>{
       const current=new Set<string>();
-      for(const record of records){if(!record?.id)continue;if(unitFilter&&String(record.unitId)!==String(access.unitId))continue;current.add(String(record.id));await withTimeout(setDoc(webDoc(`${path(access.workspaceId,name)}/${record.id}`),{...safe(record),id:String(record.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true}));}
+      for(const record of records){
+        if(!record?.id)continue;
+        if(unitScoped&&!allowedUnitIds.has(String(record.unitId||'')))continue;
+        current.add(String(record.id));
+        await withTimeout(setDoc(webDoc(\`\${path(access.workspaceId,name)}/\${record.id}\`),{...safe(record),id:String(record.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true}));
+      }
       if(access.role==='owner'){
-        const remote=await collectionData(path(access.workspaceId,name));for(const item of remote)if(!current.has(String(item.id)))await deleteDoc(webDoc(`${path(access.workspaceId,name)}/${item.id}`));
+        const remote=await collectionData(path(access.workspaceId,name));
+        for(const item of remote)if(!current.has(String(item.id)))await deleteDoc(webDoc(\`\${path(access.workspaceId,name)}/\${item.id}\`));
       }
     };
     if(access.role==='owner')await sync('units',StorageService.getUnits(),false);
