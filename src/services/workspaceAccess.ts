@@ -4,7 +4,6 @@ import {FirebaseFirestore} from '@capacitor-firebase/firestore';
 import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc,getDocs as webGetDocs,deleteDoc as webDeleteDoc,webCollection} from './webFirebase';
 import { AuthorizationService } from './authorizationService';
 import { UserProfile, ClinicalRole } from '../types/clinical';
-import { isSupabaseStorageConfigured, registerSupabaseUnitAccessCode, revokeSupabaseUnitAccessCode, redeemSupabaseUnitAccessCode } from './supabaseStorage';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
 export interface WorkspaceAccessState{workspaceId:string;role:WorkspaceRole;unitId:string|null;unitName:string|null;unitIds?:string[];unitNames?:Record<string,string>;}
 export interface UnitAccessCode{unitId:string;unitName:string;code:string;role:Exclude<WorkspaceRole,'owner'>;active:boolean;}
@@ -27,11 +26,6 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   const code=raw.trim().toUpperCase();
   if(code.length<6)throw new Error('Invalid Unit Access Code.');
   const accessCodeHash=await hash(code);
-  let supabaseAccess: { unitId:string; unitName:string; role:'view_only'|'clinical_editor' } | null = null;
-  if (isSupabaseStorageConfigured()) {
-    try { supabaseAccess = await redeemSupabaseUnitAccessCode(code); }
-    catch (error) { console.warn('Supabase Unit membership redemption failed:', error); }
-  }
   let access:any;
   if(Capacitor.isNativePlatform()){
     const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${accessCodeHash}`});
@@ -40,7 +34,6 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
     const result=await webGetDoc(webDoc(`accessCodes/${accessCodeHash}`));
     access=result.exists()?result.data():null;
   }
-  if(supabaseAccess) access={...access,unitId:supabaseAccess.unitId,unitName:supabaseAccess.unitName,role:supabaseAccess.role};
   if(!access?.active||access.workspaceId!==MASTER_WORKSPACE_ID||!access.unitId)throw new Error('Invalid or inactive Unit Access Code.');
   const existingMembership = Capacitor.isNativePlatform()
     ? safe((await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`})).snapshot) || {}
@@ -275,7 +268,40 @@ export async function removeTeamDirectoryMember(userId:string):Promise<void>{
   const users=AuthorizationService.getUsers().filter(u=>u.userId!==userId);
   AuthorizationService.saveUsers(users);
 }
-export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{const id=await uid();if(!id)return null;if(await isMasterAccount())return !!(await ensureOwnerWorkspace());try{let membership:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`});membership=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`));membership=result.exists()?result.data():null;}if(!membership)return null;if(membership?.active===false||membership?.forceReauth===true)return false;if(Array.isArray(membership.unitIds)&&membership.unitIds.length)return true;const hashes=Array.from(new Set([membership.accessCodeHash,...(Array.isArray(membership.accessCodeHashes)?membership.accessCodeHashes:[])].filter(Boolean).map(String)));if(!hashes.length)return false;for(const h of hashes){let access:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${h}`});access=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(`accessCodes/${h}`));access=result.exists()?result.data():null;}if(access?.active&&access.workspaceId===MASTER_WORKSPACE_ID)return true;}return false;}catch(error){console.warn('Workspace access validation failed:',error);return null;}}
+export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
+  const id=await uid();
+  if(!id)return null;
+  if(await isMasterAccount())return !!(await ensureOwnerWorkspace());
+  try{
+    let membership:any=null;
+    if(Capacitor.isNativePlatform()){
+      const result:any=await FirebaseFirestore.getDocument({reference:\`workspaces/\${MASTER_WORKSPACE_ID}/members/\${id}\`});
+      membership=safe(result?.snapshot);
+    }else{
+      const result=await webGetDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}/members/\${id}\`));
+      membership=result.exists()?result.data():null;
+    }
+    if(!membership)return null;
+    if(membership?.active===false||membership?.forceReauth===true)return false;
+    const hashes=Array.from(new Set([
+      ...(Array.isArray(membership.accessCodeHashes)?membership.accessCodeHashes:[]),
+      membership.accessCodeHash,
+    ].filter(Boolean).map(String)));
+    if(!hashes.length)return false;
+    for(const h of hashes){
+      let access:any=null;
+      if(Capacitor.isNativePlatform()){
+        const result:any=await FirebaseFirestore.getDocument({reference:\`accessCodes/\${h}\`});
+        access=safe(result?.snapshot);
+      }else{
+        const result=await webGetDoc(webDoc(\`accessCodes/\${h}\`));
+        access=result.exists()?result.data():null;
+      }
+      if(access?.active===true&&access.workspaceId===MASTER_WORKSPACE_ID)return true;
+    }
+    return false;
+  }catch(error){console.warn('Workspace access validation failed:',error);return null;}
+}
 export function isOwnerAccess(){
   const state=getStoredWorkspaceAccess();
   if(state?.role==='owner'&&state?.workspaceId===MASTER_WORKSPACE_ID)return true;
