@@ -74,10 +74,75 @@ async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessStat
   return migrated;
 }
 
+async function repairOwnerWorkspaceRegistry(workspaceId:string):Promise<void>{
+  const [units,beds,patients]=await Promise.all([
+    collectionData(path(workspaceId,'units')),
+    collectionData(path(workspaceId,'beds')),
+    collectionData(path(workspaceId,'patients'))
+  ]);
+  const validUnits=new Set(units.map((u:any)=>String(u.id||'')).filter(Boolean));
+  if(!validUnits.size)return;
+  const patientsById=new Map(patients.map((p:any)=>[String(p.id||''),p]));
+  const bedsById=new Map(beds.map((b:any)=>[String(b.id||''),b]));
+  let changed=false;
+
+  // Repair beds whose legacy unitId no longer exists. Prefer the patient's valid unitId.
+  for(const bed of beds){
+    const bedId=String(bed.id||'');
+    const unitId=String(bed.unitId||'');
+    if(!bedId||validUnits.has(unitId))continue;
+    const patient=patientsById.get(String(bed.patientId||''));
+    const targetUnit=String(patient?.unitId||'');
+    if(targetUnit&&validUnits.has(targetUnit)){
+      await withTimeout(setDoc(webDoc(path(workspaceId,'beds')+'/'+bedId),{unitId:targetUnit,schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
+      changed=true;
+    }
+  }
+
+  // Repair patients whose unitId is stale but whose bed belongs to a valid unit.
+  for(const patient of patients){
+    const patientId=String(patient.id||'');
+    const unitId=String(patient.unitId||'');
+    if(!patientId||validUnits.has(unitId))continue;
+    const bed=bedsById.get(String(patient.bedId||''));
+    const targetUnit=String(bed?.unitId||'');
+    if(targetUnit&&validUnits.has(targetUnit)){
+      await withTimeout(setDoc(webDoc(path(workspaceId,'patients')+'/'+patientId),{unitId:targetUnit,schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
+      changed=true;
+    }
+  }
+
+  // Remove only true duplicates: same workspace unit + same bed number.
+  // Never merge/delete beds that belong to different units.
+  const grouped=new Map<string,any[]>();
+  for(const bed of beds){
+    const unitId=String(bed.unitId||'');
+    const number=String(bed.bedNumber||'').trim().toLowerCase();
+    if(!validUnits.has(unitId)||!number)continue;
+    const key=unitId+'::'+number;
+    const list=grouped.get(key)||[]; list.push(bed); grouped.set(key,list);
+  }
+  for(const [,list] of grouped){
+    if(list.length<2)continue;
+    const keeper=list.find((b:any)=>String(b.patientId||''))||list[0];
+    for(const duplicate of list){
+      if(String(duplicate.id)===String(keeper.id))continue;
+      const duplicatePatientId=String(duplicate.patientId||'');
+      const keeperPatientId=String(keeper.patientId||'');
+      if(!keeperPatientId&&duplicatePatientId){
+        await withTimeout(setDoc(webDoc(path(workspaceId,'beds')+'/'+keeper.id),{patientId:duplicatePatientId,status:duplicate.status||'Stable',schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
+      }
+      await withTimeout(deleteDoc(webDoc(path(workspaceId,'beds')+'/'+duplicate.id)));
+      changed=true;
+    }
+  }
+  if(changed)localStorage.setItem('cardiovault_workspace_registry_repaired_v1',new Date().toISOString());
+}
+
 export async function webLoadCurrentUserFromCloud(){
   const user=webCurrentUser(); if(!user?.uid)return null;
   try{
-    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role!=='owner'&&access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
+    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role==='owner'){try{await repairOwnerWorkspaceRegistry(access.workspaceId);}catch(error){console.warn('Workspace registry repair failed:',error);}} if(access.role!=='owner'&&access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
     let units:any[]=[],beds:any[]=[],patients:any[]=[];
     if(access.role==='owner'){
       [units,beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'units')),collectionData(path(access.workspaceId,'beds')),collectionData(path(access.workspaceId,'patients'))]);
