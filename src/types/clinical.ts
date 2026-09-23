@@ -112,7 +112,7 @@ export interface InvestigationItem {
   departmentId?: string;
   type: 'CBC' | 'ABG' | 'ECG' | 'Troponin' | 'CK-MB' | 'BNP' | 'Echo' | 'Imaging' | 'Other';
   title: string;
-  status: 'ordered' | 'pending' | 'available' | 'reviewed' | 'acknowledged';
+  status: 'ordered' | 'pending' | 'available' | 'reviewed' | 'acknowledged' | 'cancelled';
   orderedAt: string;
   orderedBy: string;
   availableAt?: string;
@@ -175,7 +175,7 @@ export interface Consultation {
   assignedClinician?: string;
   priority: 'routine' | 'urgent' | 'stat';
   clinicalQuestion: string;
-  status: 'Requested' | 'Accepted' | 'In Progress' | 'Completed';
+  status: 'Requested' | 'Accepted' | 'In Progress' | 'Completed' | 'Cancelled';
   requestedBy: string;
   requestedAt: string;
   acceptedAt?: string;
