@@ -74,6 +74,30 @@ async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessStat
   return migrated;
 }
 
+
+async function migrateAllLegacyMembersIntoWorkspace(workspaceId:string):Promise<number>{
+  const members=await collectionData(path(workspaceId,'members'));
+  let migrated=0;
+  for(const member of members){
+    const uid=String(member?.uid||member?.id||'');
+    const unitId=String(member?.unitId||'');
+    const role=member?.role==='view_only'?'view_only':'clinical_editor';
+    if(!uid||!unitId||role==='view_only')continue;
+    try{
+      migrated+=await migrateLegacyMemberPatients(uid,{
+        workspaceId,
+        role,
+        unitId,
+        unitName:String(member?.unitName||'')
+      });
+    }catch(error){
+      console.warn('Legacy member migration skipped:',uid,error);
+    }
+  }
+  if(migrated) localStorage.setItem('cardiovault_legacy_members_migrated_v1',new Date().toISOString());
+  return migrated;
+}
+
 async function repairOwnerWorkspaceRegistry(workspaceId:string):Promise<void>{
   const [units,beds,patients]=await Promise.all([
     collectionData(path(workspaceId,'units')),
