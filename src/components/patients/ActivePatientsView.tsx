@@ -8,7 +8,7 @@ export const ActivePatientsView: React.FC = () => {
   const access = getStoredWorkspaceAccess();
   const allowedUnitIds = access?.role === 'owner' ? null : new Set((access?.unitIds?.length ? access.unitIds : access?.unitId ? [access.unitId] : []).map(String));
   const [query, setQuery] = useState('');
-  const active = useMemo(() => patients.filter(p => !p.isArchived && (!allowedUnitIds || allowedUnitIds.has(String(p.unitId)))), [patients, allowedUnitIds]);
+  const active = useMemo(() => patients.filter(p => !p.isArchived && !!p.bedId && beds.some(b => b.id === p.bedId && b.unitId === p.unitId && b.patientId === p.id) && (!allowedUnitIds || allowedUnitIds.has(String(p.unitId)))), [patients, beds, allowedUnitIds]);
   const filtered = active.filter(p => {
     const q = query.toLowerCase().trim();
     if (!q) return true;
