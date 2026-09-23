@@ -604,10 +604,11 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       await drawFirstPage();
       drawSecondPage();
 
-      // Build the Blob from the ArrayBuffer explicitly. This avoids the Android
-      // WebView/jsPDF blob-output path that can throw after the PDF was generated.
-      const pdfData = doc.output('arraybuffer') as ArrayBuffer;
-      const blob = new Blob([pdfData], { type: 'application/pdf' });
+      // Generate the PDF exactly once as a Blob. This is more reliable in Android
+      // WebView than mixing arraybuffer/data-uri output paths.
+      const blob = doc.output('blob') as Blob;
+      const pdfData = await blob.arrayBuffer();
+      if (!pdfData.byteLength) throw new Error('Generated PDF is empty.');
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       const objectUrl = URL.createObjectURL(blob);
       setPreviewUrl(objectUrl);
@@ -622,8 +623,15 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
       if (saveToDevice) {
         if (Capacitor.isNativePlatform()) {
-          const dataUri = doc.output('datauristring');
-          const base64 = dataUri.split(',')[1] || '';
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const value = String(reader.result || '');
+              resolve(value.includes(',') ? value.split(',')[1] : value);
+            };
+            reader.onerror = () => reject(reader.error || new Error('Unable to read generated PDF.'));
+            reader.readAsDataURL(blob);
+          });
           await Filesystem.writeFile({
             path: `CardioVault/${filename}`,
             data: base64,
@@ -658,7 +666,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           <div>
             <h2 className="text-xl font-bold">Clinical PDF Export</h2>
             <p className="text-xs text-slate-500 mt-1">
-              CardioVault premium clinical template • up to 4 A4 pages • Arabic patient names supported.
+              CardioVault premium clinical template • A4 clinical report • Arabic patient names supported.
             </p>
           </div>
           <div className="flex gap-2">
@@ -696,7 +704,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="font-bold">PDF Preview</h3>
-              <p className="text-xs text-slate-500">Real generated PDF • up to 4 pages.</p>
+              <p className="text-xs text-slate-500">Real generated PDF • A4 clinical report.</p>
             </div>
             <div className="flex gap-2">
               <button onClick={() => void exportPdf(true)} disabled={busy} className="px-3 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold">Save PDF</button>
