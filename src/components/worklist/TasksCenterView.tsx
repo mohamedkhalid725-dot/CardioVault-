@@ -18,7 +18,7 @@ export const TasksCenterView:React.FC=()=>{
   const rows:{id:string;kind:'investigation'|'consult';patientId:string;patientName:string;unitId:string;title:string;status:string;priority:'routine'|'urgent'|'stat';createdAt:string;assignedTo?:string;description?:string}[]=[];
   authorized.forEach(p=>{
    (p.investigations||[]).filter(i=>i.status==='ordered'||i.status==='pending'||i.status==='available').forEach(i=>rows.push({id:'inv-'+i.id,kind:'investigation',patientId:p.id,patientName:p.fullName,unitId:p.unitId,title:'Order Investigation',status:i.status,priority:i.flag==='critical'?'stat':'urgent',createdAt:i.orderedAt,description:i.title}));
-   (p.consultations||[]).filter(c=>c.status!=='Completed').forEach(c=>rows.push({id:'consult-'+c.id,kind:'consult',patientId:p.id,patientName:p.fullName,unitId:p.unitId,title:'Request Consult',status:c.status,priority:c.priority,createdAt:c.requestedAt,assignedTo:c.assignedClinician,description:c.specialty}));
+   (p.consultations||[]).filter(c=>c.status!=='Completed'&&c.status!=='Cancelled').forEach(c=>rows.push({id:'consult-'+c.id,kind:'consult',patientId:p.id,patientName:p.fullName,unitId:p.unitId,title:'Request Consult',status:c.status,priority:c.priority,createdAt:c.requestedAt,assignedTo:c.assignedClinician,description:c.specialty}));
   });return rows;
  },[authorized]);
  const pendingActions=clinicalActions.filter(x=>x.status!=='reviewed'&&x.status!=='Completed');
