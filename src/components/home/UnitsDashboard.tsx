@@ -16,6 +16,7 @@ import { useApp } from '../../context/AppContext';
 import { Unit } from '../../types/clinical';
 import { UnitManagementModal } from '../units/UnitManagementModal';
 import { AddPatientModal } from '../patient/AddPatientModal';
+import { getStoredWorkspaceAccess } from '../../services/workspaceAccess';
 
 export const UnitsDashboard: React.FC = () => {
   const {
@@ -71,12 +72,22 @@ export const UnitsDashboard: React.FC = () => {
     setCurrentView('census');
   };
 
-  // Overall totals
-  const totalBeds = beds.length;
-  const occupiedBeds = beds.filter((b) => b.patientId).length;
-  const totalCritical = patients.filter((p) => !p.isArchived && p.status === 'Critical').length;
-  const totalUnstable = patients.filter((p) => !p.isArchived && p.status === 'Unstable').length;
-  const visibleUnits = units.filter((unit) => beds.some((bed) => bed.unitId === unit.id));
+  // Never render units outside the authenticated workspace scope.
+  const access = getStoredWorkspaceAccess();
+  const allowedUnitIds = access?.role === 'owner'
+    ? null
+    : new Set((access?.unitIds?.length ? access.unitIds : access?.unitId ? [access.unitId] : []).map(String));
+  const visibleUnits = units.filter((unit) =>
+    (!allowedUnitIds || allowedUnitIds.has(String(unit.id))) &&
+    beds.some((bed) => bed.unitId === unit.id)
+  );
+  const visibleUnitIdSet = new Set(visibleUnits.map(unit => unit.id));
+  const visibleBeds = beds.filter(bed => visibleUnitIdSet.has(bed.unitId));
+  const visiblePatients = patients.filter(patient => visibleUnitIdSet.has(patient.unitId));
+  const totalBeds = visibleBeds.length;
+  const occupiedBeds = visibleBeds.filter((b) => b.patientId).length;
+  const totalCritical = visiblePatients.filter((p) => !p.isArchived && p.status === 'Critical').length;
+  const totalUnstable = visiblePatients.filter((p) => !p.isArchived && p.status === 'Unstable').length;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-8 animate-in fade-in duration-200">
