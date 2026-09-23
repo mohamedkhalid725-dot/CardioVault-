@@ -224,7 +224,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.text('Confidential Medical Record', 9, 292);
         doc.setFont('helvetica', 'bold');
         text(navy);
-        doc.text(`Page ${page} of 4`, 178, 292);
+        doc.text(`Page ${page} of 2`, 178, 292);
       };
 
       const patientBanner = () => {
