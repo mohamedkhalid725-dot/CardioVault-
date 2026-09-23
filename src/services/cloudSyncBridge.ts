@@ -143,18 +143,38 @@ async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessStat
   if(access.role==='owner'||access.role==='view_only')return 0;
   const unitIds=new Set<string>((Array.isArray((access as any).unitIds)?(access as any).unitIds:[access.unitId]).filter(Boolean).map(String));
   if(!unitIds.size)return 0;
-  const legacy=await getCollectionDocuments(\`users/\${uid}/patients\`);
+  const legacy=await getCollectionDocuments(`users/${uid}/patients`);
   let migrated=0;
   for(const item of legacy){
     const raw=firestoreSafe({...item.data,id:item.id})||{};
-    const existing=await FirebaseFirestore.getDocument({reference:\`\${workspacePath(access.workspaceId,'patients')}/\${item.id}\`});
-    if(existing?.snapshot)continue;
+    const existing=await FirebaseFirestore.getDocument({reference:`${workspacePath(access.workspaceId,'patients')}/${item.id}`});
+    const existingData=readSnapshotData(existing?.snapshot);
+    if(existingData&&Object.keys(existingData).length)continue;
     const sourceUnit=String(raw.unitId||'');
     const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');
     if(!targetUnit)continue;
     const patient={...raw,id:item.id,unitId:targetUnit,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
-    await withRetry(()=>FirebaseFirestore.setDocument({reference:\`\${workspacePath(access.workspaceId,'patients')}/\${item.id}\`,data:patient,merge:false}));
+    await withRetry(()=>FirebaseFirestore.setDocument({reference:`${workspacePath(access.workspaceId,'patients')}/${item.id}`,data:patient,merge:false}));
     migrated++;
+  }
+  try{
+    const legacyBeds=await getCollectionDocuments(`users/${uid}/beds`);
+    for(const item of legacyBeds){
+      const raw=firestoreSafe({...item.data,id:item.id})||{};
+      const sourceUnit=String(raw.unitId||'');
+      const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');
+      if(!targetUnit)continue;
+      const existing=await FirebaseFirestore.getDocument({reference:`${workspacePath(access.workspaceId,'beds')}/${item.id}`});
+      const existingData=readSnapshotData(existing?.snapshot);
+      const existingPatientId=String(existingData?.patientId||'');
+      const legacyPatientId=String(raw.patientId||'');
+      if(existingData&&Object.keys(existingData).length&&existingPatientId&&existingPatientId!==legacyPatientId)continue;
+      const bed={...raw,id:item.id,unitId:targetUnit,schemaVersion:SCHEMA_VERSION,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString()};
+      await withRetry(()=>FirebaseFirestore.setDocument({reference:`${workspacePath(access.workspaceId,'beds')}/${item.id}`,data:bed,merge:true}));
+    }
+  }catch(error){
+    recordCloudError(error);
+    console.warn('Legacy member bed migration failed:',error);
   }
   return migrated;
 }
