@@ -20,10 +20,14 @@ export const UnitCensusView: React.FC = () => {
   const [teamUsers,setTeamUsers]=useState<UserProfile[]>([]);
 
   const access=getStoredWorkspaceAccess();
+  const allowedUnitIds=access?.role==='owner'
+    ? null
+    : new Set((access?.unitIds?.length?access.unitIds:access?.unitId?[access.unitId]:[]).map(String));
+  const scopedUnits=units.filter(unit=>!allowedUnitIds||allowedUnitIds.has(String(unit.id)));
   const editable=canEditClinicalData();
   const structureAdmin=canManageStructure();
-  const currentUnit=currentUnitId?getUnitById(currentUnitId):null;
-  const unitBeds=currentUnitId?getBedsByUnit(currentUnitId):[];
+  const currentUnit=currentUnitId&&scopedUnits.some(unit=>unit.id===currentUnitId)?getUnitById(currentUnitId):scopedUnits[0]||null;
+  const unitBeds=currentUnit?getBedsByUnit(currentUnit.id):[];
 
   useEffect(()=>{
     try{
@@ -50,7 +54,7 @@ export const UnitCensusView: React.FC = () => {
 
   return <div className="max-w-5xl mx-auto px-4 py-6 space-y-5 animate-in fade-in duration-200">
     <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><button onClick={()=>setCurrentView('home')} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"><ArrowLeft className="w-5 h-5"/></button><div><h1 className="text-2xl font-bold text-slate-900 dark:text-white">{currentUnit.name}</h1><p className="text-xs text-slate-500 dark:text-slate-400">{unitBeds.length} Beds • {currentUnit.type}{access?.role!=='owner'&&access?.unitName?` • Access: ${access.unitName}`:''}</p><div className="mt-2"><select value={currentUnit.id} onChange={e=>setCurrentUnitId(e.target.value)} className="text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5">{units.filter(u=>beds.some(b=>b.unitId===u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div></div>
+      <div className="flex items-center gap-3"><button onClick={()=>setCurrentView('home')} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"><ArrowLeft className="w-5 h-5"/></button><div><h1 className="text-2xl font-bold text-slate-900 dark:text-white">{currentUnit.name}</h1><p className="text-xs text-slate-500 dark:text-slate-400">{unitBeds.length} Beds • {currentUnit.type}{access?.role!=='owner'&&access?.unitName?` • Access: ${access.unitName}`:''}</p><div className="mt-2"><select value={currentUnit.id} onChange={e=>setCurrentUnitId(e.target.value)} className="text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5">{scopedUnits.filter(u=>beds.some(b=>b.unitId===u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div></div>
       {structureAdmin?<button onClick={()=>addBed(currentUnit.id)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-xs font-bold"><Plus className="w-4 h-4"/> Add Bed</button>:<div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-semibold"><LockKeyhole className="w-3.5 h-3.5"/> Beds managed by Owner</div>}
     </div>
 
