@@ -87,7 +87,7 @@ export const AuthorizationService = {
         if (parsed?.userId && parsed?.role) return normalizeUserProfile(parsed);
       }
     } catch {}
-    return { userId: '', name: 'Clinician', email: '', role: 'resident', departmentId: 'dept-cardiology', assignedUnitIds: [], status: 'pending', permissions: [], createdAt: new Date().toISOString() };
+    return { userId: '', name: 'Clinician', email: '', role: 'pending', departmentId: 'dept-cardiology', assignedUnitIds: [], status: 'pending', permissions: [], createdAt: new Date().toISOString() };
   },
 
   setCurrentUser(user: UserProfile): void {
@@ -140,11 +140,11 @@ export const AuthorizationService = {
       userId: firebaseUser.uid,
       name: firebaseUser.displayName || cleanEmail.split('@')[0] || 'Clinician',
       email: cleanEmail,
-      role: 'resident',
+      role: 'pending',
       departmentId: 'dept-cardiology',
       assignedUnitIds: [],
       status: 'pending',
-      permissions: ['clinical_documentation', 'orders', 'tasks', 'handover'],
+      permissions: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
