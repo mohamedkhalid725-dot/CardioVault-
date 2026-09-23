@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Users, ChevronRight, BedDouble, Activity } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { getStoredWorkspaceAccess } from '../../services/workspaceAccess';
 
 export const ActivePatientsView: React.FC = () => {
   const { patients, units, beds, setCurrentPatientId, setCurrentView } = useApp();
+  const access = getStoredWorkspaceAccess();
+  const allowedUnitIds = access?.role === 'owner' ? null : new Set((access?.unitIds?.length ? access.unitIds : access?.unitId ? [access.unitId] : []).map(String));
   const [query, setQuery] = useState('');
-  const active = useMemo(() => patients.filter(p => !p.isArchived), [patients]);
+  const active = useMemo(() => patients.filter(p => !p.isArchived && (!allowedUnitIds || allowedUnitIds.has(String(p.unitId)))), [patients, allowedUnitIds]);
   const filtered = active.filter(p => {
     const q = query.toLowerCase().trim();
     if (!q) return true;
