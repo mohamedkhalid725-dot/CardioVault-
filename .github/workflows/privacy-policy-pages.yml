@@ -1,4 +1,4 @@
-name: CardioVault Web App Build
+name: CardioVault Web App Pages
 
 on:
   push:
@@ -17,14 +17,19 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build-web:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,10 +48,14 @@ jobs:
       - name: Add Privacy Policy
         run: cp privacy-policy.html dist/privacy-policy.html
 
-      - name: Upload Web App artifact
-        uses: actions/upload-artifact@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
-          name: CardioVault-web-pages-${{ github.sha }}
           path: dist
-          if-no-files-found: error
-          retention-days: 14
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
