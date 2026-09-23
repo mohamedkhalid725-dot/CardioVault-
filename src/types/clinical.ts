@@ -101,6 +101,8 @@ export interface ClinicalTask {
   createdAt: string;
   completedAt?: string;
   completedBy?: string;
+  sourceType?: 'investigation' | 'consultation' | 'clinical';
+  sourceId?: string;
 }
 
 export interface InvestigationItem {
