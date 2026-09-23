@@ -34,6 +34,10 @@ const GROUPS:Group[]=[
 
 interface Props{onSelect?:(id:PatientSectionId)=>void;patient:Patient;}
 
+const abnormalVitals=(p:Patient)=>{const v=p.vitalsHistory?.[0];if(!v)return false;return v.sbp<90||v.sbp>180||v.dbp<60||v.dbp>110||v.hr<50||v.hr>120||v.rr<10||v.rr>30||v.spo2<92||v.temp<36||v.temp>38||v.gcsTotal<15;};
+const abnormalLabs=(p:Patient)=>{const results=p.labResults||[];if(results.some((r:any)=>['Low','High','Critical'].includes(String(r.flag||r.status))))return true;const latest=p.labs?.[0] as any;if(!latest)return false;const ranges:[string,number,number][]=[['hb',13,17.5],['wbc',4,11],['platelets',150,400],['na',135,145],['k',3.5,5.1],['creatinine',.6,1.3],['glucose',70,99],['inr',.8,1.2],['pt',11,14],['alt',7,56],['ast',10,40]];return ranges.some(([key,lo,hi])=>{const n=Number(latest[key]);return Number.isFinite(n)&&(n<lo||n>hi);});};
+const ventilated=(p:Patient)=>String(p.ventilator?.supportType||'').toLowerCase()==='mechanical ventilation'||!!p.ventilator?.mode;
+const sectionAlert=(p:Patient,id:PatientSectionId)=>id==='vitals'?abnormalVitals(p):id==='labs'?abnormalLabs(p):id==='icu'?false:id==='orders'?abnormalLabs(p):false;
 const hasData=(p:Patient,id:PatientSectionId)=>{
 switch(id){
 case'overview':return true;
@@ -78,10 +82,10 @@ return <section key={group.title} className="rounded-2xl border border-slate-200
 {expanded?<ChevronDown className="w-5 h-5 text-cyan-500"/>:<ChevronRight className="w-5 h-5 text-slate-400"/>}
 </button>
 {expanded&&<div className="px-2 pb-2 space-y-1.5 border-t border-slate-200 dark:border-slate-800 pt-2">
-{group.items.map(id=>{const sec=find(id);const Icon=sec.icon;return <button key={id} type="button" onClick={()=>select(id)} className="w-full min-h-[58px] flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-cyan-500/5 active:scale-[.995] transition-all">
-<div className="w-9 h-9 rounded-xl bg-cyan-500/10 flex items-center justify-center shrink-0"><Icon className="w-4.5 h-4.5 text-cyan-500"/></div>
+{group.items.map(id=>{const sec=find(id);const Icon=sec.icon;const alert=sectionAlert(patient,id);const vent=id==='icu'&&ventilated(patient);return <button key={id} type="button" onClick={()=>select(id)} className={`w-full min-h-[58px] flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-cyan-500/5 active:scale-[.995] transition-all ${alert?'border border-rose-400/60 bg-rose-500/5':vent?'border border-cyan-400/50 bg-cyan-500/5':''}`}>
+<div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${alert?'bg-rose-500/10 text-rose-500':vent?'bg-cyan-500/10 text-cyan-500':'bg-cyan-500/10 text-cyan-500'}`}><Icon className="w-4.5 h-4.5"/></div>
 <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-slate-900 dark:text-white truncate">{sec.label}</span><span className="block text-[10px] text-slate-400 truncate">{sec.description}</span></span>
-{hasData(patient,id)?<CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500"/>:<Circle className="w-4 h-4 shrink-0 text-slate-300 dark:text-slate-700"/>}
+{alert?<span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-rose-500/10 text-rose-500 text-[9px] font-black">ALERT</span>:vent?<span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-600 text-[9px] font-black">🫁 ON</span>:hasData(patient,id)?<CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500"/>:<Circle className="w-4 h-4 shrink-0 text-slate-300 dark:text-slate-700"/>}
 </button>})}
 </div>}
 </section>
