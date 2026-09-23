@@ -95,7 +95,7 @@ service cloud.firestore {
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt']) &&
            selfClinicalRole(request.resource.data.role) &&
            (
-             (!('roleSelectedAt' in resource.data) && request.resource.data.roleSelectedAt != null) ||
+             ((!('roleSelectedAt' in resource.data) || resource.data.roleSelectedAt == null) && request.resource.data.roleSelectedAt != null) ||
              (resource.data.role == 'pending' && request.resource.data.roleSelectedAt != null) ||
              (('roleSelectedAt' in resource.data) && resource.data.role != 'pending' && request.resource.data.roleSelectedAt == resource.data.roleSelectedAt && request.resource.data.role == resource.data.role)
            ));
