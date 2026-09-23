@@ -87,17 +87,21 @@ service cloud.firestore {
            request.resource.data.status == 'active' &&
            member(workspaceId) &&
            (selfClinicalRole(request.resource.data.role) || request.resource.data.role == 'pending'));
+        // A member may complete their own first-time clinical profile.
+        // Keep this rule intentionally narrow so it does not depend on the
+        // departmentAdmin() lookup of the same team document being updated.
         allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
+           resource.data.workspaceId == workspaceId &&
            request.resource.data.workspaceId == workspaceId &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt']) &&
            selfClinicalRole(request.resource.data.role) &&
            (
-             ((!('roleSelectedAt' in resource.data) || resource.data.roleSelectedAt == null) && request.resource.data.roleSelectedAt != null) ||
-             (resource.data.role == 'pending' && request.resource.data.roleSelectedAt != null) ||
-             (('roleSelectedAt' in resource.data) && resource.data.role != 'pending' && request.resource.data.roleSelectedAt == resource.data.roleSelectedAt && request.resource.data.role == resource.data.role)
+             (!('roleSelectedAt' in resource.data) && request.resource.data.roleSelectedAt != null) ||
+             (('roleSelectedAt' in resource.data) && resource.data.roleSelectedAt == null && request.resource.data.roleSelectedAt != null) ||
+             (resource.data.role == 'pending' && request.resource.data.roleSelectedAt != null)
            ));
         allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
