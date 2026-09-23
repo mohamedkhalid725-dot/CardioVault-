@@ -101,17 +101,37 @@ async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessStat
   if(access.role==='owner'||access.role==='view_only')return 0;
   const unitIds=new Set<string>((Array.isArray((access as any).unitIds)?(access as any).unitIds:[access.unitId]).filter(Boolean).map(String));
   if(!unitIds.size)return 0;
-  const legacy=await collectionData(\`users/\${uid}/patients\`);
+  const legacy=await collectionData(`users/${uid}/patients`);
   let migrated=0;
   for(const item of legacy){
-    const existing=await getDoc(webDoc(\`\${path(access.workspaceId,'patients')}/\${item.id}\`));
+    const existing=await getDoc(webDoc(`${path(access.workspaceId,'patients')}/${item.id}`));
     if(existing.exists())continue;
     const sourceUnit=String(item.unitId||'');
     const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');
     if(!targetUnit)continue;
     const patient={...safe(item),id:String(item.id),unitId:targetUnit,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
-    await withTimeout(setDoc(webDoc(\`\${path(access.workspaceId,'patients')}/\${item.id}\`),patient,{merge:false}));
+    await withTimeout(setDoc(webDoc(`${path(access.workspaceId,'patients')}/${item.id}`),patient,{merge:false}));
     migrated++;
+  }
+  try{
+    const legacyBeds=await collectionData(`users/${uid}/beds`);
+    for(const item of legacyBeds){
+      const sourceUnit=String(item.unitId||'');
+      const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');
+      if(!targetUnit)continue;
+      const existing=await getDoc(webDoc(`${path(access.workspaceId,'beds')}/${item.id}`));
+      if(existing.exists()){
+        const existingPatientId=String(existing.data()?.patientId||'');
+        const legacyPatientId=String(item.patientId||'');
+        if(existingPatientId&&existingPatientId!==legacyPatientId)continue;
+      }
+      const bed={...safe(item),id:String(item.id),unitId:targetUnit,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
+      await withTimeout(setDoc(webDoc(`${path(access.workspaceId,'beds')}/${item.id}`),bed,{merge:true}));
+    }
+  }catch(error){
+    localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+    localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));
+    console.warn('Legacy member bed migration failed:',error);
   }
   return migrated;
 }
