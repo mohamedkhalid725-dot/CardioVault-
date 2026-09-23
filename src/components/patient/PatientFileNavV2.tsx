@@ -1,5 +1,5 @@
 import React,{useMemo,useState}from'react';
-import{ChevronDown,ChevronRight,Search,CheckCircle2,Circle,LayoutDashboard,Clock,Activity,HeartPulse,Stethoscope,Heart,Pill,Wind,Image as ImageIcon,FlaskConical,Syringe,Calculator,FileEdit,FileDown}from'lucide-react';
+import{ChevronDown,ChevronRight,Search,CheckCircle2,Circle,LayoutDashboard,Clock,Activity,HeartPulse,Stethoscope,Heart,Pill,Wind,Image as ImageIcon,FlaskConical,Syringe,Calculator,FileEdit,FileDown,ClipboardList}from'lucide-react';
 import{useApp}from'../../context/AppContext';
 import{Patient,PatientSectionId}from'../../types/clinical';
 
@@ -14,19 +14,20 @@ export const PATIENT_SECTIONS:SectionDef[]=[
 {id:'imaging',order:7,label:'Imaging',description:'Imaging studies and reports',icon:ImageIcon},
 {id:'medication',order:8,label:'Medication',description:'Active and historical medications',icon:Pill},
 {id:'procedure',order:9,label:'Procedures / Interventions',description:'Procedures and interventions',icon:Syringe},
-{id:'cardiology',order:10,label:'Cardiology',description:'Cardiac assessment and echo',icon:Heart},
-{id:'icu',order:11,label:'ICU / Critical Care',description:'Ventilation, ABG and organ support',icon:Wind},
-{id:'progress',order:12,label:'Progress Notes',description:'Dated clinical documentation',icon:FileEdit},
-{id:'calculators',order:13,label:'Calculators',description:'Clinical scores and calculations',icon:Calculator},
-{id:'clinical-tools',order:14,label:'Clinical Tools & Workflow',description:'Clinical decision and workflow tools',icon:LayoutDashboard},
-{id:'pdf',order:15,label:'PDF / Export',description:'Select, review and save patient PDF',icon:FileDown},
+{id:'orders',order:10,label:'Orders & Consultations',description:'Investigations, consultations and status',icon:ClipboardList},
+{id:'cardiology',order:11,label:'Cardiology',description:'Cardiac assessment and echo',icon:Heart},
+{id:'icu',order:12,label:'ICU / Critical Care',description:'Ventilation, ABG and organ support',icon:Wind},
+{id:'progress',order:13,label:'Progress Notes',description:'Dated clinical documentation',icon:FileEdit},
+{id:'calculators',order:14,label:'Calculators',description:'Clinical scores and calculations',icon:Calculator},
+{id:'clinical-tools',order:15,label:'Clinical Tools & Workflow',description:'Clinical decision and workflow tools',icon:LayoutDashboard},
+{id:'pdf',order:16,label:'PDF / Export',description:'Select, review and save patient PDF',icon:FileDown},
 ];
 
 type Group={title:string;subtitle:string;items:PatientSectionId[]};
 const GROUPS:Group[]=[
 {title:'CORE',subtitle:'Patient story, examination and monitoring',items:['overview','history','examination','vitals']},
 {title:'INVESTIGATIONS',subtitle:'ECG, laboratory and imaging data',items:['ecg','labs','imaging']},
-{title:'MANAGEMENT',subtitle:'Treatment and interventions',items:['medication','procedure']},
+{title:'MANAGEMENT',subtitle:'Treatment and interventions',items:['medication','procedure','orders']},
 {title:'CARDIOLOGY',subtitle:'Cardiac assessment and management',items:['cardiology']},
 {title:'ICU',subtitle:'Critical care and organ support',items:['icu']},
 ];
@@ -44,6 +45,7 @@ case'labs':return !!(p.labResults?.length||p.labs?.length);
 case'imaging':return !!p.imaging?.length;
 case'medication':return !!p.medications?.length;
 case'procedure':return !!p.procedures?.length;
+case'orders':return !!(p.investigations?.length||p.consultations?.length||p.tasks?.length);
 case'cardiology':return !!(p.cardiology?.echo?.ef||p.cardiology?.rhythm||p.cardiology?.biomarkerRecords?.length||p.cardiology?.cathRecords?.length);
 case'icu':return !!(p.ventilator?.mode||p.ventilator?.abgHistory?.length);
 default:return false;
