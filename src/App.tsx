@@ -30,6 +30,7 @@ import {ensureOwnerWorkspace,getStoredWorkspaceAccess,MASTER_ACCOUNT_EMAIL,MASTE
 import {StorageService}from'./services/storage';
 import './services/pdfArabicSupport';
 import {installPdfDownloadBridge}from'./services/pdfDownloadBridge';
+import {initializeClinicalNotifications,installClinicalNotificationActionHandler}from'./services/clinicalNotifications';
 import {AppErrorBoundary} from './components/system/AppErrorBoundary';
 
 let refreshTimer:ReturnType<typeof setTimeout>|null=null;
@@ -39,7 +40,7 @@ const snapshotId=(s:any)=>String(s?.id||s?.documentId||s?.reference?.id||'');
 const stripCloudMeta=(v:any)=>{if(!v||typeof v!=='object')return v;const{updatedAt,schemaVersion,...clinical}=v;return clinical;};
 const replaceCollection=(collection:'units'|'beds'|'patients',event:any)=>{const snapshots=Array.isArray(event?.snapshots)?event.snapshots:[];const values=snapshots.map((s:any)=>({...stripCloudMeta(snapshotData(s)),id:snapshotId(s)})).filter((x:any)=>x.id);const previous=(StorageService as any)[collection==='units'?'getUnits':collection==='beds'?'getBeds':'getPatients']?.()||[];restoreLocalDataFromCloud(collection,values);if(previous.length!==values.length||JSON.stringify(previous)!==JSON.stringify(values)){localStorage.setItem('cardiovault_last_cloud_sync',new Date().toISOString());scheduleClinicalRefresh();}};
 
-const AppContent:React.FC=()=>{const{auth,currentView,setCurrentView,toasts,dismissToast,syncNow}=useApp();const[accessReady,setAccessReady]=useState(false);const[online,setOnline]=useState(()=>typeof navigator==='undefined'?true:navigator.onLine);const handlingPop=useRef(false);const hasLocalSession=!!localStorage.getItem('cardiovault_auth_v2');
+const AppContent:React.FC=()=>{const{auth,currentView,setCurrentView,setCurrentPatientId,setActivePatientSection,toasts,dismissToast,syncNow}=useApp();const[accessReady,setAccessReady]=useState(false);const[online,setOnline]=useState(()=>typeof navigator==='undefined'?true:navigator.onLine);const handlingPop=useRef(false);const hasLocalSession=!!localStorage.getItem('cardiovault_auth_v2');
  useEffect(()=>{installPdfDownloadBridge();},[]);
  useEffect(()=>{const onOnline=()=>{setOnline(true);void syncNow();};const onOffline=()=>setOnline(false);window.addEventListener('online',onOnline);window.addEventListener('offline',onOffline);return()=>{window.removeEventListener('online',onOnline);window.removeEventListener('offline',onOffline);};},[syncNow]);
  useEffect(()=>{let active=true;setAccessReady(false);if(!auth.isAuthenticated||auth.isLocked||!hasLocalSession)return;const verify=async()=>{try{const valid=await (await import('./services/workspaceAccess')).validateCurrentWorkspaceAccess();if(active&&valid===true)setAccessReady(true);}catch(error){console.warn('Workspace access bootstrap failed:',error);}};void verify();return()=>{active=false;};},[auth.isAuthenticated,auth.isLocked,hasLocalSession,auth.userEmail]);
