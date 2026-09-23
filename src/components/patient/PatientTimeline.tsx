@@ -245,6 +245,7 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
                     <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 mt-2 whitespace-pre-wrap">
                       {e.detail || 'Recorded event'}
                     </p>
+                    {e.audioUrl && <div className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3"><div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-cyan-600 dark:text-cyan-400">Voice recording{e.audioDurationSeconds ? ` • ${e.audioDurationSeconds}s` : ''}</div><audio controls preload="none" src={e.audioUrl} className="w-full" aria-label={`Play ${e.label} voice recording`} /></div>}
                   </div>
                 );
               })}
