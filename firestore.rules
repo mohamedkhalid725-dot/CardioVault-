@@ -9,6 +9,7 @@ service cloud.firestore {
     function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.active != false && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.forceReauth != true; }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
     function departmentAdmin(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'department_admin' && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active'; }
+    function departmentConsultant(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'consultant' && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active'; }
     function selfClinicalRole(role) { return role in ['nurse','resident','specialist','consultant']; }
     function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true && get(/databases/$(database)/documents/accessCodes/$(hash)).data.workspaceId == 'cardiovault_master_workspace'; }
     function unitMember(workspaceId,unitId) {
@@ -57,6 +58,13 @@ service cloud.firestore {
         allow list: if workspaceOwner(workspaceId);
         allow create: if signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
         allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
+          (departmentConsultant(workspaceId) &&
+           exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(uid)) &&
+           get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(uid)).data.role != 'department_admin' &&
+           request.resource.data.workspaceId == workspaceId &&
+           request.resource.data.uid == uid &&
+           request.resource.data.role in ['clinical_editor','view_only'] &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitId','unitIds','role','active','forceReauth','updatedAt'])) ||
           (signedIn() && request.auth.uid == uid &&
            workspaceId == 'cardiovault_master_workspace' &&
            validAccessCode(request.resource.data.accessCodeHash) &&
@@ -100,6 +108,13 @@ service cloud.firestore {
         // Keeping this rule independent of departmentAdmin() avoids evaluating the
         // same team document as an admin check during the member's own update.
         allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
+          (departmentConsultant(workspaceId) &&
+           resource.data.role != 'department_admin' &&
+           request.resource.data.role != 'department_admin' &&
+           request.resource.data.uid == uid &&
+           request.resource.data.workspaceId == workspaceId &&
+           request.resource.data.role in ['nurse','resident','specialist','consultant','viewer','pharmacist','lab_user','radiology_user','coordinator','pending'] &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','assignedUnitIds','status','updatedAt'])) ||
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
