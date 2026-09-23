@@ -6,22 +6,21 @@ service cloud.firestore {
     function masterAccount() { return signedIn() && request.auth.token.email == 'mohamedkhalid725@gmail.com'; }
     function masterWorkspace(workspaceId) { return workspaceId == 'cardiovault_master_workspace'; }
     function workspaceOwner(workspaceId) { return masterAccount() && masterWorkspace(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid; }
-    function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)); }
+    function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.active != false && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.forceReauth != true; }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
-    function departmentAdmin(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'department_admin'; }
+    function departmentAdmin(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'department_admin' && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active'; }
+    function selfClinicalRole(role) { return role in ['nurse','resident','specialist','consultant']; }
     function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true && get(/databases/$(database)/documents/accessCodes/$(hash)).data.workspaceId == 'cardiovault_master_workspace'; }
     function unitMember(workspaceId,unitId) {
       return member(workspaceId) &&
         (
-          (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) &&
-           get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active' &&
-           get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.assignedUnitIds.hasAny([unitId]))
-          ||
-          (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)) &&
-           get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)).data.active == true &&
-           validAccessCode(get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)/units/$(unitId)).data.accessCodeHash))
-          ||
-          (memberData(workspaceId).unitId == unitId && validAccessCode(memberData(workspaceId).accessCodeHash))
+          departmentAdmin(workspaceId) ||
+          (
+            exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) &&
+            get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active' &&
+            get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.assignedUnitIds.hasAny([unitId]) &&
+            memberData(workspaceId).unitIds.hasAny([unitId])
+          )
         );
     }
     function clinicalEditor(workspaceId,unitId) { return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor'; }
@@ -49,7 +48,18 @@ service cloud.firestore {
         allow get: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
         allow list: if workspaceOwner(workspaceId);
         allow create: if signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
-        allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) || (signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId);
+        allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
+          (signedIn() && request.auth.uid == uid &&
+           workspaceId == 'cardiovault_master_workspace' &&
+           validAccessCode(request.resource.data.accessCodeHash) &&
+           request.resource.data.workspaceId == workspaceId &&
+           request.resource.data.uid == request.auth.uid &&
+           request.resource.data.unitId == get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId &&
+           request.resource.data.role == get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.get('role','clinical_editor') &&
+           request.resource.data.active == true &&
+           request.resource.data.forceReauth == false &&
+           request.resource.data.unitIds.hasAny([request.resource.data.unitId]) &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitId','unitIds','role','accessCodeHash','accessCodeHashes','active','forceReauth','updatedAt']));
         allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
 
@@ -73,14 +83,26 @@ service cloud.firestore {
           (signedIn() && request.auth.uid == uid &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.workspaceId == workspaceId &&
-           member(workspaceId));
+           request.resource.data.departmentId == 'dept-cardiology' &&
+           request.resource.data.status == 'active' &&
+           selfClinicalRole(request.resource.data.role) ||
+           (signedIn() && request.auth.uid == uid &&
+            request.resource.data.uid == request.auth.uid &&
+            request.resource.data.workspaceId == workspaceId &&
+            request.resource.data.departmentId == 'dept-cardiology' &&
+            request.resource.data.status == 'active' &&
+            request.resource.data.role == 'pending'));
         allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.workspaceId == workspaceId &&
-           request.resource.data.roleSelectedAt != null &&
-           (!('roleSelectedAt' in resource.data) || request.resource.data.roleSelectedAt == resource.data.roleSelectedAt));
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt']) &&
+           selfClinicalRole(request.resource.data.role) &&
+           (
+             (!('roleSelectedAt' in resource.data) && request.resource.data.roleSelectedAt != null) ||
+             (('roleSelectedAt' in resource.data) && request.resource.data.roleSelectedAt == resource.data.roleSelectedAt && request.resource.data.role == resource.data.role)
+           ));
         allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
       match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
