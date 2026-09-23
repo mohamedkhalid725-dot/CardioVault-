@@ -20,7 +20,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: cardiovault-pages-main
   cancel-in-progress: true
 
 jobs:
@@ -29,14 +29,16 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: '24'
+          cache: npm
 
       - name: Install dependencies
         run: npm install
@@ -44,10 +46,16 @@ jobs:
       - name: Build CardioVault Web App
         run: npm run build
 
+      - name: Verify build
+        run: |
+          test -f dist/index.html
+          echo "CardioVault main web build is ready."
+          du -sh dist
+
       - name: Add Privacy Policy
         run: cp privacy-policy.html dist/privacy-policy.html
 
-      - name: Setup Pages
+      - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
@@ -55,6 +63,6 @@ jobs:
         with:
           path: dist
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy main to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
