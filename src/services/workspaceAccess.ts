@@ -183,8 +183,18 @@ export async function setOwnClinicalProfile(name:string,role:SelfClinicalRole):P
   if(await isMasterAccount())throw new Error('The Master Account does not require a clinical role selection.');
   const ref=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
   const patch={uid:id,workspaceId:MASTER_WORKSPACE_ID,name:cleanName,role,roleSelectedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
-  if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
-  else await webSetDoc(webDoc(ref),patch,{merge:true});
+  try {
+    if(Capacitor.isNativePlatform()) {
+      await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
+    } else {
+      await webSetDoc(webDoc(ref),patch,{merge:true});
+    }
+  } catch (error:any) {
+    const code=String(error?.code||'unknown');
+    const message=String(error?.message||error||'Unknown Firestore error');
+    console.error('Clinical role save failed:',{code,message,path:ref,error});
+    throw new Error(`FIRESTORE_ROLE_SAVE_FAILED\\nCode: ${code}\\nMessage: ${message}\\nPath: ${ref}`);
+  }
   const users=AuthorizationService.getUsers();
   const local=users.find(u=>u.userId===id);
   if(local)AuthorizationService.saveUsers(users.map(u=>u.userId===id?{...u,name:cleanName,role,updatedAt:patch.updatedAt}:u));
