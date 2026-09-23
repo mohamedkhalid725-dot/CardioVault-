@@ -73,7 +73,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
 }
 export async function getUnitAccessCodes():Promise<UnitAccessCode[]>{
   const state=await ensureOwnerWorkspace();if(!state)return[];
-  const reference=\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes\`;
+  const reference=`workspaces/${MASTER_WORKSPACE_ID}/accessCodes`;
   let records:any[]=[];
   if(Capacitor.isNativePlatform()){
     const result:any=await FirebaseFirestore.getCollection({reference});
@@ -98,11 +98,11 @@ export async function generateUnitAccessCode(unitId:string,unitName:string,role:
   const code=newCode();const accessCodeHash=await hash(code);const now=new Date().toISOString();
   const payload={hash:accessCodeHash,code,workspaceId:MASTER_WORKSPACE_ID,unitId,unitName,role,active:true,createdAt:now};
   if(Capacitor.isNativePlatform()){
-    await FirebaseFirestore.setDocument({reference:\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`,data:{...payload,createdBy:state.workspaceId},merge:false});
-    await FirebaseFirestore.setDocument({reference:\`accessCodes/\${accessCodeHash}\`,data:payload,merge:true});
+    await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{...payload,createdBy:state.workspaceId},merge:false});
+    await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:payload,merge:true});
   }else{
-    await webSetDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`),{...payload,createdBy:state.workspaceId},{merge:false});
-    await webSetDoc(webDoc(\`accessCodes/\${accessCodeHash}\`),payload,{merge:true});
+    await webSetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`),{...payload,createdBy:state.workspaceId},{merge:false});
+    await webSetDoc(webDoc(`accessCodes/${accessCodeHash}`),payload,{merge:true});
   }
   return code;
 }
@@ -112,11 +112,11 @@ export async function revokeUnitAccessCode(code:string):Promise<void>{
   const accessCodeHash=await hash(code);
   const revokedAt=new Date().toISOString();
   if(Capacitor.isNativePlatform()){
-    await FirebaseFirestore.setDocument({reference:\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`,data:{active:false,revokedAt},merge:true});
-    await FirebaseFirestore.setDocument({reference:\`accessCodes/\${accessCodeHash}\`,data:{active:false,revokedAt},merge:true});
+    await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});
+    await FirebaseFirestore.setDocument({reference:`accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});
   }else{
-    await webSetDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}/accessCodes/\${accessCodeHash}\`),{active:false,revokedAt},{merge:true});
-    await webSetDoc(webDoc(\`accessCodes/\${accessCodeHash}\`),{active:false,revokedAt},{merge:true});
+    await webSetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/accessCodes/${accessCodeHash}`),{active:false,revokedAt},{merge:true});
+    await webSetDoc(webDoc(`accessCodes/${accessCodeHash}`),{active:false,revokedAt},{merge:true});
   }
   try{
     const memberCollection=`workspaces/${MASTER_WORKSPACE_ID}/members`;
@@ -313,10 +313,10 @@ export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
   try{
     let membership:any=null;
     if(Capacitor.isNativePlatform()){
-      const result:any=await FirebaseFirestore.getDocument({reference:\`workspaces/\${MASTER_WORKSPACE_ID}/members/\${id}\`});
+      const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`});
       membership=safe(result?.snapshot);
     }else{
-      const result=await webGetDoc(webDoc(\`workspaces/\${MASTER_WORKSPACE_ID}/members/\${id}\`));
+      const result=await webGetDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${id}`));
       membership=result.exists()?result.data():null;
     }
     if(!membership)return null;
@@ -329,10 +329,10 @@ export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
     for(const h of hashes){
       let access:any=null;
       if(Capacitor.isNativePlatform()){
-        const result:any=await FirebaseFirestore.getDocument({reference:\`accessCodes/\${h}\`});
+        const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${h}`});
         access=safe(result?.snapshot);
       }else{
-        const result=await webGetDoc(webDoc(\`accessCodes/\${h}\`));
+        const result=await webGetDoc(webDoc(`accessCodes/${h}`));
         access=result.exists()?result.data():null;
       }
       if(access?.active===true&&access.workspaceId===MASTER_WORKSPACE_ID)return true;
