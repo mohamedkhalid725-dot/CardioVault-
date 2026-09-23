@@ -52,6 +52,8 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
       out.push({
         time: `${n.date}T${n.time || '00:00'}`,
         label: n.type || 'Progress Note',
+        audioUrl: n.audioUrl || '',
+        audioDurationSeconds: n.audioDurationSeconds || 0,
         detail: [n.subjective, n.objective, n.assessment, n.plan].filter(Boolean).join(' • ') || 'Progress note recorded',
         icon: FileText,
         badge: 'Clinical Note',
