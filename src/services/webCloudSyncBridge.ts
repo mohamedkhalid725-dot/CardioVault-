@@ -242,7 +242,10 @@ async function repairOwnerWorkspaceRegistry(workspaceId:string):Promise<void>{
 export async function webLoadCurrentUserFromCloud(){
   const user=webCurrentUser(); if(!user?.uid)return null;
   try{
-    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role==='owner'){try{await repairOwnerWorkspaceRegistry(access.workspaceId);}catch(error){console.warn('Workspace registry repair failed:',error);}} if(access.role!=='owner'&&access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
+    const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role==='owner'){
+      try{await migrateAllLegacyMembersIntoWorkspace(access.workspaceId);}catch(error){console.warn('Legacy member workspace migration failed:',error);}
+      try{await repairOwnerWorkspaceRegistry(access.workspaceId);}catch(error){console.warn('Workspace registry repair failed:',error);}
+    } if(access.role!=='owner'&&access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
     let units:any[]=[],beds:any[]=[],patients:any[]=[];
     if(access.role==='owner'){
       [units,beds,patients]=await Promise.all([collectionData(path(access.workspaceId,'units')),collectionData(path(access.workspaceId,'beds')),collectionData(path(access.workspaceId,'patients'))]);
