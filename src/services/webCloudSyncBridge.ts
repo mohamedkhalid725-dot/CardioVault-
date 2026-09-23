@@ -80,67 +80,139 @@ async function repairOwnerWorkspaceRegistry(workspaceId:string):Promise<void>{
     collectionData(path(workspaceId,'beds')),
     collectionData(path(workspaceId,'patients'))
   ]);
-  const validUnits=new Set(units.map((u:any)=>String(u.id||'')).filter(Boolean));
-  if(!validUnits.size)return;
-  const patientsById=new Map(patients.map((p:any)=>[String(p.id||''),p]));
-  const bedsById=new Map(beds.map((b:any)=>[String(b.id||''),b]));
+  if(!units.length)return;
+
+  const normalizeName=(value:any)=>String(value||'').trim().toLowerCase().replace(/\\s+/g,' ');
+  const localUnits=StorageService.getUnits();
+  const localUnitsByName=new Map<string,any[]>();
+  for(const unit of localUnits){
+    const key=normalizeName(unit?.name);
+    if(!key)continue;
+    const list=localUnitsByName.get(key)||[];
+    list.push(unit);
+    localUnitsByName.set(key,list);
+  }
+
+  // The old app could create the same logical unit more than once with different
+  // generated IDs. When the Master device already has the canonical unit name,
+  // map duplicate cloud unit IDs to that canonical unit ID before loading data.
+  const unitMap=new Map<string,string>();
+  for(const unit of units){
+    const id=String(unit.id||'');
+    if(!id)continue;
+    const key=normalizeName(unit.name);
+    const candidates=localUnitsByName.get(key)||[];
+    if(candidates.length===1 && String(candidates[0].id)!==id){
+      unitMap.set(id,String(candidates[0].id));
+    }
+  }
+
+  const validUnitIds=new Set<string>([
+    ...units.map((u:any)=>String(u.id||'')).filter(Boolean),
+    ...localUnits.map((u:any)=>String(u.id||'')).filter(Boolean)
+  ]);
   let changed=false;
 
-  // Repair beds whose legacy unitId no longer exists. Prefer the patient's valid unitId.
-  for(const bed of beds){
-    const bedId=String(bed.id||'');
-    const unitId=String(bed.unitId||'');
-    if(!bedId||validUnits.has(unitId))continue;
-    const patient=patientsById.get(String(bed.patientId||''));
-    const targetUnit=String(patient?.unitId||'');
-    if(targetUnit&&validUnits.has(targetUnit)){
-      await withTimeout(setDoc(webDoc(path(workspaceId,'beds')+'/'+bedId),{unitId:targetUnit,schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
-      changed=true;
-    }
-  }
-
-  // Repair patients whose unitId is stale but whose bed belongs to a valid unit.
+  // Move patients from duplicate unit IDs into the canonical unit ID.
   for(const patient of patients){
     const patientId=String(patient.id||'');
-    const unitId=String(patient.unitId||'');
-    if(!patientId||validUnits.has(unitId))continue;
-    const bed=bedsById.get(String(patient.bedId||''));
-    const targetUnit=String(bed?.unitId||'');
-    if(targetUnit&&validUnits.has(targetUnit)){
-      await withTimeout(setDoc(webDoc(path(workspaceId,'patients')+'/'+patientId),{unitId:targetUnit,schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
+    const current=String(patient.unitId||'');
+    const target=unitMap.get(current);
+    if(patientId&&target&&target!==current){
+      await withTimeout(setDoc(
+        webDoc(path(workspaceId,'patients')+'/'+patientId),
+        {unitId:target,schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},
+        {merge:true}
+      ));
       changed=true;
     }
   }
 
-  // Remove only true duplicates: same workspace unit + same bed number.
-  // Never merge/delete beds that belong to different units.
-  const grouped=new Map<string,any[]>();
+  // Move beds from duplicate unit IDs into the canonical unit ID.
   for(const bed of beds){
+    const bedId=String(bed.id||'');
+    const current=String(bed.unitId||'');
+    const target=unitMap.get(current);
+    if(bedId&&target&&target!==current){
+      await withTimeout(setDoc(
+        webDoc(path(workspaceId,'beds')+'/'+bedId),
+        {unitId:target,schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},
+        {merge:true}
+      ));
+      changed=true;
+    }
+  }
+
+  // Build the post-remap bed registry and use the Master's local bed IDs as
+  // canonical when available. This lets an occupied duplicate fill an empty
+  // canonical bed instead of leaving two Bed 1 records.
+  const remappedBeds=beds.map((bed:any)=>({...bed,unitId:unitMap.get(String(bed.unitId||''))||String(bed.unitId||'')}));
+  const localBeds=StorageService.getBeds();
+  const localBedByKey=new Map<string,any>();
+  for(const bed of localBeds){
+    const key=String(bed.unitId||'')+'::'+String(bed.bedNumber||'').trim().toLowerCase();
+    if(key!=='::')localBedByKey.set(key,bed);
+  }
+
+  const patientsById=new Map(patients.map((p:any)=>[String(p.id||''),p]));
+  const grouped=new Map<string,any[]>();
+  for(const bed of remappedBeds){
     const unitId=String(bed.unitId||'');
     const number=String(bed.bedNumber||'').trim().toLowerCase();
-    if(!validUnits.has(unitId)||!number)continue;
+    if(!validUnitIds.has(unitId)||!number)continue;
     const key=unitId+'::'+number;
-    const list=grouped.get(key)||[]; list.push(bed); grouped.set(key,list);
+    const list=grouped.get(key)||[];
+    list.push(bed);
+    grouped.set(key,list);
   }
-  for(const [,list] of grouped){
+
+  for(const [key,list] of grouped){
     if(list.length<2)continue;
-    const keeper=list.find((b:any)=>String(b.patientId||''))||list[0];
+    const localBed=localBedByKey.get(key);
+    const keeper=(localBed&&list.find((b:any)=>String(b.id)===String(localBed.id)))||list.find((b:any)=>String(b.patientId||''))||list[0];
+
     for(const duplicate of list){
       if(String(duplicate.id)===String(keeper.id))continue;
       const duplicatePatientId=String(duplicate.patientId||'');
       const keeperPatientId=String(keeper.patientId||'');
+
       if(!keeperPatientId&&duplicatePatientId){
-        await withTimeout(setDoc(webDoc(path(workspaceId,'beds')+'/'+keeper.id),{patientId:duplicatePatientId,status:duplicate.status||'Stable',schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
-        await withTimeout(setDoc(webDoc(path(workspaceId,'patients')+'/'+duplicatePatientId),{bedId:String(keeper.id),unitId:String(keeper.unitId),schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},{merge:true}));
+        await withTimeout(setDoc(
+          webDoc(path(workspaceId,'beds')+'/'+keeper.id),
+          {
+            patientId:duplicatePatientId,
+            status:duplicate.status||'Stable',
+            unitId:String(keeper.unitId),
+            bedNumber:keeper.bedNumber,
+            schemaVersion:SCHEMA_VERSION,
+            updatedAt:new Date().toISOString()
+          },
+          {merge:true}
+        ));
+        await withTimeout(setDoc(
+          webDoc(path(workspaceId,'patients')+'/'+duplicatePatientId),
+          {bedId:String(keeper.id),unitId:String(keeper.unitId),schemaVersion:SCHEMA_VERSION,updatedAt:new Date().toISOString()},
+          {merge:true}
+        ));
         await withTimeout(deleteDoc(webDoc(path(workspaceId,'beds')+'/'+duplicate.id)));
         changed=true;
-      } else if(!duplicatePatientId || duplicatePatientId===keeperPatientId) {
+      }else if(!duplicatePatientId || duplicatePatientId===keeperPatientId){
         await withTimeout(deleteDoc(webDoc(path(workspaceId,'beds')+'/'+duplicate.id)));
         changed=true;
       }
     }
   }
-  if(changed)localStorage.setItem('cardiovault_workspace_registry_repaired_v1',new Date().toISOString());
+
+  // If a duplicate unit was mapped into the Master's canonical unit, remove
+  // only the duplicate unit document itself. The clinical records were moved
+  // above; units with different names are never merged.
+  for(const [sourceUnit,targetUnit] of unitMap){
+    if(sourceUnit===targetUnit)continue;
+    await withTimeout(deleteDoc(webDoc(path(workspaceId,'units')+'/'+sourceUnit)));
+    changed=true;
+  }
+
+  if(changed)localStorage.setItem('cardiovault_workspace_registry_repaired_v2',new Date().toISOString());
 }
 
 export async function webLoadCurrentUserFromCloud(){
