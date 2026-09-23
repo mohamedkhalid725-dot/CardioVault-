@@ -608,7 +608,32 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       };
 
       await drawFirstPage();
-      drawSecondPage();
+      const needsSecondPage = ['medications','procedures','cardiology','progress','calculators','timeline'].some(has);
+      if (needsSecondPage) drawSecondPage();
+
+      // Long clinical lists continue onto additional A4 pages instead of being truncated.
+      const drawContinuationPages = (title: string, headers: string[], widths: number[], rows: string[][], chunkSize = 24) => {
+        if (!rows.length) return;
+        for (let offset = 0; offset < rows.length; offset += chunkSize) {
+          const chunk = rows.slice(offset, offset + chunkSize);
+          doc.addPage();
+          page = doc.getNumberOfPages();
+          header();
+          patientBanner();
+          sectionTitle(title + ' • Continued', 8, 65, 194, 'notes');
+          table(8, 75, widths, headers, chunk, 6.2, chunk.length);
+        }
+      };
+      const medsForPdf: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
+      const infusionsForPdf: any[] = (patient as any).infusions || (patient as any).activeInfusions || [];
+      const proceduresForPdf: any[] = (patient as any).procedures || [];
+      const devicesForPdf: any[] = (patient as any).devices || (patient as any).lines || [];
+      const progressForPdf: any[] = (patient as any).progressNotes || [];
+      if (has('medications') && medsForPdf.length > 6) drawContinuationPages('Medications', ['Drug','Dose','Route','Frequency'], [55,35,35,55], medsForPdf.slice(6).map(m => [val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency)]));
+      if (has('medications') && infusionsForPdf.length > 6) drawContinuationPages('Infusions', ['Drug','Rate','Indication'], [55,35,104], infusionsForPdf.slice(6).map(i => [val(i.name || i.drug), val(i.rate || i.dose), compact(i.indication, 60)]));
+      if (has('procedures') && proceduresForPdf.length > 5) drawContinuationPages('Procedures & Interventions', ['Date','Procedure','Details'], [35,55,104], proceduresForPdf.slice(5).map(p => [val(p.date), val(p.procedure || p.name || p.surgeryName), compact(p.outcome || p.findings || p.indication, 70)]));
+      if (has('procedures') && devicesForPdf.length > 5) drawContinuationPages('Lines & Devices', ['Device','Site','Date'], [70,70,54], devicesForPdf.slice(5).map(d => [val(d.device || d.name || d.type), val(d.site), val(d.date)]));
+      if (has('progress') && progressForPdf.length > 5) drawContinuationPages('Progress Notes', ['Date & Time','Author','Note'], [35,40,119], progressForPdf.slice(5).map(n => [`${val(n.date)} ${val(n.time)}`, compact(n.author, 22), compact(n.assessment || n.plan || n.events || n.note, 105)]));
 
       // The document length is data-driven. Update every footer after all pages
       // have been created so the displayed total always matches the real PDF.
