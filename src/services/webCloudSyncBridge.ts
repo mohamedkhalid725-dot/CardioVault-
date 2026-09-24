@@ -168,27 +168,13 @@ export async function webLoadCurrentUserFromCloud(){
       }));
       loaded.forEach(item=>{if(item.unit)units.push(item.unit);beds.push(...item.beds);patients.push(...item.patients);});
     }
-    // Never let an incomplete owner cloud snapshot erase a larger local unit registry.
-    // If local has more units than cloud, keep the local registry and upload it on the next sync.
-    let preservedLocalOwnerUnits=false;
-    if (access.role==='owner') {
-      const localUnits=StorageService.getUnits();
-      if (localUnits.length>units.length && units.length>0) { units=localUnits; preservedLocalOwnerUnits=true; }
-    }
     const cleaned = stripLegacyDemoData(units, beds, patients);
     units=cleaned.units; beds=cleaned.beds; patients=cleaned.patients;
     const reconciled=reconcileClinicalRegistry(units,beds,patients);
     units=reconciled.units; beds=reconciled.beds; patients=reconciled.patients;
-    const localPatients=StorageService.getPatients();
-    const localById=new Map(localPatients.map((patient:any)=>[String(patient?.id||''),patient]));
-    patients=patients.map((cloudPatient:any)=>{
-      const localPatient=localById.get(String(cloudPatient?.id||''));
-      return localPatient ? mergeClinicalMedia(localPatient,cloudPatient) : cloudPatient;
-    });
     localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
     try { StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients); }
     finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
-    if (preservedLocalOwnerUnits||reconciled.changed) void webSyncCurrentUserNow();
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
     return {uid:user.uid,found:!!(units.length||beds.length||patients.length),access};
   }catch(error:any){
@@ -263,13 +249,7 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
         if (name==='units') StorageService.saveUnits(values as Unit[]);
         else if (name==='beds') StorageService.saveBeds(values);
         else {
-          const localPatients=StorageService.getPatients();
-          const localById=new Map(localPatients.map((patient:any)=>[String(patient?.id||''),patient]));
-          const mergedPatients=values.map((cloudPatient:any)=>{
-            const localPatient=localById.get(String(cloudPatient?.id||''));
-            return localPatient ? mergeClinicalMedia(localPatient,cloudPatient) : cloudPatient;
-          });
-          StorageService.savePatients(mergedPatients);
+          StorageService.savePatients(values);
         }
       } finally {
         localStorage.removeItem('cardiovault_cloud_restore_in_progress');
