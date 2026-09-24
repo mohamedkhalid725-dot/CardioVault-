@@ -1,4 +1,4 @@
-import React,{useMemo,useState}from'react';
+import React,{useEffect,useMemo,useState}from'react';
 import{CheckCircle2,Clock3,FlaskConical,MessageSquare,PlayCircle,Plus,X}from'lucide-react';
 import{Patient}from'../../../types/clinical';
 import{useApp}from'../../../context/AppContext';
@@ -11,6 +11,7 @@ const statusClass=(status:string)=>status==='Completed'?'bg-emerald-500/10 text-
 export const OrdersConsultationsSection:React.FC<Props>=({patient})=>{
  const{currentUser,updatePatient,showToast}=useApp();
  const[tab,setTab]=useState<'investigations'|'consultations'>('investigations');
+ useEffect(()=>{const apply=(value:any)=>{if(value==='investigations'||value==='consultations')setTab(value);};apply(window.sessionStorage.getItem('cardiovault_open_patient_subsection'));window.sessionStorage.removeItem('cardiovault_open_patient_subsection');const onNavigate=(event:Event)=>{const detail=(event as CustomEvent<{section?:string;subSection?:string}>).detail;if(detail?.section==='orders')apply(detail.subSection);};window.addEventListener('cardiovault-open-patient-section',onNavigate);return()=>window.removeEventListener('cardiovault-open-patient-section',onNavigate);},[]);
  const[showAdd,setShowAdd]=useState(false);
  const[orderType,setOrderType]=useState<any>('CBC');
  const[specialty,setSpecialty]=useState('Cardiology');
