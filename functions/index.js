@@ -8,7 +8,7 @@ initializeApp();
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const MODEL = 'gemini-3.8-flash';
-const MAX_BODY_BYTES = 450000;
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 12;
 const requestWindows = new Map();
@@ -143,9 +143,21 @@ exports.analyzeClinicalPatient = onRequest(
       if (!key) return json(res, 503, { error: 'CardioVault AI backend is not configured yet.' });
 
       const ai = new GoogleGenAI({ apiKey: key, apiVersion: 'v1' });
+      const prompt = buildPrompt(patient, req.body?.assistantTask, req.body?.userPrompt, req.body?.draftType);
+      const image = String(req.body?.imageBase64 || '').trim();
+      const contents = [{ text: prompt }];
+      if (image) {
+        const match = image.match(/^data:([^;]+);base64,(.+)$/s);
+        if (!match) return json(res, 400, { error: 'Invalid AI image attachment format.' });
+        const mimeType = String(match[1] || '').toLowerCase();
+        if (!/^image\/(png|jpe?g|webp|gif|heic|heif)$/.test(mimeType)) {
+          return json(res, 400, { error: 'Unsupported AI image format.' });
+        }
+        contents.push({ inlineData: { mimeType, data: match[2] } });
+      }
       const response = await ai.models.generateContent({
         model: MODEL,
-        contents: buildPrompt(patient, req.body?.assistantTask, req.body?.userPrompt, req.body?.draftType),
+        contents,
         config: {
           responseMimeType: 'application/json',
           maxOutputTokens: 5000,
