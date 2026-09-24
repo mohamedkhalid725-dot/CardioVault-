@@ -629,7 +629,14 @@ export function stripLegacyDemoData<T extends { id?: string; unitId?: string; pa
   return { units: unitsClean, beds: bedsClean, patients: patientsClean };
 }
 
-\nconst runtimeAuth = {\n  isAuthenticated: false,\n  userEmail: '',\n  userName: '',\n  pinCode: '',\n};\n\n// Clinical data is cloud-authoritative.
+let runtimeAuth = {
+  isAuthenticated: false,
+  userEmail: '',
+  userName: '',
+  pinCode: '',
+};
+
+// Clinical data is cloud-authoritative.
 // Units, beds and patients are kept only in runtime memory for rendering.
 // They are NEVER persisted to localStorage, IndexedDB or another local database.
 // The Cloud Sync Bridge writes changes to Firebase Workspace and restores them
