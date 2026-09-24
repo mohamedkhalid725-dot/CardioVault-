@@ -358,23 +358,13 @@ export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
     }
     if(!membership)return null;
     if(membership?.active===false||membership?.forceReauth===true)return false;
-    const hashes=Array.from(new Set([
-      ...(Array.isArray(membership.accessCodeHashes)?membership.accessCodeHashes:[]),
-      membership.accessCodeHash,
-    ].filter(Boolean).map(String)));
-    if(!hashes.length)return false;
-    for(const h of hashes){
-      let access:any=null;
-      if(Capacitor.isNativePlatform()){
-        const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${h}`});
-        access=safe(result?.snapshot);
-      }else{
-        const result=await webGetDoc(webDoc(`accessCodes/${h}`));
-        access=result.exists()?result.data():null;
-      }
-      if(access?.active===true&&access.workspaceId===MASTER_WORKSPACE_ID)return true;
-    }
-    return false;
+    // An active membership is sufficient authorization. Access codes are only
+    // required when the account is first enrolled; revocation is enforced through
+    // membership.active / membership.forceReauth.
+    const memberUnitIds=Array.isArray(membership?.unitIds)
+      ? membership.unitIds.map(String).filter(Boolean)
+      : (membership?.unitId ? [String(membership.unitId)] : []);
+    return membership?.active!==false && !membership?.forceReauth && memberUnitIds.length>0;
   }catch(error){console.warn('Workspace access validation failed:',error);return null;}
 }
 export function isOwnerAccess(){
