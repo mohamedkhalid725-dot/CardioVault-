@@ -135,7 +135,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const loginWithGoogle=async()=>{
    authNullGraceUntil.current=Date.now()+30000;
    try{
-     const result:any=Capacitor.isNativePlatform()?await FirebaseAuthentication.signInWithGoogle():{user:await webGoogleSignIn()};
+     const result:any=Capacitor.isNativePlatform()
+       ?await FirebaseAuthentication.signInWithGoogle({useCredentialManager:false})
+       :{user:await webGoogleSignIn()};
      const user=result.user;
      if(!user?.uid)throw new Error('Google sign-in returned no Firebase user.');
      const profile=AuthorizationService.resolveUserForFirebaseAuth(user);setCurrentUserState(profile);const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:user.email||auth.userEmail,userName:StorageService.getProfileName()||auth.userName||user.displayName};
