@@ -69,12 +69,11 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
     }
   }));
   const currentUnitId=String(m?.unitId&&unitIds.includes(String(m.unitId))?m.unitId:unitIds[0]);
-  const currentCode=activeCodes.find(x=>String(x.data?.unitId)===currentUnitId)||activeCodes[0];
   const state:WorkspaceAccessState={
     workspaceId:MASTER_WORKSPACE_ID,
     role:m.role==='view_only'?'view_only':'clinical_editor',
     unitId:currentUnitId,
-    unitName:unitNames[currentUnitId]||String(currentCode?.data?.unitName||currentUnitId),
+    unitName:unitNames[currentUnitId]||currentUnitId,
     unitIds,
     unitNames,
   };
