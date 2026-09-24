@@ -593,14 +593,11 @@ const initialAhmedData: Patient = {
 // CardioVault starts with an empty workspace. Units/beds/patients are created by the physician.
 // These IDs are kept only as a migration list so the old demo seed can be removed from
 // existing local/cloud workspaces without touching units created by the physician.
-export const LEGACY_DEMO_UNIT_IDS = new Set([
-  'unit-icu',
-  'unit-ccu',
-  'unit-pediatric-icu',
-  'unit-neuro-icu',
-  'unit-surgical-icu',
-  'unit-ccu-1', 'unit-ccu-2', 'unit-cardiology-ward', 'unit-icu-1',
-]);
+// Do not delete workspace units by ID during cloud restore.
+// Unit IDs such as unit-ccu-1 / unit-icu-1 may be real department units,
+// not disposable demo data. The cloud workspace is the source of truth.
+// Legacy cleanup is therefore limited to the explicitly known demo patients.
+export const LEGACY_DEMO_UNIT_IDS = new Set<string>();
 export const LEGACY_DEMO_PATIENT_IDS = new Set([
   'patient-2025001', 'patient-sara', 'patient-mohamed-h', 'patient-nada',
   'patient-tariq', 'patient-mona', 'patient-youssef', 'patient-layla',
@@ -623,7 +620,6 @@ export function stripLegacyDemoData<T extends { id?: string; unitId?: string; pa
   const unitsClean = units.filter(item => !LEGACY_DEMO_UNIT_IDS.has(String(item?.id || '')));
   const patientsClean = patients.filter(item => !LEGACY_DEMO_PATIENT_IDS.has(String(item?.id || '')));
   const bedsClean = beds.filter(item =>
-    !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')) &&
     !LEGACY_DEMO_PATIENT_IDS.has(String(item?.patientId || ''))
   );
   return { units: unitsClean, beds: bedsClean, patients: patientsClean };
