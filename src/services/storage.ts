@@ -629,95 +629,39 @@ export function stripLegacyDemoData<T extends { id?: string; unitId?: string; pa
   return { units: unitsClean, beds: bedsClean, patients: patientsClean };
 }
 
-// Local-first persistent storage helpers
+\nconst runtimeAuth = {\n  isAuthenticated: false,\n  userEmail: '',\n  userName: '',\n  pinCode: '',\n};\n\n// Clinical data is cloud-authoritative.
+// Units, beds and patients are kept only in runtime memory for rendering.
+// They are NEVER persisted to localStorage, IndexedDB or another local database.
+// The Cloud Sync Bridge writes changes to Firebase Workspace and restores them
+// from Firebase on login/reconnect. This intentionally disables offline clinical
+// persistence so another account/device never inherits stale clinical data.
+let runtimeUnits: Unit[] = [];
+let runtimeBeds: Bed[] = [];
+let runtimePatients: Patient[] = [];
+
 export const StorageService = {
   getUnits(): Unit[] {
-    try {
-      const data = localStorage.getItem(STORAGE_KEYS.UNITS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        const cleaned = parsed.filter((item: Unit) => !LEGACY_DEMO_UNIT_IDS.has(String(item?.id || '')));
-        if (cleaned.length > 0) {
-          if (cleaned.length !== parsed.length) this.saveUnits(cleaned);
-          return cleaned;
-        }
-      }
-    } catch (e) {
-      console.error('Storage getUnits error:', e);
-    }
-    this.saveUnits(INITIAL_UNITS);
-    return INITIAL_UNITS;
+    return runtimeUnits;
   },
 
   saveUnits(units: Unit[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(units));
-    } catch (e) {
-      console.error('Storage saveUnits error:', e);
-    }
+    runtimeUnits = Array.isArray(units) ? units : [];
   },
 
   getBeds(): Bed[] {
-    try {
-      const data = localStorage.getItem(STORAGE_KEYS.BEDS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        const cleaned = parsed.filter((item: Bed) => !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')) && !LEGACY_DEMO_PATIENT_IDS.has(String(item?.patientId || '')));
-        if (cleaned.length > 0) {
-          if (cleaned.length !== parsed.length) this.saveBeds(cleaned);
-          return cleaned;
-        }
-      }
-    } catch (e) {
-      console.error('Storage getBeds error:', e);
-    }
-    this.saveBeds(INITIAL_BEDS);
-    return INITIAL_BEDS;
+    return runtimeBeds;
   },
 
   saveBeds(beds: Bed[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.BEDS, JSON.stringify(beds));
-    } catch (e) {
-      console.error('Storage saveBeds error:', e);
-    }
+    runtimeBeds = Array.isArray(beds) ? beds : [];
   },
 
   getPatients(): Patient[] {
-    try {
-      const data = localStorage.getItem(STORAGE_KEYS.PATIENTS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        const cleaned = parsed
-          .filter((item: Patient) => !LEGACY_DEMO_PATIENT_IDS.has(String(item?.id || '')) && !LEGACY_DEMO_UNIT_IDS.has(String(item?.unitId || '')))
-          .map((item: Patient) => ({
-            ...item,
-            departmentId: item.departmentId || 'dept-cardiology',
-            problems: item.problems || [],
-            tasks: item.tasks || [],
-            investigations: item.investigations || [],
-            medicationAdministrations: item.medicationAdministrations || [],
-            consultations: item.consultations || [],
-            shiftHandovers: item.shiftHandovers || [],
-            corrections: item.corrections || [],
-            timelineEvents: item.timelineEvents || [],
-          }));
-        if (cleaned.length !== parsed.length) this.savePatients(cleaned);
-        return cleaned;
-      }
-    } catch (e) {
-      console.error('Storage getPatients error:', e);
-    }
-    this.savePatients(INITIAL_PATIENTS);
-    return INITIAL_PATIENTS;
+    return runtimePatients;
   },
 
   savePatients(patients: Patient[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.PATIENTS, JSON.stringify(patients));
-    } catch (e) {
-      console.error('Storage savePatients error:', e);
-    }
+    runtimePatients = Array.isArray(patients) ? patients : [];
   },
 
   getTheme(): 'dark' | 'light' {
@@ -727,7 +671,7 @@ export const StorageService = {
     } catch (e) {
       console.error('Storage getTheme error:', e);
     }
-    return 'dark'; // Dark theme default as per Reference Images
+    return 'dark';
   },
 
   saveTheme(theme: 'dark' | 'light'): void {
@@ -746,37 +690,26 @@ export const StorageService = {
   },
 
   getAuth(): { isAuthenticated: boolean; userEmail: string; userName: string; pinCode: string } {
-    try {
-      const data = localStorage.getItem(STORAGE_KEYS.AUTH);
-      if (data) return JSON.parse(data);
-    } catch (e) {
-      console.error('Storage getAuth error:', e);
-    }
-    const defaultAuth = {
-      isAuthenticated: true, // Default to authenticated so physician can explore immediately
-      userEmail: 'mohamedkhalid725@gmail.com',
-      userName: 'Dr. Mohamed Khalid',
-      pinCode: '1234',
-    };
-    this.saveAuth(defaultAuth);
-    return defaultAuth;
+    // Firebase Authentication is the source of truth for authentication.
+    // Keep only an in-memory session object here; clinical data is never persisted locally.
+    return runtimeAuth;
   },
 
-  getProfileName(): string { try { return localStorage.getItem('cardiovault_profile_name_v1') || ''; } catch { return ''; } },
+  getProfileName(): string {
+    return runtimeAuth.userName || '';
+  },
 
-  saveProfileName(name: string): void { try { localStorage.setItem('cardiovault_profile_name_v1', name.trim()); } catch {} },
+  saveProfileName(name: string): void {
+    runtimeAuth = { ...runtimeAuth, userName: name.trim() };
+  },
 
   saveAuth(authData: any): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.AUTH, JSON.stringify(authData));
-    } catch (e) {
-      console.error('Storage saveAuth error:', e);
-    }
+    runtimeAuth = { ...runtimeAuth, ...(authData || {}) };
   },
 
   exportDatabaseBackup(): string {
     const backup = {
-      version: '2.0',
+      version: '3.0-cloud-authoritative',
       exportedAt: new Date().toISOString(),
       units: this.getUnits(),
       beds: this.getBeds(),
@@ -789,6 +722,8 @@ export const StorageService = {
     try {
       const data = JSON.parse(jsonString);
       if (data.units && data.beds && data.patients) {
+        // Imported clinical data is runtime-only until the Cloud Sync Bridge
+        // persists it to the authenticated Firebase Workspace.
         this.saveUnits(data.units);
         this.saveBeds(data.beds);
         this.savePatients(data.patients);
@@ -801,11 +736,8 @@ export const StorageService = {
   },
 
   resetToDefaultSeed(): void {
-    localStorage.removeItem(STORAGE_KEYS.UNITS);
-    localStorage.removeItem(STORAGE_KEYS.BEDS);
-    localStorage.removeItem(STORAGE_KEYS.PATIENTS);
-    this.saveUnits([]);
-    this.saveBeds([]);
-    this.savePatients([]);
+    runtimeUnits = [];
+    runtimeBeds = [];
+    runtimePatients = [];
   },
 };
