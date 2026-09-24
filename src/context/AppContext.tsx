@@ -135,11 +135,33 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const loginWithGoogle=async()=>{
    authNullGraceUntil.current=Date.now()+30000;
    try{
-     const result:any=Capacitor.isNativePlatform()
-       ?await FirebaseAuthentication.signInWithGoogle({useCredentialManager:false})
-       :{user:await webGoogleSignIn()};
-     const user=result.user;
-     if(!user?.uid)throw new Error('Google sign-in returned no Firebase user.');
+     let user:any=null;
+     if(Capacitor.isNativePlatform()){
+       // Native Google Sign-In can resolve the account picker before the Firebase
+       // session has propagated back to the Capacitor bridge. Accept either the
+       // direct result or the restored/pending Firebase user.
+       const nativeSignIn=FirebaseAuthentication.signInWithGoogle({useCredentialManager:false});
+       const restoredUser=new Promise<any|null>(resolve=>{
+         const started=Date.now();
+         const poll=async()=>{
+           try{const pending=await FirebaseAuthentication.getPendingAuthResult();if(pending?.user?.uid){resolve(pending.user);return;}}catch{}
+           try{const current=await FirebaseAuthentication.getCurrentUser();if(current?.user?.uid){resolve(current.user);return;}}catch{}
+           if(Date.now()-started>=15000){resolve(null);return;}
+           window.setTimeout(()=>void poll(),300);
+         };
+         void poll();
+       });
+       const result:any=await Promise.race([nativeSignIn,restoredUser.then(u=>u?{user:u}:null)]);
+       user=result?.user||result||null;
+       if(!user?.uid){
+         // One final bridge read after the native sign-in promise settles.
+         try{const current=await FirebaseAuthentication.getCurrentUser();user=current?.user||null;}catch{}
+       }
+     }else{
+       const result:any=await webGoogleSignIn();
+       user=result;
+     }
+     if(!user?.uid)throw new Error('Google sign-in completed without a Firebase user.');
      const profile=AuthorizationService.resolveUserForFirebaseAuth(user);setCurrentUserState(profile);const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:user.email||auth.userEmail,userName:StorageService.getProfileName()||auth.userName||user.displayName};
      setAuth(a);
      StorageService.saveAuth(a);
