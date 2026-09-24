@@ -70,15 +70,7 @@ export function restoreLocalDataFromCloud(collection:'units'|'beds'|'patients',v
   try{
     if(collection==='units') StorageService.saveUnits(values);
     else if(collection==='beds') StorageService.saveBeds(values);
-    else {
-      const localPatients=StorageService.getPatients();
-      const localById=new Map(localPatients.map((patient:any)=>[String(patient?.id||''),patient]));
-      const mergedPatients=values.map((cloudPatient:any)=>{
-        const localPatient=localById.get(String(cloudPatient?.id||''));
-        return localPatient ? mergeClinicalMedia(localPatient,cloudPatient) : cloudPatient;
-      });
-      StorageService.savePatients(mergedPatients);
-    }
+    else StorageService.savePatients(values);
   } finally { suppressSync=previous; }
 }
 
