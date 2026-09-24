@@ -17,6 +17,26 @@ const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_END
 
 export const isAIBackendConfigured=()=>true;
 
+function compactAIPatient(patient:Patient|null|undefined):any{
+  if(!patient)return null;
+  return {
+    id:patient.id,mrn:patient.mrn,fullName:patient.fullName,age:patient.age,sex:patient.sex,
+    weight:patient.weight,height:patient.height,allergies:patient.allergies,codeStatus:patient.codeStatus,
+    unitId:patient.unitId,primaryDiagnosis:patient.primaryDiagnosis,secondaryDiagnoses:patient.secondaryDiagnoses,
+    admissionDate:patient.admissionDate,admissionTime:patient.admissionTime,
+    clinicalSummary:patient.clinicalSummary,cardiovascularHistory:patient.cardiovascularHistory,
+    vitalsHistory:patient.vitalsHistory?.slice(0,20),
+    ventilator:{...(patient.ventilator||{}),abgHistory:patient.ventilator?.abgHistory?.slice(0,10)},
+    cardiology:patient.cardiology,
+    medications:patient.medications?.slice(0,40),
+    labs:patient.labs?.slice(0,60),
+    labResults:(patient as any).labResults?.slice(0,60),
+    imaging:patient.imaging?.slice(0,10),
+    procedures:patient.procedures?.slice(0,10),
+    progressNotes:patient.progressNotes?.slice(0,10),
+  };
+}
+
 async function getFirebaseIdToken():Promise<string>{
   if(!Capacitor.isNativePlatform()){
     const webUser=webCurrentUser();
