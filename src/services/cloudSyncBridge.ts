@@ -93,22 +93,10 @@ async function restoreMemberAccess(uid:string):Promise<WorkspaceAccessState|null
       return null;
     }
     if(data?.active===false||data?.forceReauth===true)return null;
-    const hashes=Array.from(new Set([
-      ...(Array.isArray(data?.accessCodeHashes)?data.accessCodeHashes:[]),
-      data?.accessCodeHash,
-    ].filter(Boolean).map(String)));
-    if(!hashes.length)return null;
-    let hasActiveCode=false;
-    for(const hash of hashes){
-      try{
-        const access:any=readSnapshotData((await FirebaseFirestore.getDocument({reference:`accessCodes/${hash}`})).snapshot);
-        if(access?.active===true&&access.workspaceId===MASTER_WORKSPACE_ID){hasActiveCode=true;break;}
-      }catch{}
-    }
-    if(!hasActiveCode){
-      recordCloudError(new Error('The Unit Access Code for this account is inactive or revoked.'));
-      return null;
-    }
+    // Membership is the persistent authorization. Access codes are used to enroll
+    // an account and are revoked by setting membership.active/forceReauth. Requiring
+    // an active code on every login breaks accounts that were assigned directly by
+    // the Department Admin and accounts whose original code was later rotated.
     let team:any=null;
     try{team=readSnapshotData((await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/team/${uid}`})).snapshot);}catch{}
     const unitIds:string[]=Array.from(new Set<string>((Array.isArray(team?.assignedUnitIds)&&team.assignedUnitIds.length?team.assignedUnitIds:(Array.isArray(data.unitIds)?data.unitIds:[data.unitId])).map(String)));
