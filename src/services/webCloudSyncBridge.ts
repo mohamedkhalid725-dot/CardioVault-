@@ -51,20 +51,9 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   if(!member.exists())return null;
   const m=member.data();
   if(m?.active===false||m?.forceReauth===true)return null;
-  const hashes=Array.from(new Set([
-    ...(Array.isArray(m?.accessCodeHashes)?m.accessCodeHashes:[]),
-    m?.accessCodeHash,
-  ].filter(Boolean).map(String)));
-  if(!hashes.length)return null;
-  const activeCodes:any[]=[];
-  for(const hash of hashes){
-    const code=await getDoc(webDoc(`accessCodes/${hash}`));
-    if(code.exists()){
-      const data=code.data();
-      if(data?.active===true&&data.workspaceId===MASTER_WORKSPACE_ID)activeCodes.push({hash,data});
-    }
-  }
-  if(!activeCodes.length)return null;
+  // Membership is the persistent authorization. Access codes are enrollment
+  // credentials; once membership is active, the account remains authorized until
+  // membership.active/forceReauth is changed by the workspace admin.
   const unitIds=Array.from(new Set([
     ...(Array.isArray(m?.unitIds)?m.unitIds:[]),
     ...(m?.unitId?[m.unitId]:[]),
@@ -74,11 +63,9 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   await Promise.all(unitIds.map(async unitId=>{
     try{
       const unit=await getDoc(webDoc(`${path(MASTER_WORKSPACE_ID,'units')}/${unitId}`));
-      const codeForUnit=activeCodes.find(x=>String(x.data?.unitId)===unitId);
-      unitNames[unitId]=String(unit.data()?.name||codeForUnit?.data?.unitName||unitId);
+      unitNames[unitId]=String(unit.data()?.name||unitId);
     }catch{
-      const codeForUnit=activeCodes.find(x=>String(x.data?.unitId)===unitId);
-      unitNames[unitId]=String(codeForUnit?.data?.unitName||unitId);
+      unitNames[unitId]=unitId;
     }
   }));
   const currentUnitId=String(m?.unitId&&unitIds.includes(String(m.unitId))?m.unitId:unitIds[0]);
