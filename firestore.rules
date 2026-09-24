@@ -19,8 +19,8 @@ service cloud.firestore {
           (
             exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) &&
             get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active' &&
-            get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.get('assignedUnitIds', []).hasAny([unitId]) &&
             (
+              get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.get('assignedUnitIds', []).hasAny([unitId]) ||
               memberData(workspaceId).get('unitId', '') == unitId ||
               memberData(workspaceId).get('unitIds', []).hasAny([unitId])
             )
