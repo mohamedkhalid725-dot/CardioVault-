@@ -12,7 +12,8 @@ export interface AIClinicalResult {
   confidence:'low'|'moderate'|'high';
 }
 
-const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_ENDPOINT||'/api/ai/analyze').trim();
+const DEFAULT_AI_ENDPOINT='https://cardio-vault.vercel.app/api/ai/analyze';
+const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_ENDPOINT||DEFAULT_AI_ENDPOINT).trim();
 
 export const isAIBackendConfigured=()=>true;
 
@@ -55,7 +56,7 @@ async function getFirebaseIdToken(forceRefresh=false):Promise<string>{
 }
 
 async function postAIAssistant(req:AIAssistantRequest,token:string):Promise<Response>{
-  return fetch('https://us-central1-ccu-notebook.cloudfunctions.net/analyzeClinicalPatient',{
+  return fetch(getAIEndpoint(),{
     method:'POST',
     headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
     body:JSON.stringify({
