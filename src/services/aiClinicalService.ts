@@ -67,6 +67,7 @@ async function postAIAssistant(req:AIAssistantRequest,token:string):Promise<Resp
       draftType:req.draftType,
       userPrompt:req.userPrompt,
       imageBase64:req.imageBase64||undefined,
+      firebaseIdToken:token,
     }),
   });
 }
