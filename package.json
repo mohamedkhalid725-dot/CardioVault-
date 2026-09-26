@@ -39,7 +39,8 @@
     "vite": "^6.2.3",
     "@capacitor/ios": "^7.4.4",
     "@capacitor/local-notifications": "^7.0.7",
-    "@supabase/supabase-js": "^2.57.4"
+    "@supabase/supabase-js": "^2.57.4",
+    "jose": "^6.1.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
@@ -50,5 +51,8 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }
