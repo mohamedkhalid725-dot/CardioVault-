@@ -118,7 +118,7 @@ export interface AIAssistantResponse {
 }
 
 export async function callAIAssistant(req:AIAssistantRequest):Promise<AIAssistantResponse>{
-  let token=await getFirebaseIdToken(false);
+  let token=await getFirebaseIdToken(true);
   let response:Response;
   try{
     response=await postAIAssistant(req,token);
