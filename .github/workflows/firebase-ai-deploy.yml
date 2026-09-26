@@ -3,7 +3,7 @@ name: Deploy CardioVault AI Backend (Cloudflare)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, department-system-v1]
     paths:
       - 'workers/ai/**'
       - 'src/services/aiClinicalService.ts'
@@ -30,3 +30,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/ai
           wranglerVersion: '4'
+          secrets: |
+            GEMINI_API_KEY
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
