@@ -41,7 +41,8 @@
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "jose": "^6.1.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
@@ -54,5 +55,8 @@
     "typescript": "~5.8.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }
