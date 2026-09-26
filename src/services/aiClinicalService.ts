@@ -54,7 +54,7 @@ async function getFirebaseIdToken(forceRefresh=false):Promise<string>{
   throw new Error('Could not obtain a valid Firebase Auth ID token.');
 }
 
-const NATIVE_AI_ASSISTANT_ENDPOINT=['https://cardio-vault-aiashy','vercel.app/api/ai/analyze'].join('.');
+const NATIVE_AI_ASSISTANT_ENDPOINT='https://cardio-vault-1q1cedfyc-aiashy.vercel.app/api/ai/analyze';
 
 async function postAIAssistant(req:AIAssistantRequest,token:string):Promise<Response>{
   const endpoint=Capacitor.isNativePlatform() ? NATIVE_AI_ASSISTANT_ENDPOINT : getAIEndpoint();
