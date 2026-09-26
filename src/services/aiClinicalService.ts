@@ -12,7 +12,7 @@ export interface AIClinicalResult {
   confidence:'low'|'moderate'|'high';
 }
 
-const DEFAULT_AI_ENDPOINT='https://cardio-vault.vercel.app/api/ai/analyze';
+const DEFAULT_AI_ENDPOINT='https://cardio-vault-git-department-system-v1-aiashy.vercel.app/api/ai/analyze';
 const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_ENDPOINT||DEFAULT_AI_ENDPOINT).trim();
 
 export const isAIBackendConfigured=()=>true;
