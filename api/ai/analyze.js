@@ -98,7 +98,9 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return send(res, 405, { error: 'POST required.' });
 
   const auth = String(req.headers.authorization || '');
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  const headerToken = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  const bodyToken = String(req.body?.firebaseIdToken || '').trim();
+  const token = headerToken || bodyToken;
   if (!token) return send(res, 401, { error: 'Authentication required.' });
 
   let decoded;
