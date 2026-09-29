@@ -140,13 +140,19 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
        // Native Google Sign-In can resolve the account picker before the Firebase
        // session has propagated back to the Capacitor bridge. Accept either the
        // direct result or the restored/pending Firebase user.
-       const nativeSignIn=FirebaseAuthentication.signInWithGoogle({useCredentialManager:false});
+       const nativeSignIn=Promise.race([
+         FirebaseAuthentication.signInWithGoogle({useCredentialManager:false}),
+         new Promise<never>((_,reject)=>window.setTimeout(
+           ()=>reject(new Error('Google Sign-In timed out after account selection. Check the Firebase Android OAuth configuration (SHA-1/SHA-256 and updated google-services.json).')),
+           20000,
+         )),
+       ]);
        const restoredUser=new Promise<any|null>(resolve=>{
          const started=Date.now();
          const poll=async()=>{
            try{const pending=await FirebaseAuthentication.getPendingAuthResult();if(pending?.user?.uid){resolve(pending.user);return;}}catch{}
            try{const current=await FirebaseAuthentication.getCurrentUser();if(current?.user?.uid){resolve(current.user);return;}}catch{}
-           if(Date.now()-started>=15000){resolve(null);return;}
+           if(Date.now()-started>=20000){resolve(null);return;}
            window.setTimeout(()=>void poll(),300);
          };
          void poll();
