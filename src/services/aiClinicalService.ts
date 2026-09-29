@@ -16,6 +16,20 @@ const getAIEndpoint=()=>String((import.meta as any).env?.VITE_CARDIOVAULT_AI_END
 
 export const isAIBackendConfigured=()=>true;
 
+function readableError(error:any):string{
+  if(error instanceof Error && error.message) return error.message;
+  if(typeof error==='string' && error.trim()) return error.trim();
+  if(error && typeof error==='object'){
+    const direct=String(error.message||error.error||error.detail||'').trim();
+    if(direct) return direct;
+    try{
+      const json=JSON.stringify(error);
+      if(json && json!=='{}') return json;
+    }catch{}
+  }
+  return String(error||'Unknown AI error.');
+}
+
 function compactAIPatient(patient:Patient|null|undefined):any{
   if(!patient)return null;
   return {
@@ -160,7 +174,7 @@ export async function callAIAssistant(req:AIAssistantRequest):Promise<AIAssistan
   try{
     response=await postAIAssistant(req,token);
   }catch(err:any){
-    const detail=String(err?.message||err||'unknown network error').slice(0,220);
+    const detail=readableError(err).slice(0,500);
     throw new Error(`Could not reach the CardioVault AI server: ${detail}`);
   }
 
@@ -187,7 +201,7 @@ export async function callAIAssistant(req:AIAssistantRequest):Promise<AIAssistan
   }
 
   if(!response.ok){
-    const message=String(payload?.error||rawText?.trim()||`AI server returned HTTP ${response.status}.`);
+    const message=readableError(payload?.error || rawText?.trim() || `AI server returned HTTP ${response.status}.`);
     if(response.status===401)throw new Error(message.slice(0,500));
     throw new Error(message.slice(0,500));
   }
