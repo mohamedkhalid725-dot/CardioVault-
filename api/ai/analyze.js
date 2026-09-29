@@ -97,15 +97,22 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return send(res, 405, { error: 'POST required.' });
 
+  const body = req.body || {};
   const auth = String(req.headers.authorization || '');
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  const headerToken = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  // Native Capacitor HTTP sends the Firebase token in the JSON body as well.
+  // Accept either location so a native HTTP stack/proxy cannot silently drop
+  // the Authorization header.
+  const token = headerToken || String(body.firebaseIdToken || '').trim();
   if (!token) return send(res, 401, { error: 'Authentication required.' });
 
   let decoded;
   try { decoded = await verifyFirebaseToken(token); }
-  catch { return send(res, 401, { error: 'Firebase authentication token is invalid or expired.' }); }
-
-  const body = req.body || {};
+  catch (error) {
+    const message = String(error?.message || '').slice(0, 180);
+    console.error('CardioVault Firebase AI auth rejected:', message);
+    return send(res, 401, { error: 'Firebase authentication token is invalid or expired.' });
+  }
   if (Buffer.byteLength(JSON.stringify(body), 'utf8') > MAX_BODY_BYTES) return send(res, 413, { error: 'Patient record is too large for AI analysis.' });
 
   const key = String(process.env.GEMINI_API_KEY || '').trim();
