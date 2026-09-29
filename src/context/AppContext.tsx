@@ -141,7 +141,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
        // session has propagated back to the Capacitor bridge. Accept either the
        // direct result or the restored/pending Firebase user.
        const nativeSignIn=Promise.race([
-         FirebaseAuthentication.signInWithGoogle({useCredentialManager:false}),
+         FirebaseAuthentication.signInWithGoogle({useCredentialManager:true}),
          new Promise<never>((_,reject)=>window.setTimeout(
            ()=>reject(new Error('Google Sign-In timed out after account selection. Check the Firebase Android OAuth configuration (SHA-1/SHA-256 and updated google-services.json).')),
            20000,
