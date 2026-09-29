@@ -48,13 +48,29 @@ async function getFirebaseIdToken(forceRefresh=false):Promise<string>{
     if(current?.user){
       const result=await FirebaseAuthentication.getIdToken({forceRefresh});
       const token=String(result?.token||'').trim();
-      if(token)return token;
+      if(token){
+        // Read the decoded Firebase claims without logging the token itself.
+        // This catches a wrong-project native Firebase configuration before the
+        // request reaches the AI backend.
+        try{
+          const details=await FirebaseAuthentication.getIdTokenResult({forceRefresh:false});
+          const claims:any=details?.claims||{};
+          const aud=String(claims?.aud||'');
+          const iss=String(claims?.iss||'');
+          if(aud && aud!=='ccu-notebook') throw new Error(`Native Firebase project mismatch (aud=${aud}). Expected ccu-notebook.`);
+          if(iss && iss!=='https://securetoken.google.com/ccu-notebook') throw new Error('Native Firebase issuer mismatch. Reinstall the current CardioVault build and sign in again.');
+        }catch(error:any){
+          const message=String(error?.message||'');
+          if(message.includes('project mismatch')||message.includes('issuer mismatch')) throw error;
+        }
+        return token;
+      }
     }
   }catch{}
   throw new Error('Could not obtain a valid Firebase Auth ID token.');
 }
 
-const NATIVE_AI_ASSISTANT_ENDPOINT='https://cardio-vault-1q1cedfyc-aiashy.vercel.app/api/ai/analyze';
+const NATIVE_AI_ASSISTANT_ENDPOINT='https://cardio-vault-git-department-system-v1-aiashy.vercel.app/api/ai/analyze';
 
 async function postAIAssistant(req:AIAssistantRequest,token:string):Promise<Response>{
   const endpoint=Capacitor.isNativePlatform() ? NATIVE_AI_ASSISTANT_ENDPOINT : getAIEndpoint();
