@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   ChevronRight,
   ShieldAlert,
-  Sparkles,
   FlaskConical,
 } from 'lucide-react';
 import { useApp, AppView } from '../../context/AppContext';
@@ -41,13 +40,6 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
     color: string;
     adminOnly?: boolean;
   }> = [
-    {
-      id: 'ai-assistant',
-      title: 'AI Clinical Assistant',
-      subtitle: 'Synthesis, documentation drafts, ECG & lab assistance',
-      icon: Sparkles,
-      color: 'text-cyan-500 bg-cyan-500/10',
-    },
     {
       id: 'my-worklist',
       title: 'Personal Worklist',
