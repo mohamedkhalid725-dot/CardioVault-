@@ -31,6 +31,16 @@ async function firebaseCerts() {
   return certs;
 }
 
+function decodeUnverifiedClaims(token) {
+  try {
+    const parts = String(token).split('.');
+    if (parts.length !== 3) return {};
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return {};
+  }
+}
+
 async function verifyFirebaseToken(token) {
   const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8'));
   if (header.alg !== 'RS256' || !header.kid) throw new Error('Invalid Firebase token.');
@@ -109,11 +119,18 @@ export default async function handler(req, res) {
   let decoded;
   try { decoded = await verifyFirebaseToken(token); }
   catch (error) {
+    const unverified=decodeUnverifiedClaims(token);
+    const unverifiedAud=String(unverified?.aud||'');
+    const unverifiedIss=String(unverified?.iss||'');
     const name=String(error?.code||error?.name||'').toLowerCase();
     const message=String(error?.message||'').toLowerCase();
     console.error('CardioVault Firebase AI auth rejected:', String(error?.message||error).slice(0,300));
     let errorMessage='Firebase authentication token is invalid or expired.';
-    if(name.includes('jwtclaimvalidation')||message.includes('unexpected "aud" claim value')) {
+    if(unverifiedAud && unverifiedAud!=='ccu-notebook') {
+      errorMessage=`Firebase AI authentication failed: token audience is "${unverifiedAud}", expected "ccu-notebook".`;
+    } else if(unverifiedIss && unverifiedIss!==FIREBASE_ISSUER) {
+      errorMessage='Firebase AI authentication failed: token issuer does not match ccu-notebook.';
+    } else if(name.includes('jwtclaimvalidation')||message.includes('unexpected "aud" claim value')) {
       errorMessage='Firebase AI authentication failed: the Android token belongs to a different Firebase project.';
     } else if(message.includes('issuer')||message.includes('iss')) {
       errorMessage='Firebase AI authentication failed: the Android token issuer does not match ccu-notebook.';
