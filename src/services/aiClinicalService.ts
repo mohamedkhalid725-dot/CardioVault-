@@ -1,5 +1,5 @@
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { webCurrentUser } from './webFirebase';
 import { Patient } from '../types/clinical';
 
@@ -58,17 +58,37 @@ const NATIVE_AI_ASSISTANT_ENDPOINT='https://cardio-vault-1q1cedfyc-aiashy.vercel
 
 async function postAIAssistant(req:AIAssistantRequest,token:string):Promise<Response>{
   const endpoint=Capacitor.isNativePlatform() ? NATIVE_AI_ASSISTANT_ENDPOINT : getAIEndpoint();
+  const body={
+    patient:compactAIPatient(req.patient),
+    assistantTask:req.task,
+    draftType:req.draftType,
+    userPrompt:req.userPrompt,
+    imageBase64:req.imageBase64||undefined,
+    firebaseIdToken:token,
+  };
+
+  // Android/iOS: use Capacitor's native HTTP stack instead of WebView fetch.
+  // This avoids WebView CORS/network quirks while keeping the same Vercel backend.
+  if(Capacitor.isNativePlatform()){
+    const result=await CapacitorHttp.request({
+      url:endpoint,
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+      data:body,
+      responseType:'json',
+      connectTimeout:30000,
+      readTimeout:120000,
+    });
+    return new Response(JSON.stringify(result.data ?? {}),{
+      status:result.status,
+      headers:{'Content-Type':'application/json'},
+    });
+  }
+
   return fetch(endpoint,{
     method:'POST',
     headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-    body:JSON.stringify({
-      patient:compactAIPatient(req.patient),
-      assistantTask:req.task,
-      draftType:req.draftType,
-      userPrompt:req.userPrompt,
-      imageBase64:req.imageBase64||undefined,
-      firebaseIdToken:token,
-    }),
+    body:JSON.stringify(body),
   });
 }
 
@@ -122,8 +142,9 @@ export async function callAIAssistant(req:AIAssistantRequest):Promise<AIAssistan
   let response:Response;
   try{
     response=await postAIAssistant(req,token);
-  }catch{
-    throw new Error('Could not reach the CardioVault AI server. Verify network connection and try again.');
+  }catch(err:any){
+    const detail=String(err?.message||err||'unknown network error').slice(0,220);
+    throw new Error(`Could not reach the CardioVault AI server: ${detail}`);
   }
 
   let payload:any={};
