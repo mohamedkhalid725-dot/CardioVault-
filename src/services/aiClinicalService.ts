@@ -62,6 +62,7 @@ async function getFirebaseIdToken(forceRefresh=false):Promise<string>{
         }catch(error:any){
           const message=String(error?.message||'');
           if(message.includes('project mismatch')||message.includes('issuer mismatch')) throw error;
+          throw new Error(`Could not validate the native Firebase session claims: ${message.slice(0,180)}`);
         }
         return token;
       }
@@ -187,7 +188,7 @@ export async function callAIAssistant(req:AIAssistantRequest):Promise<AIAssistan
 
   if(!response.ok){
     const message=String(payload?.error||rawText?.trim()||`AI server returned HTTP ${response.status}.`);
-    if(response.status===401)throw new Error('Your CardioVault Firebase session is not authorized for AI. Sign in again, then retry.');
+    if(response.status===401)throw new Error(message.slice(0,500));
     throw new Error(message.slice(0,500));
   }
 
