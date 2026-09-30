@@ -256,6 +256,7 @@ export interface ClinicalCorrection {
   correctedValue: any;
   user: string;
   userRole: ClinicalRole;
+  unitId?: string;
   timestamp: string;
   reason: string;
 }
