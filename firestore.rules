@@ -156,6 +156,28 @@ service cloud.firestore {
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, unitId);
       }
 
+      match /auditLogs/{auditId} {
+        allow get, list: if workspaceOwner(workspaceId);
+        allow create: if workspaceOwner(workspaceId);
+      }
+      match /clinicalCorrections/{correctionId} {
+        allow get, list: if workspaceOwner(workspaceId);
+        allow create: if workspaceOwner(workspaceId);
+      }
+
+      match /units/{unitId}/auditLogs/{auditId} {
+        allow get, list: if workspaceOwner(workspaceId) || unitMember(workspaceId, unitId);
+        allow create: if unitMember(workspaceId, unitId) &&
+          request.resource.data.unitId == unitId &&
+          request.resource.data.cloudImmutable == true;
+      }
+      match /units/{unitId}/clinicalCorrections/{correctionId} {
+        allow get, list: if workspaceOwner(workspaceId) || unitMember(workspaceId, unitId);
+        allow create: if unitMember(workspaceId, unitId) &&
+          request.resource.data.unitId == unitId &&
+          request.resource.data.cloudImmutable == true;
+      }
+
       match /metadata/{documentId} { allow read, write: if workspaceOwner(workspaceId); }
 
       match /media/{mediaId} {
