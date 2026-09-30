@@ -1,3 +1,4 @@
+import {hasOfflineProtection,isOfflineReadOnly,configureOfflinePin,unlockOfflineCache,getOfflineIdentity,clearOfflineSession}from'../services/offlineSecurityService';
 import React,{createContext,useContext,useEffect,useRef,useState}from'react';
 import {Bed,Patient,PatientSectionId,PatientStatus,PastAdmission,Unit,AuditEvent,UserProfile}from'../types/clinical';
 import {StorageService}from'../services/storage';
