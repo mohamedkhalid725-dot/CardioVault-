@@ -2,7 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {Loader2, Mic, Square, WandSparkles, X} from 'lucide-react';
 import {Capacitor} from '@capacitor/core';
 import {VoiceRecorder} from 'capacitor-voice-recorder';
-import {transcribeClinicalAudio, ClinicalVoiceField} from '../../services/clinicalVoiceService';
+import {transcribeClinicalAudio, ClinicalVoiceField, ClinicalVoiceResult} from '../../services/clinicalVoiceService';
 
 interface Props {
   value: string;
@@ -10,7 +10,7 @@ interface Props {
   field: ClinicalVoiceField;
   label?: string;
   disabled?: boolean;
-  onRecordingReady?: (blob: Blob, durationSeconds: number) => void;
+  onRecordingReady?: (blob: Blob, durationSeconds: number, result?: ClinicalVoiceResult) => void;
 }
 
 const base64ToBlob = (base64: string, mimeType: string): Blob => {
@@ -35,15 +35,16 @@ export const ClinicalVoiceInput: React.FC<Props> = ({value,onChange,field,label=
   const finishBlob = async (audio: Blob, seconds: number) => {
     setBlob(audio);
     setDuration(seconds);
-    onRecordingReady?.(audio, seconds);
     setTranscribing(true);
     setStatus('Transcribing and converting to medical English…');
     try {
       const result=await transcribeClinicalAudio(audio,field);
+      onRecordingReady?.(audio, seconds, result);
       const text=result.normalizedEnglish.trim() || result.transcript.trim();
       if(text) onChange(text);
       setStatus(result.confidence==='low' ? 'Low-confidence transcription — please review carefully.' : 'AI draft ready — review before saving.');
     } catch(error:any) {
+      onRecordingReady?.(audio, seconds);
       setStatus('');
       throw error;
     } finally { setTranscribing(false); }
