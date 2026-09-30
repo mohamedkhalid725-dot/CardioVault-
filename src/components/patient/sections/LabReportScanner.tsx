@@ -2,6 +2,7 @@ import React,{useState} from 'react';
 import {Camera,CheckCircle2,FileSearch,Loader2,TriangleAlert,X} from 'lucide-react';
 import {LabResult,Patient} from '../../../types/clinical';
 import {uploadClinicalMedia} from '../../../services/mediaStorage';
+import {createPanelAlarm} from '../PanelAlarmManager';
 
 interface Props { patient:Patient; onClose:()=>void; onConfirm:(results:LabResult[])=>void; }
 
