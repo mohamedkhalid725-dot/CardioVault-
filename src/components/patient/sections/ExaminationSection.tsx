@@ -245,8 +245,8 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 />
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.heartSounds}</p>
-                <ClinicalVoiceInput value={exam.cardiovascular.heartSounds} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,heartSounds:value}})} field="examination" label="Voice Heart Sounds" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('heartSounds',blob,duration);}} />
+                <><p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.heartSounds}</p>
+                <ClinicalVoiceInput value={exam.cardiovascular.heartSounds} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,heartSounds:value}})} field="examination" label="Voice Heart Sounds" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('heartSounds',blob,duration);}} /></>
               )}
             </div>
 
@@ -267,8 +267,8 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 />
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.murmurs}</p>
-                <ClinicalVoiceInput value={exam.cardiovascular.murmurs} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,murmurs:value}})} field="examination" label="Voice Murmurs" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('murmurs',blob,duration);}} />
+                <><p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.murmurs}</p>
+                <ClinicalVoiceInput value={exam.cardiovascular.murmurs} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,murmurs:value}})} field="examination" label="Voice Murmurs" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('murmurs',blob,duration);}} /></>
               )}
             </div>
 
@@ -289,8 +289,8 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 />
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.apexBeat}</p>
-                <ClinicalVoiceInput value={exam.cardiovascular.apexBeat} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,apexBeat:value}})} field="examination" label="Voice Apex Beat" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('apexBeat',blob,duration);}} />
+                <><p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.apexBeat}</p>
+                <ClinicalVoiceInput value={exam.cardiovascular.apexBeat} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,apexBeat:value}})} field="examination" label="Voice Apex Beat" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('apexBeat',blob,duration);}} /></>
               )}
             </div>
 
