@@ -171,6 +171,18 @@ service cloud.firestore {
           request.resource.data.unitId == unitId &&
           request.resource.data.cloudImmutable == true;
       }
+      match /units/{unitId}/patientAlarms/{alarmId} {
+        allow get, list: if workspaceOwner(workspaceId) || unitMember(workspaceId, unitId);
+        allow create: if unitMember(workspaceId, unitId) &&
+          request.resource.data.unitId == unitId &&
+          request.resource.data.patientId != null;
+        allow update: if unitMember(workspaceId, unitId) &&
+          resource.data.unitId == unitId &&
+          request.resource.data.unitId == unitId &&
+          request.resource.data.patientId == resource.data.patientId;
+        allow delete: if workspaceOwner(workspaceId) || unitMember(workspaceId, unitId);
+      }
+
       match /units/{unitId}/clinicalCorrections/{correctionId} {
         allow get, list: if workspaceOwner(workspaceId) || unitMember(workspaceId, unitId);
         allow create: if unitMember(workspaceId, unitId) &&
