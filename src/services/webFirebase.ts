@@ -8,7 +8,6 @@ import {
   browserPopupRedirectResolver,
   indexedDBLocalPersistence,
   initializeAuth,
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   signInWithEmailAndPassword,
@@ -83,24 +82,16 @@ function getWebDb(): Firestore {
   return webDbInstance;
 }
 
-export async function webGoogleSignIn(): Promise<User> {
+export async function webGoogleSignIn(): Promise<User | null> {
   const auth = getWebAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  // Start with the popup flow even on mobile. The button click is a direct
-  // user gesture, so Chrome can open Google's account chooser immediately.
-  // If the browser blocks the popup, fall back to redirect as a second path.
-  try {
-    const result = await signInWithPopup(auth, provider);
-    return result.user;
-  } catch (err: any) {
-    if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/cancelled-popup-request') {
-      await signInWithRedirect(auth, provider);
-      throw new Error('Redirecting to Google Sign-In...');
-    }
-    throw err;
-  }
+  // Use redirect as the primary web flow. This avoids the about:blank / blocked
+  // popup behavior seen on mobile browsers and lets boot() finish the Firebase
+  // session through getRedirectResult() after Google sends the browser back.
+  await signInWithRedirect(auth, provider);
+  return null;
 }
 export async function checkWebRedirectResult(): Promise<User | null> {
   if (Capacitor.isNativePlatform()) return null;
