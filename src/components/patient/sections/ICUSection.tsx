@@ -6,6 +6,7 @@ import { MedicalCalculators } from '../../../services/calculators';
 import { ClinicalVoiceInput } from '../ClinicalVoiceInput';
 import { uploadClinicalMedia } from '../../../services/mediaStorage';
 import { VoiceDocumentation } from '../../../types/clinical';
+import { ClinicalVoiceResult } from '../../../services/clinicalVoiceService';
 
 interface ICUSectionProps { patient: Patient; }
 
@@ -69,18 +70,19 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
     setIeRatio(vent.ieRatio || '1:2');
   }, [patient.id, vent.supportType, vent.oxygenDevice, vent.oxygenFlow, vent.mode, vent.tidalVolume, vent.respiratoryRate, vent.rr, vent.peep, vent.fio2, vent.peakPressure, vent.plateauPressure, vent.pressureSupport, vent.inspiratoryPressure, vent.ieRatio]);
 
-  const attachVoice = async (field: string, blob: Blob, durationSeconds: number) => {
+  const attachVoice = async (field: string, blob: Blob, durationSeconds: number, result?: ClinicalVoiceResult) => {
     try {
       const id = `voice-icu-${Date.now()}`;
       const extension = blob.type.includes('aac') ? 'aac' : blob.type.includes('mp4') ? 'm4a' : 'webm';
       const path = `patients/${patient.id}/voice-documentation/${id}.${extension}`;
       const uploaded = await uploadClinicalMedia(blob, path);
-      setVoiceDocs(prev => [...prev, { id, field: `icu.${field}`, sourceLanguage: 'ar', transcript: '', normalizedEnglish: '', audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined, durationSeconds, createdAt: new Date().toISOString(), author: currentUser.name, confidence: 'high' }]);
+      setVoiceDocs(prev => [...prev, { id, field: `icu.${field}`, sourceLanguage: result?.sourceLanguage || 'ar', transcript: result?.transcript || '', normalizedEnglish: result?.normalizedEnglish || '', audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined, durationSeconds, createdAt: new Date().toISOString(), author: currentUser.name, confidence: 'high' }]);
     } catch (error: any) { showToast(String(error?.message || 'ICU audio could not be attached.'), 'error'); }
   };
 
   const beginNewVentRecord = () => {
     setEditingRecordId(null);
+    setClinicalNote('');
     setIsEditingVent(true);
   };
 
@@ -99,6 +101,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
     setPressureSupport(record.pressureSupport || 0);
     setInspiratoryPressure(record.inspiratoryPressure || 0);
     setIeRatio(record.ieRatio || '1:2');
+    setClinicalNote(record.clinicalNote || '');
     setIsEditingVent(true);
     setActiveTab('vent');
   };
@@ -125,6 +128,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
         peakPressure: supportType === 'Mechanical Ventilation' ? ppeak : undefined,
         plateauPressure: supportType === 'Mechanical Ventilation' ? pplat : undefined,
         compliance: supportType === 'Mechanical Ventilation' ? staticCompliance : undefined,
+        clinicalNote: clinicalNote.trim() || undefined,
       };
       const nextHistory = editingRecordId
         ? history.map((record) => record.id === editingRecordId ? nextRecord : record)
@@ -149,6 +153,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
           plateauPressure: supportType === 'Mechanical Ventilation' ? pplat : 0,
           compliance: supportType === 'Mechanical Ventilation' ? staticCompliance : 0,
           history: nextHistory,
+          clinicalNote: clinicalNote.trim() || undefined,
         },
         voiceDocumentation: [...(patient.voiceDocumentation || []), ...voiceDocs],
       });
@@ -233,7 +238,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Clinical respiratory note
                   <textarea rows={3} value={clinicalNote} onChange={(e) => setClinicalNote(e.target.value)} placeholder="e.g. Tolerating current support; no desaturation episodes documented." className="w-full mt-1 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm" />
                 </label>
-                <ClinicalVoiceInput value={clinicalNote} onChange={setClinicalNote} field="icu" label="Voice ICU respiratory note" onRecordingReady={(blob,duration)=>{void attachVoice('respiratoryNote',blob,duration);}} />
+                <ClinicalVoiceInput value={clinicalNote} onChange={setClinicalNote} field="icu" label="Voice ICU respiratory note" onRecordingReady={(blob,duration,result)=>{void attachVoice('respiratoryNote',blob,duration,result);}} />
               </div>
 
               {supportType === 'Mechanical Ventilation' && (
