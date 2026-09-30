@@ -41,11 +41,15 @@ export const ClinicalVoiceInput: React.FC<Props> = ({value,onChange,field,label=
       const result=await transcribeClinicalAudio(audio,field);
       onRecordingReady?.(audio, seconds, result);
       const text=result.normalizedEnglish.trim() || result.transcript.trim();
-      if(text) onChange(text);
-      setStatus(result.confidence==='low' ? 'Low-confidence transcription — please review carefully.' : 'AI draft ready — review before saving.');
+      if(!text){
+        setStatus('AI returned no transcription. Please record again.');
+        return;
+      }
+      onChange(text);
+      setStatus(result.confidence==='low' ? 'Low-confidence transcription — please review carefully.' : 'AI draft inserted — review before saving.');
     } catch(error:any) {
       onRecordingReady?.(audio, seconds);
-      setStatus('');
+      setStatus(String(error?.message||'AI transcription failed. Please try again.'));
       throw error;
     } finally { setTranscribing(false); }
   };
