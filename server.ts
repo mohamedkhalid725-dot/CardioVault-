@@ -95,6 +95,60 @@ function normalizeResult(data: any) {
   };
 }
 
+// Server-side clinical voice transcription endpoint
+app.post('/api/ai/transcribe-clinical', async (req, res) => {
+  try {
+    const { audioBase64, field } = req.body || {};
+    if (!audioBase64 || typeof audioBase64 !== 'string') return res.status(400).json({ error: 'Recorded clinical audio is required.' });
+    if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'CardioVault AI requires GEMINI_API_KEY to be configured in project settings.' });
+    const match = audioBase64.match(/^data:(audio\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (!match) return res.status(400).json({ error: 'Unsupported audio format.' });
+    const mimeType = match[1]; const data = match[2];
+    const fieldLabel = String(field || 'clinical_note');
+    const prompt = [
+      'You are a medical documentation transcription assistant for a physician.',
+      'The clinician may speak Egyptian Arabic, Modern Standard Arabic, English, or a mixture.',
+      'Transcribe what is actually spoken, then normalize it into concise professional Medical English.',
+      'Field: ' + fieldLabel,
+      'Rules:',
+      '1. Do NOT invent, infer, diagnose, or add facts that were not spoken.',
+      '2. Preserve numbers, units, drug names, doses, anatomy, ECG terminology, laboratory values, and abbreviations accurately.',
+      '3. Recognize ECG/EKG, ST elevation, STEMI, NSTEMI, troponin, CK-MB, PCI, CABG, AF/RVR, HFrEF/HFpEF, COPD, DVT, PE, ARDS, GCS, RASS, SOFA and medications.',
+      '4. Convert Arabic clinical speech into clear Medical English while preserving meaning.',
+      '5. For mixed-language speech, produce one coherent Medical English note.',
+      '6. If a word or number is genuinely unclear, do not guess. Flag it.',
+      '7. Documentation assistance only, not clinical decision support.',
+      'Return ONLY valid JSON with keys: transcript, normalizedEnglish, sourceLanguage (ar|en|mixed|unknown), confidence (low|moderate|high), warnings (array).'
+    ].join('\n');
+    const ai = getGenAI();
+    const models = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    let raw = ''; let lastError: any = null;
+    for (const modelName of models) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data } }] }],
+          config: { responseMimeType: 'application/json' },
+        });
+        raw = String(response.text || '').trim(); if (raw) break;
+      } catch (err: any) { lastError = err; console.warn('Clinical voice model failed, trying fallback:', err?.message || err); }
+    }
+    if (!raw && lastError) throw lastError;
+    if (!raw) return res.status(502).json({ error: 'AI returned an empty transcription.' });
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const parsed = JSON.parse(cleaned);
+    return res.status(200).json({
+      transcript: String(parsed?.transcript || ''),
+      normalizedEnglish: String(parsed?.normalizedEnglish || parsed?.transcript || ''),
+      sourceLanguage: ['ar','en','mixed','unknown'].includes(parsed?.sourceLanguage) ? parsed.sourceLanguage : 'unknown',
+      confidence: ['low','moderate','high'].includes(parsed?.confidence) ? parsed.confidence : 'moderate',
+      warnings: Array.isArray(parsed?.warnings) ? parsed.warnings.map(String).filter(Boolean) : [],
+    });
+  } catch (error: any) {
+    console.error('Clinical voice transcription error:', error);
+    return res.status(500).json({ error: String(error?.message || error || 'Clinical voice transcription failed.') });
+  }
+});
 // Server-side AI Clinical Decision Support endpoint
 app.post('/api/ai/analyze', async (req, res) => {
   try {
