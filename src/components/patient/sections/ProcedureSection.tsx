@@ -21,7 +21,7 @@ export const ProcedureSection: React.FC<Props> = ({ patient }) => {
   const [complications, setComplications] = useState('None');
   const [voiceClips, setVoiceClips] = useState<Record<string,{blob:Blob;duration:number}>>({});
 
-  const save = (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const exactName = type === 'Surgery' ? surgeryName.trim() : type;
     if (!exactName) { showToast('Enter the exact surgery/procedure name.', 'error'); return; }
