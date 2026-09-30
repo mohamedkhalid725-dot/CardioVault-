@@ -8,7 +8,7 @@ import {
   browserPopupRedirectResolver,
   indexedDBLocalPersistence,
   initializeAuth,
-  signInWithPopup,
+  signInWithRedirect,
   getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -87,10 +87,11 @@ export async function webGoogleSignIn(): Promise<User | null> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  // Web-only Google flow: open Google's account chooser directly in a
-  // Firebase-managed popup. This keeps Android/native authentication untouched.
-  const result = await signInWithPopup(auth, provider);
-  return result.user;
+  // Web-only Google flow. Use a full-page redirect so the browser can
+  // navigate to Google's account chooser without popup blockers interfering.
+  // This function is never used by native Android builds.
+  await signInWithRedirect(auth, provider);
+  return null;
 }
 export async function checkWebRedirectResult(): Promise<User | null> {
   if (Capacitor.isNativePlatform()) return null;
