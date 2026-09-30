@@ -1,0 +1,17 @@
+name: TypeScript Build Check
+on:
+  push:
+    branches:
+      - phase1-clinical-snapshot
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install
+      - run: npm run lint
+      - run: npm run build
