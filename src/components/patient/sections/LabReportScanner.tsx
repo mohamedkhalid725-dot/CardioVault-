@@ -66,7 +66,11 @@ export const LabReportScanner:React.FC<Props>=({patient,onClose,onConfirm})=>{
         timestamp,reportDate:reportDate||undefined,reportPatientName:reportPatientName||undefined,
         sourceImageUrl:uploaded.url,sourceImageStoragePath:uploaded.cloud?path:undefined,extractionConfidence:t.confidence
       }));
-      onConfirm(results); setSaving(false); onClose();
+      onConfirm(results);
+      results.filter(result=>result.status==='critical').forEach(result=>{
+        createPanelAlarm(patient.id,'labs',`Critical Lab: ${result.testName}`,`${result.testName}: ${String(result.value)} ${result.unit||''}`.trim(),'critical');
+      });
+      setSaving(false); onClose();
     }catch(e:any){setError(String(e?.message||'Could not save the lab report image.'));setSaving(false);}
   };
 
