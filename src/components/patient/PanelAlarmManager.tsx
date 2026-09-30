@@ -6,6 +6,11 @@ export type PanelAlarm={id:string;sectionId:PatientSectionId;label:string;messag
 const key=(patientId:string)=>`cardiovault_panel_alarms_v1_${patientId}`;
 const read=(patientId:string):PanelAlarm[]=>{try{const v=JSON.parse(localStorage.getItem(key(patientId))||'[]');return Array.isArray(v)?v:[];}catch{return[];}};
 export const getPanelAlarms=(patientId:string)=>read(patientId).filter(a=>a.active);
+export const createPanelAlarm=(patientId:string,sectionId:PatientSectionId,label:string,message:string,severity:PanelAlarm['severity']='warning')=>{
+ const alarms=read(patientId);
+ const next=[...alarms,{id:`alarm-${Date.now()}`,sectionId,label:label.trim(),message:message.trim(),severity,active:true,createdAt:new Date().toISOString()}];
+ localStorage.setItem(key(patientId),JSON.stringify(next)); emit();
+};
 const emit=()=>window.dispatchEvent(new CustomEvent('cardiovault-panel-alarm-change'));
 
 interface Props{patientId:string;sectionId:PatientSectionId;sectionLabel:string;readOnly?:boolean;compact?:boolean;}
