@@ -16,6 +16,7 @@ import {
   ProgressNote,
 } from '../types/clinical';
 import { INITIAL_DEPARTMENT_UNITS, INITIAL_DEPARTMENT_BEDS, DepartmentService } from './departmentService';
+import { cacheClinicalData, isOfflineReadOnly } from './offlineSecurityService';
 
 const STORAGE_KEYS = {
   UNITS: 'cardiovault_units_v2',
@@ -648,7 +649,9 @@ export const StorageService = {
   },
 
   saveUnits(units: Unit[]): void {
+    if (isOfflineReadOnly()) return;
     runtimeUnits = Array.isArray(units) ? units : [];
+    void cacheClinicalData({ units: runtimeUnits, beds: runtimeBeds, patients: runtimePatients, savedAt: new Date().toISOString(), unitIds: runtimeUnits.map(u => String(u.id)) });
   },
 
   getBeds(): Bed[] {
@@ -656,7 +659,9 @@ export const StorageService = {
   },
 
   saveBeds(beds: Bed[]): void {
+    if (isOfflineReadOnly()) return;
     runtimeBeds = Array.isArray(beds) ? beds : [];
+    void cacheClinicalData({ units: runtimeUnits, beds: runtimeBeds, patients: runtimePatients, savedAt: new Date().toISOString(), unitIds: runtimeUnits.map(u => String(u.id)) });
   },
 
   getPatients(): Patient[] {
@@ -664,7 +669,9 @@ export const StorageService = {
   },
 
   savePatients(patients: Patient[]): void {
+    if (isOfflineReadOnly()) return;
     runtimePatients = Array.isArray(patients) ? patients : [];
+    void cacheClinicalData({ units: runtimeUnits, beds: runtimeBeds, patients: runtimePatients, savedAt: new Date().toISOString(), unitIds: runtimeUnits.map(u => String(u.id)) });
   },
 
   getTheme(): 'dark' | 'light' {
