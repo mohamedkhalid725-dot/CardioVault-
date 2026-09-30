@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import { Patient, PhysicalExam } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { ClinicalVoiceInput } from '../ClinicalVoiceInput';
+import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { VoiceDocumentation } from '../../../types/clinical';
 
 interface ExaminationSectionProps {
   patient: Patient;
@@ -76,6 +79,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
   const { updatePatient, showToast } = useApp();
   const [activeTab, setActiveTab] = useState<'cv' | 'neuro' | 'resp' | 'general' | 'abdomen' | 'extremities'>('cv');
   const [isEditing, setIsEditing] = useState(false);
+  const [voiceDocs, setVoiceDocs] = useState<VoiceDocumentation[]>([]);
 
   const rawExam = patient.examination || (patient as any).physicalExam || {};
 
@@ -89,9 +93,23 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
     customFields: rawExam.customFields || defaultExamData.customFields,
   });
 
+  const attachVoice = async (field: string, blob: Blob, durationSeconds: number) => {
+    try {
+      const id = `voice-exam-${Date.now()}`;
+      const extension = blob.type.includes('aac') ? 'aac' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+      const path = `patients/${patient.id}/voice-documentation/${id}.${extension}`;
+      const uploaded = await uploadClinicalMedia(blob, path);
+      const doc: VoiceDocumentation = { id, field: `examination.${field}`, sourceLanguage: 'ar', transcript: '', normalizedEnglish: '', audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined, durationSeconds, createdAt: new Date().toISOString(), author: 'Physician', confidence: 'high' };
+      setVoiceDocs(prev => [...prev, doc]);
+    } catch (error: any) {
+      showToast(String(error?.message || 'Examination audio could not be attached.'), 'error');
+    }
+  };
+
   const handleSave = () => {
     updatePatient(patient.id, {
       examination: exam as any,
+      voiceDocumentation: [...(patient.voiceDocumentation || []), ...voiceDocs],
     });
     setIsEditing(false);
     showToast('Physical Examination saved successfully', 'success');
@@ -227,9 +245,8 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 />
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.heartSounds}
-                </p>
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.heartSounds}</p>
+                <ClinicalVoiceInput value={exam.cardiovascular.heartSounds} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,heartSounds:value}})} field="examination" label="Voice Heart Sounds" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('heartSounds',blob,duration);}} />
               )}
             </div>
 
@@ -250,9 +267,8 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 />
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.murmurs}
-                </p>
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.murmurs}</p>
+                <ClinicalVoiceInput value={exam.cardiovascular.murmurs} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,murmurs:value}})} field="examination" label="Voice Murmurs" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('murmurs',blob,duration);}} />
               )}
             </div>
 
@@ -273,9 +289,8 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 />
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.apexBeat}
-                </p>
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.apexBeat}</p>
+                <ClinicalVoiceInput value={exam.cardiovascular.apexBeat} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,apexBeat:value}})} field="examination" label="Voice Apex Beat" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('apexBeat',blob,duration);}} />
               )}
             </div>
 
