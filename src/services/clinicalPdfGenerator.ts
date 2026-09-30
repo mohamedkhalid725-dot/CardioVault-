@@ -521,6 +521,10 @@ export function generateClinicalCasePdf(patient: Patient, options: ClinicalPdfOp
   if (selected.has('discrepancies')) discrepancies();
 
   footer();
+  // Clinical PDF export is intentionally capped at two A4 pages.
+  // The caller can control which sections are included; if the selected content
+  // exceeds the cap, later pages are removed rather than silently expanding the report.
+  while (doc.getNumberOfPages() > 2) doc.deletePage(doc.getNumberOfPages());
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i += 1) {
     doc.setPage(i);
