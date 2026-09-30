@@ -358,6 +358,7 @@ export interface Patient {
   timelineEvents?: PatientTimelineEvent[];
   attendedClinician?: string;
   attendedNurse?: string;
+  voiceDocumentation?: VoiceDocumentation[];
 }
 export type PatientSectionId='overview'|'history'|'ecg'|'vitals'|'examination'|'cardiology'|'medication'|'icu'|'imaging'|'labs'|'procedure'|'orders'|'calculators'|'progress'|'clinical-tools'|'pdf';
 export interface PatientSectionMeta { id:PatientSectionId; order:number; label:string; iconName:string; description:string; }
