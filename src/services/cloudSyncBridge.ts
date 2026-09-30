@@ -17,6 +17,13 @@ const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
 const LAST_ERROR_KEY='cardiovault_last_cloud_sync_error';
 const LAST_ERROR_DETAIL_KEY='cardiovault_last_cloud_sync_error_detail';
 const SCHEMA_VERSION=12;
+const LOCAL_DIRTY_KEY='cardiovault_local_dirty_v1';
+const CONFLICT_LOG_KEY='cardiovault_sync_conflicts_v1';
+const readLocalDirty=():Record<string,string>=>{try{return JSON.parse(localStorage.getItem(LOCAL_DIRTY_KEY)||'{}')||{};}catch{return{};}};
+const writeLocalDirty=(v:Record<string,string>)=>{try{localStorage.setItem(LOCAL_DIRTY_KEY,JSON.stringify(v));}catch{}};
+const markLocalDirty=(collection:string,records:any[])=>{const map=readLocalDirty();const now=new Date().toISOString();for(const record of records||[]){if(record?.id)map[collection+'/'+String(record.id)]=now;}writeLocalDirty(map);};
+const clearLocalDirty=(collection:string,id:string)=>{const map=readLocalDirty();delete map[collection+'/'+id];writeLocalDirty(map);};
+const recordSyncConflict=(collection:string,id:string,localUpdatedAt:string,remoteUpdatedAt:string)=>{try{const current=JSON.parse(localStorage.getItem(CONFLICT_LOG_KEY)||'[]');const next=[{id:`conflict-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,timestamp:new Date().toISOString(),collection,recordId:id,localUpdatedAt,remoteUpdatedAt,resolution:'remote-newer-preserved',source:'cloud-sync'},...current].slice(0,100);localStorage.setItem(CONFLICT_LOG_KEY,JSON.stringify(next));}catch{}};
 
 const currentUser=async():Promise<any|null>=>{if(!Capacitor.isNativePlatform())return webCurrentUser();try{return(await FirebaseAuthentication.getCurrentUser()).user||null;}catch{return null;}};
 const currentUid=async():Promise<string|null>=>{const user=await currentUser();return user?.uid||null;};
@@ -113,10 +120,52 @@ async function resolveAccess():Promise<WorkspaceAccessState|null>{
   return await restoreMemberAccess(id);
 }
 
-async function syncCollection(workspaceId:string,collection:string,records:any[],filter:(record:any)=>boolean,allowRemoteDelete:boolean):Promise<void>{const reference=workspacePath(workspaceId,collection);const currentIds=new Set<string>();for(const record of records){if(!record?.id||!filter(record))continue;const id=String(record.id);currentIds.add(id);const safe=firestoreSafe(record)||{};await withRetry(()=>FirebaseFirestore.setDocument({reference:`${reference}/${id}`,data:{...safe,id,updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},merge:true}));}if(!allowRemoteDelete)return;const remote=await getCollectionDocuments(reference);for(const item of remote){if(filter(item.data)&&!currentIds.has(item.id))await withRetry(()=>FirebaseFirestore.deleteDocument({reference:`${reference}/${item.id}`}));}}
+async function syncCollection(workspaceId:string,collection:string,records:any[],filter:(record:any)=>boolean,allowRemoteDelete:boolean):Promise<any[]>{
+ const reference=workspacePath(workspaceId,collection);
+ const remote=await getCollectionDocuments(reference);
+ const remoteMap=new Map(remote.map(item=>[item.id,item.data]));
+ const dirty=readLocalDirty();
+ const merged:any[]=[];
+ const currentIds=new Set<string>();
+ for(const record of records){
+   if(!record?.id||!filter(record))continue;
+   const id=String(record.id);currentIds.add(id);
+   const remoteRecord=remoteMap.get(id);
+   const dirtyAt=dirty[collection+'/'+id]||'';
+   if(remoteRecord){
+     const remoteUpdated=String(remoteRecord.updatedAt||'');
+     if(!dirtyAt){
+       merged.push({...remoteRecord,id});
+       continue;
+     }
+     if(remoteUpdated&&remoteUpdated>dirtyAt){
+       recordSyncConflict(collection,id,dirtyAt,remoteUpdated);
+       merged.push({...remoteRecord,id});
+       clearLocalDirty(collection,id);
+       continue;
+     }
+   }
+   const safe=firestoreSafe(record)||{};
+   await withRetry(()=>FirebaseFirestore.setDocument({reference:`${reference}/${id}`,data:{...safe,id,updatedAt:dirtyAt||new Date().toISOString(),schemaVersion:SCHEMA_VERSION},merge:true}));
+   merged.push({...record,id,updatedAt:dirtyAt||new Date().toISOString()});
+   clearLocalDirty(collection,id);
+ }
+ if(allowRemoteDelete){
+   for(const item of remote){
+     if(filter(item.data)&&!currentIds.has(item.id)&&!dirty[collection+'/'+item.id]){
+       await withRetry(()=>FirebaseFirestore.deleteDocument({reference:`${reference}/${item.id}`}));
+     }
+   }
+ }
+ return merged;
+}
 async function writeMetadata(workspaceId:string,uid:string,access:WorkspaceAccessState){await withRetry(()=>FirebaseFirestore.setDocument({reference:`workspaces/${workspaceId}/metadata/cloud`,data:{workspaceId,ownerUid:uid,lastClientSync:new Date().toISOString(),schemaVersion:SCHEMA_VERSION,role:access.role,unitId:access.unitId||null,platform:Capacitor.getPlatform()},merge:true}));}
 
-async function syncLocalDatabase(uid:string):Promise<void>{const verified=await currentUid();if(!verified||verified!==uid)throw new Error('Firebase authentication session is missing or changed. Sign in again.');const access=await resolveAccess();if(!access)throw new Error('No CardioVault Workspace is assigned to this account. Enter a Unit Access Code.');if(access.role==='view_only')return;if(syncing||suppressSync){syncRequested=true;return;}syncing=true;syncRequested=false;try{await ensureFirestoreNetwork();const filterUnit=(record:any)=>access.role==='owner'||(Array.isArray(access.unitIds)?access.unitIds.map(String).includes(String(record?.unitId||'')):String(record?.unitId||'')===String(access.unitId||''));const owner=access.role==='owner';if(owner)await syncCollection(access.workspaceId,'units',StorageService.getUnits(),record=>true,true);await syncCollection(access.workspaceId,'beds',StorageService.getBeds(),filterUnit,owner);await syncCollection(access.workspaceId,'patients',StorageService.getPatients(),filterUnit,owner);if(owner)await writeMetadata(access.workspaceId,uid,access);localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());clearCloudError();}catch(error){recordCloudError(error);throw error;}finally{syncing=false;if(syncRequested){syncRequested=false;scheduleSync(100);}}}
+async function syncLocalDatabase(uid:string):Promise<void>{const verified=await currentUid();if(!verified||verified!==uid)throw new Error('Firebase authentication session is missing or changed. Sign in again.');const access=await resolveAccess();if(!access)throw new Error('No CardioVault Workspace is assigned to this account. Enter a Unit Access Code.');if(access.role==='view_only')return;if(syncing||suppressSync){syncRequested=true;return;}syncing=true;syncRequested=false;try{await ensureFirestoreNetwork();const filterUnit=(record:any)=>access.role==='owner'||(Array.isArray(access.unitIds)?access.unitIds.map(String).includes(String(record?.unitId||'')):String(record?.unitId||'')===String(access.unitId||''));const owner=access.role==='owner';if(owner){const mergedUnits=await syncCollection(access.workspaceId,'units',StorageService.getUnits(),record=>true,true);StorageService.restoreOfflineData(mergedUnits,StorageService.getBeds(),StorageService.getPatients());}
+const mergedBeds=await syncCollection(access.workspaceId,'beds',StorageService.getBeds(),filterUnit,owner);
+const mergedPatients=await syncCollection(access.workspaceId,'patients',StorageService.getPatients(),filterUnit,owner);
+StorageService.restoreOfflineData(owner?StorageService.getUnits():StorageService.getUnits(),mergedBeds,mergedPatients);
+if(owner)await writeMetadata(access.workspaceId,uid,access);localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());clearCloudError();}catch(error){recordCloudError(error);throw error;}finally{syncing=false;if(syncRequested){syncRequested=false;scheduleSync(100);}}}
 function scheduleSync(delay=100){if(suppressSync)return;if(syncTimer)clearTimeout(syncTimer);syncTimer=setTimeout(()=>{syncTimer=null;void(async()=>{const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);try{await syncLocalDatabase(uid);}catch(error){console.warn('Automatic cloud sync failed; changes will be retried on the next local save or manual sync.',error);}})();},delay);}
 
 async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessState):Promise<number>{
@@ -158,5 +207,5 @@ export async function syncCurrentUserNow():Promise<boolean>{if(!Capacitor.isNati
 export function getLastCloudSyncTime(){return localStorage.getItem(LAST_SYNC_KEY)||'';}
 export function getLastCloudSyncErrorTime(){return localStorage.getItem(LAST_ERROR_KEY)||'';}
 export function getLastCloudSyncErrorDetail(){return localStorage.getItem(LAST_ERROR_DETAIL_KEY)||'';}
-export function installCloudSyncBridge(){if(installed)return;installed=true;const originalUnits=StorageService.saveUnits.bind(StorageService);const originalBeds=StorageService.saveBeds.bind(StorageService);const originalPatients=StorageService.savePatients.bind(StorageService);const restoreInProgress=()=>localStorage.getItem('cardiovault_cloud_restore_in_progress')==='1';StorageService.saveUnits=units=>{originalUnits(units);if(!suppressSync&&!restoreInProgress())void saveCurrentUserToCloud();};StorageService.saveBeds=beds=>{originalBeds(beds);if(!suppressSync&&!restoreInProgress())void saveCurrentUserToCloud();};StorageService.savePatients=patients=>{originalPatients(patients);if(!suppressSync&&!restoreInProgress())void saveCurrentUserToCloud();};}
+export function installCloudSyncBridge(){if(installed)return;installed=true;const originalUnits=StorageService.saveUnits.bind(StorageService);const originalBeds=StorageService.saveBeds.bind(StorageService);const originalPatients=StorageService.savePatients.bind(StorageService);const restoreInProgress=()=>localStorage.getItem('cardiovault_cloud_restore_in_progress')==='1';StorageService.saveUnits=units=>{originalUnits(units);if(!suppressSync&&!restoreInProgress()){markLocalDirty('units',units);void saveCurrentUserToCloud();}};StorageService.saveBeds=beds=>{originalBeds(beds);if(!suppressSync&&!restoreInProgress()){markLocalDirty('beds',beds);void saveCurrentUserToCloud();}};StorageService.savePatients=patients=>{originalPatients(patients);if(!suppressSync&&!restoreInProgress()){markLocalDirty('patients',patients);void saveCurrentUserToCloud();}};}
 export function clearActiveClinicalWorkspace(){clearLocalClinicalData();localStorage.removeItem('cardiovault_active_workspace_access_v1');}
