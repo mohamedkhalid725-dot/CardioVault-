@@ -12,6 +12,7 @@ import {
   Bed,
 } from '../types/clinical';
 import { AuditTrailService } from './auditTrailService';
+import { getStoredWorkspaceAccess, MASTER_WORKSPACE_ID } from './workspaceAccess';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { webDoc, webCollection, getDocs as webGetDocs, setDoc as webSetDoc } from './webFirebase';
@@ -19,40 +20,49 @@ import { webDoc, webCollection, getDocs as webGetDocs, setDoc as webSetDoc } fro
 const TASKS_KEY = 'cardiovault_clinical_tasks_v2';
 const PROTOCOLS_KEY = 'cardiovault_clinical_protocols_v2';
 const TEMPLATES_KEY = 'cardiovault_med_templates_v2';
-const TASK_WORKSPACE_ID = 'cardiovault_master_workspace';
-const TASK_COLLECTION = `workspaces/${TASK_WORKSPACE_ID}/tasks`;
+const TASK_WORKSPACE_ID = MASTER_WORKSPACE_ID;
+const TASK_COLLECTION = (unitId:string) => `workspaces/${TASK_WORKSPACE_ID}/units/${unitId}/tasks`;
 
 const safeSnapshot = (snapshot: any): any => {
   try { return typeof snapshot?.data === 'function' ? (snapshot.data() || null) : (snapshot?.data || null); }
   catch { return null; }
 };
 
-async function readCloudTasks(): Promise<ClinicalTask[]> {
-  try {
-    if (Capacitor.isNativePlatform()) {
-      const result: any = await FirebaseFirestore.getCollection({ reference: TASK_COLLECTION });
-      return (result?.snapshots || [])
-        .map((snapshot: any) => safeSnapshot(snapshot))
-        .filter(Boolean) as ClinicalTask[];
-    }
-    const snap = await webGetDocs(webCollection(TASK_COLLECTION));
-    return snap.docs.map(doc => doc.data() as ClinicalTask);
-  } catch (error) {
-    console.warn('Clinical task cloud read failed:', error);
-    return [];
+async function taskUnitIds(): Promise<string[]> {
+  const access = getStoredWorkspaceAccess();
+  if (access?.role === 'owner') {
+    try { return StorageService.getUnits().map(unit => String(unit.id)).filter(Boolean); } catch { return []; }
   }
+  return Array.from(new Set((Array.isArray(access?.unitIds) ? access.unitIds : [access?.unitId]).filter(Boolean).map(String)));
+}
+
+async function readCloudTasks(): Promise<ClinicalTask[]> {
+  const unitIds = await taskUnitIds();
+  if (!unitIds.length) return [];
+  const all: ClinicalTask[] = [];
+  for (const unitId of unitIds) {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const result: any = await FirebaseFirestore.getCollection({ reference: TASK_COLLECTION(unitId) });
+        all.push(...(result?.snapshots || []).map((snapshot:any) => safeSnapshot(snapshot)).filter(Boolean) as ClinicalTask[]);
+      } else {
+        const snap = await webGetDocs(webCollection(TASK_COLLECTION(unitId)));
+        all.push(...snap.docs.map(doc => doc.data() as ClinicalTask));
+      }
+    } catch (error) { console.warn('Clinical task cloud read failed for unit:', unitId, error); }
+  }
+  return all;
 }
 
 async function writeCloudTask(task: ClinicalTask): Promise<void> {
+  const unitId = String(task.unitId || '').trim();
+  if (!unitId) throw new Error('Clinical task must have a unitId.');
+  const reference = `${TASK_COLLECTION(unitId)}/${task.id}`;
   if (Capacitor.isNativePlatform()) {
-    await FirebaseFirestore.setDocument({
-      reference: `${TASK_COLLECTION}/${task.id}`,
-      data: task,
-      merge: true,
-    });
+    await FirebaseFirestore.setDocument({ reference, data: task, merge: true });
     return;
   }
-  await webSetDoc(webDoc(`${TASK_COLLECTION}/${task.id}`), task, { merge: true });
+  await webSetDoc(webDoc(reference), task, { merge: true });
 }
 
 async function writeCloudTasks(tasks: ClinicalTask[]): Promise<void> {
@@ -65,14 +75,13 @@ async function writeCloudTasks(tasks: ClinicalTask[]): Promise<void> {
 async function syncTasksFromCloud(): Promise<ClinicalTask[]> {
   const local = ClinicalWorkflowService.getTasks();
   const remote = await readCloudTasks();
-  if (!remote.length) return local;
-
   const merged = new Map<string, ClinicalTask>();
   local.forEach(task => merged.set(task.id, task));
   remote.forEach(task => merged.set(task.id, { ...merged.get(task.id), ...task }));
-  const result = Array.from(merged.values()).sort((a, b) =>
-    String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
-  );
+  const allowedUnits = new Set(await taskUnitIds());
+  const result = Array.from(merged.values())
+    .filter(task => allowedUnits.has(String(task.unitId || '')))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   ClinicalWorkflowService.saveTasks(result);
   window.dispatchEvent(new CustomEvent('cardiovault-task-updated'));
   return result;
