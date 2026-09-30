@@ -99,7 +99,8 @@ export function generateClinicalCasePdf(patient: Patient, options: ClinicalPdfOp
   };
 
   const title = (label: string) => {
-    ensure(12); sectionNo += 1;
+    // Keep the section title with the first content block.
+    ensure(28); sectionNo += 1;
     fill(WHITE); draw(BLUE); doc.setLineWidth(1.4); doc.line(M, y, M, y + 8);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); ink(NAVY);
     doc.text(sectionNo + '. ' + label.toUpperCase(), M + 4, y + 6);
@@ -140,7 +141,13 @@ export function generateClinicalCasePdf(patient: Patient, options: ClinicalPdfOp
       });
       y += 7;
     };
-    ensure(14); drawHeader();
+    const rowHeight = (row: string[]) => {
+      const cells = row.map((v, i) => doc.splitTextToSize(v || 'Not provided', ws[i] - 4) as string[]);
+      return Math.max(7, ...cells.map(c => c.length * 3.2 + 3));
+    };
+    // Keep the table header with its first row.
+    if (y + 7 + rowHeight(rows[0]) > BOTTOM) y = newPage();
+    drawHeader();
     for (const row of rows) {
       const cells = row.map((v, i) => doc.splitTextToSize(v || 'Not provided', ws[i] - 4) as string[]);
       const h = Math.max(7, ...cells.map(c => c.length * 3.2 + 3));
@@ -521,10 +528,6 @@ export function generateClinicalCasePdf(patient: Patient, options: ClinicalPdfOp
   if (selected.has('discrepancies')) discrepancies();
 
   footer();
-  // Clinical PDF export is intentionally capped at two A4 pages.
-  // The caller can control which sections are included; if the selected content
-  // exceeds the cap, later pages are removed rather than silently expanding the report.
-  while (doc.getNumberOfPages() > 2) doc.deletePage(doc.getNumberOfPages());
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i += 1) {
     doc.setPage(i);
