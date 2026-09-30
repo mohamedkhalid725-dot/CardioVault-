@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Syringe, Plus, Trash2 } from 'lucide-react';
-import { ClinicalProcedure, Patient } from '../../../types/clinical';
+import { ProcedureRecord, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ClinicalVoiceInput } from '../ClinicalVoiceInput';
 import { uploadClinicalMedia } from '../../../services/mediaStorage';
@@ -34,7 +34,7 @@ export const ProcedureSection: React.FC<Props> = ({ patient }) => {
       const uploaded = await uploadClinicalMedia(clip.blob, path);
       voiceAttachments.push({id, field, normalizedEnglish: field === 'indication' ? indication : details, audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined, durationSeconds: clip.duration, createdAt: new Date().toISOString()});
     }
-    const record: ClinicalProcedure = { id: `proc-${Date.now()}`, name: exactName, procedure: type, surgeryName: type === 'Surgery' ? exactName : undefined, date: d.toISOString().split('T')[0], time: d.toTimeString().slice(0,5), site, indication, operator, details, complications, voiceAttachments };
+    const record: ProcedureRecord = { id: `proc-${Date.now()}`, name: exactName, procedure: type, surgeryName: type === 'Surgery' ? exactName : undefined, date: d.toISOString().split('T')[0], time: d.toTimeString().slice(0,5), site, indication, operator, details, complications, voiceAttachments };
     updatePatient(patient.id, { procedures: [record, ...procedures] });
     setOpen(false); setSurgeryName(''); setSite(''); setIndication(''); setDetails(''); setVoiceClips({}); showToast('Procedure recorded.', 'success');
   };
