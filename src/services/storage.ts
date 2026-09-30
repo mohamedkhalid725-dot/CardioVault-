@@ -648,6 +648,12 @@ export const StorageService = {
     return runtimeUnits;
   },
 
+  restoreOfflineData(units: Unit[], beds: Bed[], patients: Patient[]): void {
+    runtimeUnits = Array.isArray(units) ? units : [];
+    runtimeBeds = Array.isArray(beds) ? beds : [];
+    runtimePatients = Array.isArray(patients) ? patients : [];
+  },
+
   saveUnits(units: Unit[]): void {
     if (isOfflineReadOnly()) return;
     runtimeUnits = Array.isArray(units) ? units : [];
