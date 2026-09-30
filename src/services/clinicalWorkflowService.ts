@@ -12,6 +12,7 @@ import {
   Bed,
 } from '../types/clinical';
 import { AuditTrailService } from './auditTrailService';
+import { StorageService } from './storage';
 import { getStoredWorkspaceAccess, MASTER_WORKSPACE_ID } from './workspaceAccess';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
