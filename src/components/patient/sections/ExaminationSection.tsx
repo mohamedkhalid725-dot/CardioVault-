@@ -16,6 +16,7 @@ import { useApp } from '../../../context/AppContext';
 import { ClinicalVoiceInput } from '../ClinicalVoiceInput';
 import { uploadClinicalMedia } from '../../../services/mediaStorage';
 import { VoiceDocumentation } from '../../../types/clinical';
+import { ClinicalVoiceResult } from '../../../services/clinicalVoiceService';
 
 interface ExaminationSectionProps {
   patient: Patient;
@@ -93,13 +94,13 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
     customFields: rawExam.customFields || defaultExamData.customFields,
   });
 
-  const attachVoice = async (field: string, blob: Blob, durationSeconds: number) => {
+  const attachVoice = async (field: string, blob: Blob, durationSeconds: number, result?: ClinicalVoiceResult) => {
     try {
       const id = `voice-exam-${Date.now()}`;
       const extension = blob.type.includes('aac') ? 'aac' : blob.type.includes('mp4') ? 'm4a' : 'webm';
       const path = `patients/${patient.id}/voice-documentation/${id}.${extension}`;
       const uploaded = await uploadClinicalMedia(blob, path);
-      const doc: VoiceDocumentation = { id, field: `examination.${field}`, sourceLanguage: 'ar', transcript: '', normalizedEnglish: '', audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined, durationSeconds, createdAt: new Date().toISOString(), author: 'Physician', confidence: 'high' };
+      const doc: VoiceDocumentation = { id, field: `examination.${field}`, sourceLanguage: result?.sourceLanguage || 'ar', transcript: result?.transcript || '', normalizedEnglish: result?.normalizedEnglish || '', audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined, durationSeconds, createdAt: new Date().toISOString(), author: 'Physician', confidence: 'high' };
       setVoiceDocs(prev => [...prev, doc]);
     } catch (error: any) {
       showToast(String(error?.message || 'Examination audio could not be attached.'), 'error');
@@ -246,7 +247,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 />
               ) : (
                 <><p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.heartSounds}</p>
-                <ClinicalVoiceInput value={exam.cardiovascular.heartSounds} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,heartSounds:value}})} field="examination" label="Voice Heart Sounds" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('heartSounds',blob,duration);}} /></>
+                <ClinicalVoiceInput value={exam.cardiovascular.heartSounds} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,heartSounds:value}})} field="examination" label="Voice Heart Sounds" disabled={!isEditing} onRecordingReady={(blob,duration,result)=>{void attachVoice('heartSounds',blob,duration,result);}} /></>
               )}
             </div>
 
@@ -268,7 +269,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 />
               ) : (
                 <><p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.murmurs}</p>
-                <ClinicalVoiceInput value={exam.cardiovascular.murmurs} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,murmurs:value}})} field="examination" label="Voice Murmurs" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('murmurs',blob,duration);}} /></>
+                <ClinicalVoiceInput value={exam.cardiovascular.murmurs} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,murmurs:value}})} field="examination" label="Voice Murmurs" disabled={!isEditing} onRecordingReady={(blob,duration,result)=>{void attachVoice('murmurs',blob,duration,result);}} /></>
               )}
             </div>
 
@@ -290,7 +291,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 />
               ) : (
                 <><p className="text-xs font-semibold text-slate-900 dark:text-white">{exam.cardiovascular.apexBeat}</p>
-                <ClinicalVoiceInput value={exam.cardiovascular.apexBeat} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,apexBeat:value}})} field="examination" label="Voice Apex Beat" disabled={!isEditing} onRecordingReady={(blob,duration)=>{void attachVoice('apexBeat',blob,duration);}} /></>
+                <ClinicalVoiceInput value={exam.cardiovascular.apexBeat} onChange={(value)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,apexBeat:value}})} field="examination" label="Voice Apex Beat" disabled={!isEditing} onRecordingReady={(blob,duration,result)=>{void attachVoice('apexBeat',blob,duration,result);}} /></>
               )}
             </div>
 
