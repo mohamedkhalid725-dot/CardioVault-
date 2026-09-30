@@ -141,12 +141,19 @@ service cloud.firestore {
            request.resource.data.unitId == resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
+      // Legacy shared task collection is owner-only after unit-scoped task migration.
       match /tasks/{taskId} {
-        // Clinical tasks are department-shared: every active workspace member can
-        // read and update the same task board regardless of who created/was assigned the task.
-        allow get, list: if workspaceOwner(workspaceId) || member(workspaceId);
-        allow create, update: if workspaceOwner(workspaceId) || member(workspaceId);
-        allow delete: if workspaceOwner(workspaceId);
+        allow get, list, create, update, delete: if workspaceOwner(workspaceId);
+      }
+
+      match /units/{unitId}/tasks/{taskId} {
+        allow get, list: if workspaceOwner(workspaceId) || unitMember(workspaceId, unitId);
+        allow create: if workspaceOwner(workspaceId) ||
+          (clinicalEditor(workspaceId, unitId) && request.resource.data.unitId == unitId);
+        allow update: if workspaceOwner(workspaceId) ||
+          (clinicalEditor(workspaceId, unitId) &&
+           resource.data.unitId == unitId && request.resource.data.unitId == unitId);
+        allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, unitId);
       }
 
       match /metadata/{documentId} { allow read, write: if workspaceOwner(workspaceId); }
