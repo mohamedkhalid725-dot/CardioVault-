@@ -66,8 +66,7 @@ service cloud.firestore {
            get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(uid)).data.role != 'department_admin' &&
            request.resource.data.workspaceId == workspaceId &&
            request.resource.data.uid == uid &&
-           request.resource.data.role in ['clinical_editor','view_only'] &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitId','unitIds','role','active','forceReauth','updatedAt'])) ||
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])) ||
           (signedIn() && request.auth.uid == uid &&
            workspaceId == 'cardiovault_master_workspace' &&
            validAccessCode(request.resource.data.accessCodeHash) &&
@@ -121,8 +120,8 @@ service cloud.firestore {
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt']) &&
-           selfClinicalRole(request.resource.data.role));
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt']) &&
+           selfClinicalRole(resource.data.role));
 
         allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
       }
@@ -136,7 +135,10 @@ service cloud.firestore {
       match /patients/{patientId} {
         allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
         allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
+        allow create: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
+        allow update: if workspaceOwner(workspaceId) ||
+          (clinicalEditor(workspaceId,resource.data.unitId) &&
+           request.resource.data.unitId == resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
       match /tasks/{taskId} {
@@ -151,7 +153,10 @@ service cloud.firestore {
 
       match /media/{mediaId} {
         allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId, resource.data.unitId);
-        allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, request.resource.data.unitId);
+        allow create: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, request.resource.data.unitId);
+        allow update: if workspaceOwner(workspaceId) ||
+          (clinicalEditor(workspaceId,resource.data.unitId) &&
+           request.resource.data.unitId == resource.data.unitId);
         allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, resource.data.unitId);
 
         match /chunks/{chunkId} {
