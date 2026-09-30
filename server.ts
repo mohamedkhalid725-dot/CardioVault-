@@ -149,6 +149,54 @@ app.post('/api/ai/transcribe-clinical', async (req, res) => {
     return res.status(500).json({ error: String(error?.message || error || 'Clinical voice transcription failed.') });
   }
 });
+// Server-side lab report OCR / extraction endpoint
+app.post('/api/ai/scan-lab', async (req, res) => {
+  try {
+    const { imageBase64, patientName } = req.body || {};
+    if (!imageBase64 || typeof imageBase64 !== 'string') return res.status(400).json({ error: 'Lab report image is required.' });
+    if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'CardioVault AI requires GEMINI_API_KEY to be configured in project settings.' });
+    const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (!match) return res.status(400).json({ error: 'Unsupported lab image format.' });
+    const prompt = [
+      'You are a laboratory report extraction assistant for CardioVault.',
+      'Extract only values visibly present on the supplied laboratory report. Never guess missing digits or values.',
+      'Detect the laboratory panel (CBC, Chemistry, Cardiac Markers, Coagulation, Lipid Profile, Diabetes, Liver, Thyroid, ABG, Electrolytes, Inflammatory / Infection, Iron / Vitamins, or Custom Lab).',
+      'For every extracted test return testName, value, unit, referenceRange, status, confidence.',
+      'Use the report-provided reference range when visible. If absent, leave referenceRange empty and use status unknown unless the report itself marks the result high/low/critical.',
+      'Only use critical when the report explicitly marks a result critical or provides a critical flag/range. Do not invent critical thresholds.',
+      'Extract report patient name and report date when visible.',
+      'Compare the report patient name with the current patient name only to produce a mismatch warning; do not reject solely on minor spelling differences.',
+      'Return JSON only with keys: panel, patientName, reportDate, tests, warnings.',
+      'tests is an array of {testName,value,unit,referenceRange,status,confidence}. status must be normal|low|high|critical|unknown. confidence must be low|moderate|high.',
+      'Current patient name: ' + String(patientName || '')
+    ].join('\n');
+    const ai = getGenAI();
+    const models = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    let raw = ''; let lastError: any = null;
+    for (const modelName of models) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: match[1], data: match[2] } }] }],
+          config: { responseMimeType: 'application/json' },
+        });
+        raw = String(response.text || '').trim(); if (raw) break;
+      } catch (err: any) { lastError = err; console.warn('Lab scan model failed, trying fallback:', err?.message || err); }
+    }
+    if (!raw && lastError) throw lastError;
+    if (!raw) return res.status(502).json({ error: 'AI returned an empty laboratory extraction.' });
+    const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim());
+    const tests = Array.isArray(parsed?.tests) ? parsed.tests.map((t:any)=>({
+      testName:String(t?.testName||''), value:t?.value ?? '', unit:String(t?.unit||''), referenceRange:String(t?.referenceRange||''),
+      status:['normal','low','high','critical','unknown'].includes(t?.status)?t.status:'unknown',
+      confidence:['low','moderate','high'].includes(t?.confidence)?t.confidence:'moderate'
+    })).filter((t:any)=>t.testName && t.value !== '') : [];
+    return res.status(200).json({panel:String(parsed?.panel||'Custom Lab'),patientName:String(parsed?.patientName||''),reportDate:String(parsed?.reportDate||''),tests,warnings:Array.isArray(parsed?.warnings)?parsed.warnings.map(String).filter(Boolean):[]});
+  } catch (error:any) {
+    console.error('Lab scan error:', error);
+    return res.status(500).json({ error: String(error?.message || error || 'Laboratory scan failed.') });
+  }
+});
 // Server-side AI Clinical Decision Support endpoint
 app.post('/api/ai/analyze', async (req, res) => {
   try {
