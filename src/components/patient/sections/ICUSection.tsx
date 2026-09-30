@@ -3,6 +3,9 @@ import { Wind, Plus, Activity, Gauge, Edit2, Loader2 } from 'lucide-react';
 import { Patient, ABGRecord, RespiratorySupportType, VentilatorRecord } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { MedicalCalculators } from '../../../services/calculators';
+import { ClinicalVoiceInput } from '../ClinicalVoiceInput';
+import { uploadClinicalMedia } from '../../../services/mediaStorage';
+import { VoiceDocumentation } from '../../../types/clinical';
 
 interface ICUSectionProps { patient: Patient; }
 
@@ -10,7 +13,9 @@ const MODES = ['AC/VC', 'AC/PC', 'SIMV-VC', 'SIMV-PC', 'PSV', 'CPAP', 'BiPAP', '
 const OXYGEN_DEVICES = ['Nasal Cannula', 'Simple Face Mask', 'Venturi Mask', 'NRBM', 'HFNC'];
 
 export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
-  const { updatePatient, showToast } = useApp();
+  const { updatePatient, showToast, currentUser } = useApp();
+  const [voiceDocs, setVoiceDocs] = useState<VoiceDocumentation[]>([]);
+  const [clinicalNote, setClinicalNote] = useState('');
   const vent = patient.ventilator;
   const abgs = vent.abgHistory || [];
   const history = vent.history || [];
@@ -63,6 +68,16 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
     setInspiratoryPressure(vent.inspiratoryPressure || 0);
     setIeRatio(vent.ieRatio || '1:2');
   }, [patient.id, vent.supportType, vent.oxygenDevice, vent.oxygenFlow, vent.mode, vent.tidalVolume, vent.respiratoryRate, vent.rr, vent.peep, vent.fio2, vent.peakPressure, vent.plateauPressure, vent.pressureSupport, vent.inspiratoryPressure, vent.ieRatio]);
+
+  const attachVoice = async (field: string, blob: Blob, durationSeconds: number) => {
+    try {
+      const id = `voice-icu-${Date.now()}`;
+      const extension = blob.type.includes('aac') ? 'aac' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+      const path = `patients/${patient.id}/voice-documentation/${id}.${extension}`;
+      const uploaded = await uploadClinicalMedia(blob, path);
+      setVoiceDocs(prev => [...prev, { id, field: `icu.${field}`, sourceLanguage: 'ar', transcript: '', normalizedEnglish: '', audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined, durationSeconds, createdAt: new Date().toISOString(), author: currentUser.name, confidence: 'high' }]);
+    } catch (error: any) { showToast(String(error?.message || 'ICU audio could not be attached.'), 'error'); }
+  };
 
   const beginNewVentRecord = () => {
     setEditingRecordId(null);
@@ -135,6 +150,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
           compliance: supportType === 'Mechanical Ventilation' ? staticCompliance : 0,
           history: nextHistory,
         },
+        voiceDocumentation: [...(patient.voiceDocumentation || []), ...voiceDocs],
       });
       setEditingRecordId(null);
       setIsEditingVent(false);
@@ -213,7 +229,14 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
                     </label>
                   </>
                 )}
-                {supportType === 'Mechanical Ventilation' && (
+                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Clinical respiratory note
+                  <textarea rows={3} value={clinicalNote} onChange={(e) => setClinicalNote(e.target.value)} placeholder="e.g. Tolerating current support; no desaturation episodes documented." className="w-full mt-1 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm" />
+                </label>
+                <ClinicalVoiceInput value={clinicalNote} onChange={setClinicalNote} field="icu" label="Voice ICU respiratory note" onRecordingReady={(blob,duration)=>{void attachVoice('respiratoryNote',blob,duration);}} />
+              </div>
+
+              {supportType === 'Mechanical Ventilation' && (
                   <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Ventilator Mode
                     <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm">{MODES.map((item) => <option key={item}>{item}</option>)}</select>
                   </label>
