@@ -33,8 +33,16 @@ export async function transcribeClinicalAudio(
     }),
   });
 
+  const contentType=response.headers.get('content-type')||'';
   let data: any = {};
-  try { data = await response.json(); } catch {}
+  if(contentType.includes('application/json')){
+    try { data = await response.json(); } catch {}
+  }else{
+    await response.text();
+    throw new Error(response.status===404
+      ? 'AI voice service is not available on this deployment.'
+      : `AI voice service returned an unexpected response (${response.status}).`);
+  }
   if (!response.ok) {
     throw new Error(String(data?.error || 'Clinical voice transcription failed.'));
   }
