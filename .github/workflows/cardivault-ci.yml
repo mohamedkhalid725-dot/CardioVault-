@@ -2,7 +2,7 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [main, department-system-v1]
+    branches: [main, department-system-v1, phase1-clinical-snapshot]
   pull_request:
     branches: [main, department-system-v1]
   workflow_dispatch:
