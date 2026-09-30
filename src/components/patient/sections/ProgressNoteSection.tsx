@@ -3,6 +3,7 @@ import { FileText, Plus, Pencil, Trash2, X, Mic } from 'lucide-react';
 import { Patient, ProgressNote } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ClinicalAudioPlayer } from '../ClinicalAudioPlayer';
+import { ClinicalVoiceInput } from '../ClinicalVoiceInput';
 
 interface Props { patient: Patient; }
 
@@ -14,6 +15,7 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
   const [selectedId, setSelectedId] = useState<string | null>(notes[0]?.id || null);
   const [editing, setEditing] = useState<ProgressNote | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [voiceClips, setVoiceClips] = useState<Record<string,{blob:Blob;duration:number}>>({});
 
   useEffect(() => {
     if (selectedId && notes.some((n) => n.id === selectedId)) return;
@@ -33,17 +35,30 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
     setShowModal(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!editing) return;
     if (!editing.author.trim() || !editing.plan.trim()) {
       showToast('Author and plan are required.', 'error');
       return;
     }
-    const record: ProgressNote = { ...editing, id: editing.id || `note-${Date.now()}` };
+    const voiceAttachments = [...(editing.voiceAttachments || [])];
+    for (const [field, clip] of Object.entries(voiceClips)) {
+      const id = `voice-${Date.now()}-${field}`;
+      const extension = clip.blob.type.includes('aac') ? 'aac' : clip.blob.type.includes('mp4') ? 'm4a' : 'webm';
+      const path = `patients/${patient.id}/voice-documentation/${id}.${extension}`;
+      const uploaded = await (await import('../../../services/mediaStorage')).uploadClinicalMedia(clip.blob, path);
+      voiceAttachments.push({
+        id, field, normalizedEnglish: String((editing as any)[field] || ''),
+        audioUrl: uploaded.url, audioStoragePath: uploaded.cloud ? path : undefined,
+        durationSeconds: clip.duration, createdAt: new Date().toISOString(), author: editing.author
+      });
+    }
+    const record: ProgressNote = { ...editing, id: editing.id || `note-${Date.now()}`, voiceAttachments };
     const next = editing.id ? notes.map((n) => n.id === editing.id ? record : n) : [record, ...notes];
     updatePatient(patient.id, { progressNotes: next });
     setSelectedId(record.id);
     setEditing(null);
+    setVoiceClips({});
     setShowModal(false);
     showToast(editing.id ? 'Progress note updated.' : 'Progress note saved.', 'success');
   };
@@ -67,6 +82,6 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
       </div> : <div className="p-8 text-center text-xs text-slate-400">Select a note.</div>}</div>
     </div>}
 
-    {showModal && editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xl"><div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800"><h3 className="text-lg font-bold text-slate-900 dark:text-white">{editing.id ? 'Edit Progress Note' : 'New Progress Note'}</h3><button onClick={() => { setShowModal(false); setEditing(null); }}><X className="w-5 h-5 text-slate-400" /></button></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4"><label className="text-xs font-semibold">Date<input type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Time<input type="time" value={editing.time} onChange={(e) => setEditing({ ...editing, time: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Author<input value={editing.author} onChange={(e) => setEditing({ ...editing, author: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Note Type<select value={editing.type || 'SOAP Note'} onChange={(e) => setEditing({ ...editing, type: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2"><option>SOAP Note</option><option>ICU Rounding</option><option>Consultation</option><option>Transfer Note</option><option>Discharge Summary</option></select></label></div>{([['subjective','Subjective'],['objective','Objective'],['assessment','Assessment'],['plan','Plan']] as const).map(([field,label]) => <label key={field} className="block text-xs font-semibold mb-3">{label}<textarea rows={field === 'plan' || field === 'objective' ? 4 : 3} value={editing[field] || ''} onChange={(e) => setEditing({ ...editing, [field]: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label>)}<div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button onClick={() => { setShowModal(false); setEditing(null); }} className="px-4 py-2 text-xs text-slate-500">Cancel</button><button onClick={save} className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold">Save Note</button></div></div></div>}
+    {showModal && editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xl"><div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800"><h3 className="text-lg font-bold text-slate-900 dark:text-white">{editing.id ? 'Edit Progress Note' : 'New Progress Note'}</h3><button onClick={() => { setShowModal(false); setEditing(null); }}><X className="w-5 h-5 text-slate-400" /></button></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4"><label className="text-xs font-semibold">Date<input type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Time<input type="time" value={editing.time} onChange={(e) => setEditing({ ...editing, time: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Author<input value={editing.author} onChange={(e) => setEditing({ ...editing, author: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Note Type<select value={editing.type || 'SOAP Note'} onChange={(e) => setEditing({ ...editing, type: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2"><option>SOAP Note</option><option>ICU Rounding</option><option>Consultation</option><option>Transfer Note</option><option>Discharge Summary</option></select></label></div>{([['subjective','Subjective'],['objective','Objective'],['assessment','Assessment'],['plan','Plan']] as const).map(([field,label]) => <div key={field} className="mb-3"><label className="block text-xs font-semibold">{label}<div className="mt-1 mb-1"><ClinicalVoiceInput value={editing[field] || ''} onChange={(value)=>setEditing({...editing,[field]:value})} field="progress_note" onRecordingReady={(blob,duration)=>setVoiceClips(p=>({...p,[field]:{blob,duration}}))}/></div><textarea rows={field === 'plan' || field === 'objective' ? 4 : 3} value={editing[field] || ''} onChange={(e) => setEditing({ ...editing, [field]: e.target.value })} className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label></div>)}<div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button onClick={() => { setShowModal(false); setEditing(null); }} className="px-4 py-2 text-xs text-slate-500">Cancel</button><button onClick={save} className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold">Save Note</button></div></div></div>}
   </div>;
 };
