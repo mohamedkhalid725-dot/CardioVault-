@@ -3,7 +3,7 @@ export type PatientStatus = 'Stable' | 'Unstable' | 'Critical' | 'Empty';
 export interface Bed { id:string; unitId:string; bedNumber:string; status:PatientStatus; patientId?:string; }
 export interface Unit { id:string; name:string; type:string; totalBeds:number; }
 export interface ClinicalSummary { chiefComplaint:string; hpi:string; pmh:string[]; psh:string[]; drugHistory:string; allergies:string[]; familyHistory:string; socialHistory:string; }
-export interface HandoverData { situation:string; background:string; assessment:string; recommendation:string; updatedAt?:string; }
+export interface HandoverData { situation:string; background:string; assessment:string; recommendation:string; updatedAt?:string; voiceAttachments?: VoiceDocumentation[]; }
 export interface CardiovascularHistory { hypertension:boolean; diabetes:boolean; dyslipidemia:boolean; cad:boolean; previousMI:boolean; heartFailure:boolean; arrhythmias:boolean; valvularDisease:boolean; previousPCI:boolean; previousCABG:boolean; previousStroke:boolean; pvd:boolean; smoking:boolean; alcohol:boolean; previousAdmissions:string; previousICU:string; other:string; }
 export interface VitalRecord { id:string; timestamp:string; sbp:number; dbp:number; hr:number; rr:number; spo2:number; temp:number; pain?:number; gcsEye:number; gcsVerbal:number; gcsMotor:number; gcsTotal:number; rass:number; cvp?:number; co?:number; cardiacOutput?:number; ci?:number; cardiacIndex?:number; sv?:number; svr?:number; lactate?:number; glucose?:number; arterialLine?:boolean|string; notes?:string; }
 export interface FluidRecord { id:string; timestamp?:string; date?:string; oral?:number; oralEnteral?:number; medFlushes?:number; totalIntake?:number; totalOutput?:number; netBalance?:number; cumulativeBalance?:number; overloadPercentage?:number; urineOutput?:number; hourlyUrineRate?:number; ivFluids?:number; bloodProducts?:number; enteralFeeding?:number; otherInput?:number; urine?:number; ngOutput?:number; ngSuction?:number; drains?:number; chestTube?:number; stool?:number; otherOutput?:number; notes?:string; }
@@ -24,6 +24,19 @@ export interface ImagingStudy { id:string; date:string; type?:'X-Ray'|'CT'|'MRI'
 export interface LabPanel { date:string; hb:number;wbc:number;platelets:number;hct:number;rbc:number;mcv:number;mch:number;mchc:number;urea:number;creatinine:number;egfr:number;uricAcid:number;na:number;k:number;cl:number;ca:number;mg:number;phosphate:number;ast:number;alt:number;alp:number;bilirubin:number;albumin:number;totalProtein:number;pt:number;inr:number;aptt:number;fibrinogen:number;troponin:number;ckmb:number;bnp:number;ntProBnp:number;crp:number;esr:number;procalcitonin:number;glucose:number;hba1c:number;cholesterol:number;triglycerides:number;ldl:number;hdl:number;lactate:number;dDimer:number;tsh:number;customLabs:Array<{name:string;value:string;unit:string;referenceRange:string}>; }
 export interface ProcedureRecord { id:string; date:string; time:string; procedure?:string; name?:string; surgeryName?:string; indication?:string; technique?:string; operator?:string; findings?:string; complications?:string; outcome?:string; postProcedurePlan?:string; site?:string; details?:string; notes?:string; }
 export interface CalculatorResult { id:string; calculatorId:string; name:string; timestamp:string; score:number|string; riskLevel:'Low'|'Intermediate'|'High'|'Very High'|'Normal'|'Critical'; interpretation:string; summary:string; }
+export interface VoiceDocumentation {
+  id:string;
+  field: string;
+  sourceLanguage?: 'ar'|'en'|'mixed'|'unknown';
+  transcript?: string;
+  normalizedEnglish: string;
+  audioUrl?: string;
+  audioStoragePath?: string;
+  durationSeconds?: number;
+  createdAt: string;
+  author?: string;
+  confidence?: 'low'|'moderate'|'high';
+}
 export interface ProgressNote { id:string; date:string; time:string; author:string; type?:string; subjective?:string; objective?:string; assessment?:string; plan:string; audioUrl?:string; audioStoragePath?:string; audioDurationSeconds?:number; clinicalStatus?:string; events?:string; examination?:string; investigations?:string; treatment?:string; response?:string; problems?:string; updatedAt?:string; }
 export interface PastAdmission { id:string; admissionDate:string; dischargeDate:string; unitName:string; dischargeReason:'Discharged Home'|'Transferred'|'Deceased'|'Other'; dischargeSummary:string; primaryDiagnosis:string; }
 export interface AuditEvent { id:string; timestamp:string; action:string; fields:string[]; actor?:string; }
