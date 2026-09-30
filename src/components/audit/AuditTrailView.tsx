@@ -15,6 +15,11 @@ export const AuditTrailView: React.FC = () => {
 
   useEffect(() => {
     let active = true;
+    void AuditTrailService.hydrate().then(({ logs, corrections }) => {
+      if (!active) return;
+      setAuditLogs(logs);
+      setCorrections(corrections);
+    });
     void isMasterAccount().then(value => {
       if (active) setMasterView(value);
     });
