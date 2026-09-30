@@ -1,6 +1,8 @@
 import React,{useEffect,useMemo,useState}from'react';
 import {AlarmClock, BellRing, Check, Trash2, X}from'lucide-react';
 import {PatientSectionId}from'../../types/clinical';
+import {Capacitor}from'@capacitor/core';
+import {LocalNotifications}from'@capacitor/local-notifications';
 
 export type PanelAlarm={id:string;sectionId:PatientSectionId;label:string;message:string;severity:'warning'|'critical';active:boolean;createdAt:string};
 const key=(patientId:string)=>`cardiovault_panel_alarms_v1_${patientId}`;
@@ -9,9 +11,10 @@ export const getPanelAlarms=(patientId:string)=>read(patientId).filter(a=>a.acti
 export const createPanelAlarm=(patientId:string,sectionId:PatientSectionId,label:string,message:string,severity:PanelAlarm['severity']='warning')=>{
  const alarms=read(patientId);
  const next=[...alarms,{id:`alarm-${Date.now()}`,sectionId,label:label.trim(),message:message.trim(),severity,active:true,createdAt:new Date().toISOString()}];
- localStorage.setItem(key(patientId),JSON.stringify(next)); emit();
+ localStorage.setItem(key(patientId),JSON.stringify(next)); emit(); if(severity==='critical') void notifyCriticalAlarm(label.trim(),message.trim());
 };
 const emit=()=>window.dispatchEvent(new CustomEvent('cardiovault-panel-alarm-change'));
+const notifyCriticalAlarm=async(label:string,message:string)=>{try{if(Capacitor.isNativePlatform()){let permission=await LocalNotifications.checkPermissions();if(permission.display==='prompt')permission=await LocalNotifications.requestPermissions();if(permission.display==='granted')await LocalNotifications.schedule({notifications:[{id:Math.floor(Date.now()%2147483647),title:'CardioVault • Critical Alert',body:message?label+': '+message:label,schedule:{at:new Date(Date.now()+250)},extra:{type:'clinical-critical-alert'}}]});return;}if('Notification' in window){if(Notification.permission==='default')await Notification.requestPermission();if(Notification.permission==='granted')new Notification('CardioVault • Critical Alert',{body:message?label+': '+message:label});}}catch(error){console.warn('Critical alert notification failed:',error);}};
 
 interface Props{patientId:string;sectionId:PatientSectionId;sectionLabel:string;readOnly?:boolean;compact?:boolean;}
 export const PanelAlarmManager:React.FC<Props>=({patientId,sectionId,sectionLabel,readOnly=false,compact=false})=>{
