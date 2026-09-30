@@ -11,6 +11,7 @@ import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
 import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess} from '../services/workspaceAccess';
 import {notifyClinicalData} from'../services/clinicalNotifications';
+import {enableBiometricOfflineUnlock,authenticateBiometricOffline,getStoredBiometricOfflinePin} from'../services/biometricOfflineService';
 
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail'|'results-center';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
