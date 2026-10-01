@@ -9,9 +9,6 @@ import {
   indexedDBLocalPersistence,
   initializeAuth,
   signInWithCredential,
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -86,51 +83,71 @@ function getWebDb(): Firestore {
 
 const WEB_GOOGLE_CLIENT_ID = '963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com';
 
-export async function webGoogleSignIn(): Promise<User | null> {
-  const auth = getWebAuth();
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
-
-  // On mobile browsers, Firebase recommends redirect-based federation instead
-  // of popup. This avoids popup blockers and embedded-browser restrictions.
-  const isMobileBrowser = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-  try {
-    if (isMobileBrowser) {
-      await signInWithRedirect(auth, provider);
-      return null;
-    }
-
-    return (await signInWithPopup(auth, provider)).user;
-  } catch (error: any) {
-    const code = String(error?.code || '');
-
-    if (code === 'auth/unauthorized-domain') {
-      throw new Error('This CardioVault web domain is not authorized in Firebase Authentication.');
-    }
-
-    if (
-      code === 'auth/popup-blocked' ||
-      code === 'auth/operation-not-supported-in-this-environment' ||
-      code === 'auth/web-storage-unsupported'
-    ) {
-      await signInWithRedirect(auth, provider);
-      return null;
-    }
-
-    throw new Error(String(error?.message || code || 'Firebase could not start Google Sign-In.'));
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        oauth2: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            prompt?: string;
+            callback: (response: { access_token?: string; error?: string; error_description?: string }) => void;
+          }) => { requestAccessToken: () => void };
+        };
+      };
+    };
   }
+}
+
+function getGoogleIdentityServices() {
+  const google = window.google;
+  if (!google?.accounts?.oauth2?.initTokenClient) {
+    throw new Error('Google Sign-In is not ready yet. Please wait a moment and try again.');
+  }
+  return google;
+}
+
+export async function webGoogleSignIn(): Promise<User> {
+  const auth = getWebAuth();
+  const google = getGoogleIdentityServices();
+  return await new Promise<User>((resolve, reject) => {
+    let finished = false;
+    const fail = (message: string) => { if (!finished) { finished = true; reject(new Error(message)); } };
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: WEB_GOOGLE_CLIENT_ID,
+        scope: 'openid email profile',
+        prompt: 'select_account',
+        callback: async response => {
+          if (finished) return;
+          if (response?.error) {
+            fail(`Google Sign-In failed: ${response.error_description || response.error}`);
+            return;
+          }
+          if (!response?.access_token) {
+            fail('Google Sign-In did not return an access token.');
+            return;
+          }
+          try {
+            const credential = GoogleAuthProvider.credential(null, response.access_token);
+            const result = await signInWithCredential(auth, credential);
+            if (!finished) { finished = true; resolve(result.user); }
+          } catch (error: any) {
+            fail(String(error?.message || error?.code || 'Firebase could not complete Google Sign-In.'));
+          }
+        },
+      });
+      client.requestAccessToken();
+    } catch (error: any) {
+      fail(String(error?.message || error?.code || 'Google Identity Services could not start.'));
+    }
+  });
 }
 
 export async function checkWebRedirectResult(): Promise<User | null> {
   if (Capacitor.isNativePlatform()) return null;
-  try {
-    const result = await getRedirectResult(getWebAuth());
-    return result?.user || getWebAuth().currentUser || null;
-  } catch (error) {
-    console.error('Firebase Google redirect result failed:', error);
-    throw error;
-  }
+  return getWebAuth().currentUser;
 }
 export function subscribeWebAuthState(callback: (user: User | null) => void): () => void {
   if (Capacitor.isNativePlatform()) return () => {};
