@@ -1,5 +1,14 @@
 import { getGenAI, parseModelJson } from '../_ai.js';
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isRetryable(error: any) {
+  const code = Number(error?.status ?? error?.code ?? 0);
+  const message = String(error?.message || '').toLowerCase();
+  return code === 429 || code === 500 || code === 502 || code === 503 || code === 504 ||
+    message.includes('unavailable') || message.includes('high demand') || message.includes('temporarily');
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -27,26 +36,35 @@ export async function POST(request: Request) {
     ].join('\n');
 
     const ai = getGenAI();
-    const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-2.5-flash-lite'];
+    const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
     let raw = '';
-    let lastError: any = null;
+    const errors: string[] = [];
 
     for (const modelName of models) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: match[1], data: match[2] } }] }],
-          config: { responseMimeType: 'application/json' },
-        });
-        raw = String(response.text || '').trim();
-        if (raw) break;
-      } catch (error: any) {
-        lastError = error;
+      let lastError: any = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: match[1], data: match[2] } }] }],
+            config: { responseMimeType: 'application/json' },
+          });
+          raw = String(response.text || '').trim();
+          if (raw) break;
+        } catch (error: any) {
+          lastError = error;
+          if (!isRetryable(error) || attempt === 1) break;
+          await sleep(700);
+        }
       }
+      if (raw) break;
+      errors.push(modelName + ': ' + String(lastError?.message || lastError || 'empty response').slice(0, 240));
     }
 
-    if (!raw && lastError) throw lastError;
-    if (!raw) return Response.json({ error: 'AI returned an empty laboratory extraction.' }, { status: 502 });
+    if (!raw) {
+      console.error('Lab scan AI failed:', errors.join(' | '));
+      return Response.json({ error: 'AI could not read the laboratory report. Please try again.' }, { status: 502 });
+    }
 
     const parsed = parseModelJson(raw);
     const tests = Array.isArray(parsed?.tests) ? parsed.tests.map((t:any) => ({
