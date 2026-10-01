@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     ].join('\n');
 
     const ai = getGenAI();
-    const models = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-2.5-flash-lite'];
     let raw = '';
     let lastError: any = null;
 
