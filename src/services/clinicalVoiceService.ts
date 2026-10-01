@@ -41,7 +41,9 @@ export async function transcribeClinicalAudio(
     await response.text();
     throw new Error(response.status===404
       ? 'AI voice service is not available on this deployment.'
-      : `AI voice service returned an unexpected response (${response.status}).`);
+      : response.status===200
+        ? 'AI voice endpoint returned the app page instead of JSON. Please open the Vercel version of CardioVault.'
+        : `AI voice service returned an unexpected response (${response.status}).`);
   }
   if (!response.ok) {
     throw new Error(String(data?.error || 'Clinical voice transcription failed.'));
