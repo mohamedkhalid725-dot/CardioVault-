@@ -8,8 +8,7 @@ import {
   browserPopupRedirectResolver,
   indexedDBLocalPersistence,
   initializeAuth,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithCredential,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -82,25 +81,106 @@ function getWebDb(): Firestore {
   return webDbInstance;
 }
 
-export async function webGoogleSignIn(): Promise<User | null> {
-  const auth = getWebAuth();
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
+const WEB_GOOGLE_CLIENT_ID = '963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com';
 
-  // Web-only Google flow. Use a full-page redirect so the browser can
-  // navigate to Google's account chooser without popup blockers interfering.
-  // This function is never used by native Android builds.
-  await signInWithRedirect(auth, provider);
-  return null;
+let googleIdentityServicesPromise: Promise<any> | null = null;
+
+function loadGoogleIdentityServices(): Promise<any> {
+  if (typeof window === 'undefined') throw new Error('Google Sign-In is only available in a browser.');
+  const existing = (window as any).google;
+  if (existing?.accounts?.oauth2) return Promise.resolve(existing);
+  if (googleIdentityServicesPromise) return googleIdentityServicesPromise;
+
+  googleIdentityServicesPromise = new Promise((resolve, reject) => {
+    const current = document.querySelector('script[data-cardiovault-google-identity]') as HTMLScriptElement | null;
+    const finish = () => {
+      const google = (window as any).google;
+      if (google?.accounts?.oauth2) resolve(google);
+      else reject(new Error('Google Identity Services loaded without the OAuth API.'));
+    };
+    if (current) {
+      current.addEventListener('load', finish, { once: true });
+      current.addEventListener('error', () => reject(new Error('Could not load Google Identity Services.')), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.cardiovaultGoogleIdentity = 'true';
+    script.onload = finish;
+    script.onerror = () => reject(new Error('Could not load Google Identity Services. Check your internet connection or browser content blocking.'));
+    document.head.appendChild(script);
+  });
+
+  return googleIdentityServicesPromise;
 }
+
+export async function webGoogleSignIn(): Promise<User> {
+  const auth = getWebAuth();
+  const google = await loadGoogleIdentityServices();
+
+  return new Promise<User>((resolve, reject) => {
+    let settled = false;
+    const finishError = (message: string) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    };
+
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: WEB_GOOGLE_CLIENT_ID,
+        scope: 'openid email profile',
+        prompt: 'select_account',
+        callback: async (response: any) => {
+          if (settled) return;
+          if (response?.error) {
+            finishError(String(response.error_description || response.error || 'Google account authorization was not completed.'));
+            return;
+          }
+          const accessToken = String(response?.access_token || '').trim();
+          if (!accessToken) {
+            finishError('Google did not return an access token. Please try again.');
+            return;
+          }
+          try {
+            const credential = GoogleAuthProvider.credential(null, accessToken);
+            const result = await signInWithCredential(auth, credential);
+            settled = true;
+            resolve(result.user);
+          } catch (error: any) {
+            finishError(String(error?.message || error?.code || 'Firebase could not complete Google Sign-In.'));
+          }
+        },
+        error_callback: (error: any) => {
+          const type = String(error?.type || 'unknown');
+          if (type === 'popup_closed') {
+            finishError('Google account selection was closed before sign-in completed.');
+          } else if (type === 'popup_failed_to_open') {
+            finishError('Google account window could not be opened. Allow pop-ups for CardioVault and try again.');
+          } else {
+            finishError('Google Sign-In could not be started. Please try again.');
+          }
+        },
+      });
+
+      // requestAccessToken() is invoked directly from the user's button click
+      // through this web-only function, allowing Google to use its supported
+      // account chooser/dialog without Firebase redirect storage.
+      client.requestAccessToken({ prompt: 'select_account' });
+    } catch (error: any) {
+      finishError(String(error?.message || error?.code || 'Google Sign-In could not be started.'));
+    }
+  });
+}
+
 export async function checkWebRedirectResult(): Promise<User | null> {
   if (Capacitor.isNativePlatform()) return null;
-  try {
-    const result = await getRedirectResult(getWebAuth());
-    return result?.user || null;
-  } catch {
-    return null;
-  }
+  // Web Google authentication now uses Google Identity Services directly and
+  // exchanges the returned Google access token for a Firebase credential.
+  // Keep this bootstrap hook for compatibility with the existing web startup.
+  try { return getWebAuth().currentUser; } catch { return null; }
 }
 export function subscribeWebAuthState(callback: (user: User | null) => void): () => void {
   if (Capacitor.isNativePlatform()) return () => {};
