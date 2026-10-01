@@ -1,4 +1,4 @@
-import { getGenAI } from '../_ai';
+import { getGenAI } from '../_ai.js';
 
 export async function POST(request: Request) {
   try {
