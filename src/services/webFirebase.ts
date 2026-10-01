@@ -10,6 +10,8 @@ import {
   initializeAuth,
   signInWithCredential,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -84,42 +86,35 @@ function getWebDb(): Firestore {
 
 const WEB_GOOGLE_CLIENT_ID = '963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com';
 
-export async function webGoogleSignIn(): Promise<User> {
+export async function webGoogleSignIn(): Promise<User | null> {
   const auth = getWebAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
   try {
-    // Use Firebase's supported web Google flow. This keeps the OAuth exchange
-    // behind Firebase Auth instead of calling Google's browser token client
-    // directly, which avoids requiring every Vercel preview hostname to be
-    // registered as an Authorized JavaScript Origin.
-    const result = await signInWithPopup(auth, provider);
-    return result.user;
+    // Mobile Chrome and embedded browsers can block Firebase popups even when the
+    // user explicitly taps the Google button. Use Firebase's full-page redirect
+    // flow on the web so the Google account chooser opens as a normal navigation.
+    await signInWithRedirect(auth, provider);
+    return null;
   } catch (error: any) {
     const code = String(error?.code || '');
-    if (code === 'auth/popup-blocked') {
-      throw new Error('Google Sign-In popup was blocked. Allow pop-ups for CardioVault and press Continue with Google again.');
-    }
-    if (code === 'auth/popup-closed-by-user') {
-      throw new Error('Google account selection was closed before sign-in completed.');
-    }
-    if (code === 'auth/cancelled-popup-request') {
-      throw new Error('Another Google Sign-In window is already open. Please complete it first.');
-    }
     if (code === 'auth/unauthorized-domain') {
       throw new Error('This CardioVault web domain is not authorized in Firebase Authentication.');
     }
-    throw new Error(String(error?.message || code || 'Firebase could not complete Google Sign-In.'));
+    throw new Error(String(error?.message || code || 'Firebase could not start Google Sign-In.'));
   }
 }
 
 export async function checkWebRedirectResult(): Promise<User | null> {
   if (Capacitor.isNativePlatform()) return null;
-  // Web Google authentication now uses Google Identity Services directly and
-  // exchanges the returned Google access token for a Firebase credential.
-  // Keep this bootstrap hook for compatibility with the existing web startup.
-  try { return getWebAuth().currentUser; } catch { return null; }
+  try {
+    const result = await getRedirectResult(getWebAuth());
+    return result?.user || getWebAuth().currentUser || null;
+  } catch (error) {
+    console.error('Firebase Google redirect result failed:', error);
+    throw error;
+  }
 }
 export function subscribeWebAuthState(callback: (user: User | null) => void): () => void {
   if (Capacitor.isNativePlatform()) return () => {};
