@@ -22,7 +22,7 @@ interface AppContextType{
   toggleTheme:()=>void;
   auth:AuthState;
   loginWithGoogle:()=>Promise<void>;
-  loginWithEmail:(email:string)=>void;
+  loginWithEmail:(email:string,firebaseUser?:any)=>void;
   unlockWithPin:(pin:string)=>boolean;
   lockApp:()=>void;
   offlineReadOnly:boolean;
@@ -175,9 +175,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
        }
      }else{
        const result:any=await webGoogleSignIn();
-       // Redirect-based web Google sign-in navigates away and completes through
-       // checkWebRedirectResult() during the next app bootstrap.
-       if(!result) return;
+       if(!result) throw new Error('Google Sign-In returned no Firebase user.');
        user=result;
      }
      if(!user?.uid)throw new Error('Google sign-in completed without a Firebase user.');
@@ -201,7 +199,19 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
      showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');
    }
  };
- const loginWithEmail=(email:string)=>{const clean=email.trim().toLowerCase();if(!clean)return;setStoredWorkspaceAccess(null);const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:clean,userName:auth.userName||clean.split('@')[0]};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');};
+ const loginWithEmail=(email:string,firebaseUser?:any)=>{
+   const clean=email.trim().toLowerCase();
+   if(!clean)return;
+   setStoredWorkspaceAccess(null);
+   if(firebaseUser?.uid){
+     const profile=AuthorizationService.resolveUserForFirebaseAuth(firebaseUser);
+     setCurrentUserState(profile);
+   }
+   const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:clean,userName:StorageService.getProfileName()||firebaseUser?.displayName||auth.userName||clean.split('@')[0]};
+   setAuth(a);
+   StorageService.saveAuth(a);
+   setCurrentView('home');
+ };
  const setOfflinePin=async(pin:string)=>{try{await configureOfflinePin(pin,auth.userEmail,{units:StorageService.getUnits(),beds:StorageService.getBeds(),patients:StorageService.getPatients(),savedAt:new Date().toISOString(),unitIds:StorageService.getUnits().map(u=>String(u.id))});await enableBiometricOfflineUnlock(pin);setOfflineAvailable(true);showToast('Offline PIN enabled. Cached clinical data will be available read-only when disconnected.','success');return true;}catch(error:any){showToast(String(error?.message||'Could not enable offline PIN.'),'error');return false;}};
  const unlockOfflineWithPin=async(pin:string)=>{const data=await unlockOfflineCache(pin);if(!data)return false;StorageService.restoreOfflineData(data.units,data.beds,data.patients);setOfflineReadOnlyState(true);setOfflineAvailable(true);setAuth({...StorageService.getAuth(),isAuthenticated:true,isLocked:false,userEmail:getOfflineIdentity()||StorageService.getAuth().userEmail,userName:StorageService.getProfileName()||StorageService.getAuth().userName||'Physician',pinCode:''});setCurrentView('home');window.dispatchEvent(new CustomEvent('cardiovault-data-restored'));return true;};
  const unlockOfflineWithBiometric=async()=>{const ok=await authenticateBiometricOffline();if(!ok)return false;const pin=await getStoredBiometricOfflinePin();if(!pin)return false;return unlockOfflineWithPin(pin);};
