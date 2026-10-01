@@ -5,7 +5,6 @@ import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, de
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
-  browserPopupRedirectResolver,
   indexedDBLocalPersistence,
   initializeAuth,
   signInWithCredential,
@@ -59,7 +58,6 @@ function getWebAuth(): Auth {
   if (!webAuthInstance) {
     webAuthInstance = initializeAuth(app, {
       persistence: [indexedDBLocalPersistence, browserLocalPersistence],
-      popupRedirectResolver: browserPopupRedirectResolver,
     });
   }
   return webAuthInstance;
@@ -100,17 +98,38 @@ declare global {
   }
 }
 
-function getGoogleIdentityServices() {
-  const google = window.google;
-  if (!google?.accounts?.oauth2?.initTokenClient) {
-    throw new Error('Google Sign-In is not ready yet. Please wait a moment and try again.');
+async function getGoogleIdentityServices() {
+  if (window.google?.accounts?.oauth2?.initTokenClient) return window.google;
+
+  await new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector('script[data-cardiovault-google-gsi]') as HTMLScriptElement | null;
+    if (existing) {
+      const timeout = window.setTimeout(() => reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.')), 10000);
+      existing.addEventListener('load', () => { window.clearTimeout(timeout); resolve(); }, { once: true });
+      existing.addEventListener('error', () => { window.clearTimeout(timeout); reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.')); }, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.cardiovaultGoogleGsi = '1';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.'));
+    document.head.appendChild(script);
+    window.setTimeout(() => reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.')), 10000);
+  });
+
+  if (!window.google?.accounts?.oauth2?.initTokenClient) {
+    throw new Error('Google Sign-In loaded, but the Google authentication service is unavailable.');
   }
-  return google;
+  return window.google;
 }
 
 export async function webGoogleSignIn(): Promise<User> {
   const auth = getWebAuth();
-  const google = getGoogleIdentityServices();
+  const google = await getGoogleIdentityServices();
   return await new Promise<User>((resolve, reject) => {
     let finished = false;
     const fail = (message: string) => { if (!finished) { finished = true; reject(new Error(message)); } };
