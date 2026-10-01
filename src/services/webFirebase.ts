@@ -9,6 +9,7 @@ import {
   indexedDBLocalPersistence,
   initializeAuth,
   signInWithCredential,
+  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -83,96 +84,34 @@ function getWebDb(): Firestore {
 
 const WEB_GOOGLE_CLIENT_ID = '963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com';
 
-let googleIdentityServicesPromise: Promise<any> | null = null;
-
-function loadGoogleIdentityServices(): Promise<any> {
-  if (typeof window === 'undefined') throw new Error('Google Sign-In is only available in a browser.');
-  const existing = (window as any).google;
-  if (existing?.accounts?.oauth2) return Promise.resolve(existing);
-  if (googleIdentityServicesPromise) return googleIdentityServicesPromise;
-
-  googleIdentityServicesPromise = new Promise((resolve, reject) => {
-    const current = document.querySelector('script[data-cardiovault-google-identity]') as HTMLScriptElement | null;
-    const finish = () => {
-      const google = (window as any).google;
-      if (google?.accounts?.oauth2) resolve(google);
-      else reject(new Error('Google Identity Services loaded without the OAuth API.'));
-    };
-    if (current) {
-      current.addEventListener('load', finish, { once: true });
-      current.addEventListener('error', () => reject(new Error('Could not load Google Identity Services.')), { once: true });
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.dataset.cardiovaultGoogleIdentity = 'true';
-    script.onload = finish;
-    script.onerror = () => reject(new Error('Could not load Google Identity Services. Check your internet connection or browser content blocking.'));
-    document.head.appendChild(script);
-  });
-
-  return googleIdentityServicesPromise;
-}
-
 export async function webGoogleSignIn(): Promise<User> {
   const auth = getWebAuth();
-  const google = await loadGoogleIdentityServices();
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
 
-  return new Promise<User>((resolve, reject) => {
-    let settled = false;
-    const finishError = (message: string) => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(message));
-    };
-
-    try {
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: WEB_GOOGLE_CLIENT_ID,
-        scope: 'openid email profile',
-        prompt: 'select_account',
-        callback: async (response: any) => {
-          if (settled) return;
-          if (response?.error) {
-            finishError(String(response.error_description || response.error || 'Google account authorization was not completed.'));
-            return;
-          }
-          const accessToken = String(response?.access_token || '').trim();
-          if (!accessToken) {
-            finishError('Google did not return an access token. Please try again.');
-            return;
-          }
-          try {
-            const credential = GoogleAuthProvider.credential(null, accessToken);
-            const result = await signInWithCredential(auth, credential);
-            settled = true;
-            resolve(result.user);
-          } catch (error: any) {
-            finishError(String(error?.message || error?.code || 'Firebase could not complete Google Sign-In.'));
-          }
-        },
-        error_callback: (error: any) => {
-          const type = String(error?.type || 'unknown');
-          if (type === 'popup_closed') {
-            finishError('Google account selection was closed before sign-in completed.');
-          } else if (type === 'popup_failed_to_open') {
-            finishError('Google account window could not be opened. Allow pop-ups for CardioVault and try again.');
-          } else {
-            finishError('Google Sign-In could not be started. Please try again.');
-          }
-        },
-      });
-
-      // requestAccessToken() is invoked directly from the user's button click
-      // through this web-only function, allowing Google to use its supported
-      // account chooser/dialog without Firebase redirect storage.
-      client.requestAccessToken({ prompt: 'select_account' });
-    } catch (error: any) {
-      finishError(String(error?.message || error?.code || 'Google Sign-In could not be started.'));
+  try {
+    // Use Firebase's supported web Google flow. This keeps the OAuth exchange
+    // behind Firebase Auth instead of calling Google's browser token client
+    // directly, which avoids requiring every Vercel preview hostname to be
+    // registered as an Authorized JavaScript Origin.
+    const result = await signInWithPopup(auth, provider);
+    return result.user;
+  } catch (error: any) {
+    const code = String(error?.code || '');
+    if (code === 'auth/popup-blocked') {
+      throw new Error('Google Sign-In popup was blocked. Allow pop-ups for CardioVault and press Continue with Google again.');
     }
-  });
+    if (code === 'auth/popup-closed-by-user') {
+      throw new Error('Google account selection was closed before sign-in completed.');
+    }
+    if (code === 'auth/cancelled-popup-request') {
+      throw new Error('Another Google Sign-In window is already open. Please complete it first.');
+    }
+    if (code === 'auth/unauthorized-domain') {
+      throw new Error('This CardioVault web domain is not authorized in Firebase Authentication.');
+    }
+    throw new Error(String(error?.message || code || 'Firebase could not complete Google Sign-In.'));
+  }
 }
 
 export async function checkWebRedirectResult(): Promise<User | null> {
