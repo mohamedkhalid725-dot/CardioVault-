@@ -92,16 +92,27 @@ export async function webGoogleSignIn(): Promise<User | null> {
   provider.setCustomParameters({ prompt: 'select_account' });
 
   try {
-    // Mobile Chrome and embedded browsers can block Firebase popups even when the
-    // user explicitly taps the Google button. Use Firebase's full-page redirect
-    // flow on the web so the Google account chooser opens as a normal navigation.
-    await signInWithRedirect(auth, provider);
-    return null;
+    // Start with the normal Firebase popup on the web. This gives the user the
+    // Google account chooser directly from the button tap. If the browser blocks
+    // the popup (common on some mobile/embedded browsers), fall back to the
+    // full-page redirect flow.
+    return (await signInWithPopup(auth, provider)).user;
   } catch (error: any) {
     const code = String(error?.code || '');
+
     if (code === 'auth/unauthorized-domain') {
       throw new Error('This CardioVault web domain is not authorized in Firebase Authentication.');
     }
+
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/operation-not-supported-in-this-environment' ||
+      code === 'auth/web-storage-unsupported'
+    ) {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+
     throw new Error(String(error?.message || code || 'Firebase could not start Google Sign-In.'));
   }
 }
