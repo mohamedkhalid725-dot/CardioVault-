@@ -78,7 +78,8 @@ export const ClinicalVoiceInput: React.FC<Props> = ({value,onChange,field,label=
       recorder.ondataavailable=e=>{if(e.data.size>0)chunksRef.current.push(e.data);};
       recorder.onstop=async()=>{
         stream.getTracks().forEach(t=>t.stop());
-        const audio=new Blob(chunksRef.current,{type:recorder.mimeType||'audio/webm'});
+        const recordedMimeType=(recorder.mimeType||'audio/webm').split(';',1)[0];
+        const audio=new Blob(chunksRef.current,{type:recordedMimeType});
         const seconds=Math.max(1,Math.round((Date.now()-startedRef.current)/1000));
         try{await finishBlob(audio,seconds);}catch(error:any){setStatus(String(error?.message||'Transcription failed.'));}
       };
@@ -101,7 +102,7 @@ export const ClinicalVoiceInput: React.FC<Props> = ({value,onChange,field,label=
         const value=result?.value||result;
         const base64=String(value?.recordDataBase64||'');
         if(!base64)throw new Error('The recorder returned no audio data.');
-        const audio=base64ToBlob(base64,String(value?.mimeType||'audio/aac'));
+        const audio=base64ToBlob(base64,String(value?.mimeType||'audio/aac').split(';',1)[0]);
         const seconds=Math.max(1,Math.round(Number(value?.msDuration||0)/1000));
         setRecording(false);
         await finishBlob(audio,seconds);
