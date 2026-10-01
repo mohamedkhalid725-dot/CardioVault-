@@ -1,5 +1,52 @@
 import { getGenAI } from '../_ai.js';
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isRetryable(error: any) {
+  const code = Number(error?.status ?? error?.code ?? 0);
+  const message = String(error?.message || '').toLowerCase();
+  return code === 429 || code === 500 || code === 502 || code === 503 || code === 504 ||
+    message.includes('unavailable') || message.includes('high demand') || message.includes('temporarily');
+}
+
+async function transcribeWithFallback(ai: any, mimeType: string, data: string) {
+  const prompt = [
+    'Transcribe the clinician audio exactly as spoken.',
+    'The clinician may speak Egyptian Arabic, Modern Standard Arabic, English, or mixed Arabic/English.',
+    'Do not summarize, infer, diagnose, or add facts.',
+    'Preserve numbers, units, medication names, doses, anatomy, ECG terminology, laboratory values, and abbreviations accurately.',
+    'Return only the transcription text.'
+  ].join(' ');
+
+  const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-transcribe'];
+  const errors: string[] = [];
+
+  for (const modelName of models) {
+    let lastError: any = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [{
+            role: 'user',
+            parts: [{ text: prompt }, { inlineData: { mimeType, data } }]
+          }]
+        });
+        const transcript = String(response.text || '').trim();
+        if (transcript) return transcript;
+      } catch (error: any) {
+        lastError = error;
+        if (!isRetryable(error) || attempt === 1) break;
+        await sleep(700);
+      }
+    }
+    errors.push(modelName + ': ' + String(lastError?.message || lastError || 'empty response').slice(0, 240));
+  }
+
+  console.error('Clinical voice transcription models failed:', errors.join(' | '));
+  return '';
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -16,55 +63,9 @@ export async function POST(request: Request) {
     const mimeType = match[1];
     const data = match[2];
 
-    let transcript = '';
-    let transcriptionError: unknown = null;
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-transcribe',
-        contents: [{
-          role: 'user',
-          parts: [
-            { text: [
-              'Transcribe the clinician audio exactly as spoken.',
-              'The clinician may speak Egyptian Arabic, Modern Standard Arabic, English, or mixed Arabic/English.',
-              'Do not summarize, infer, diagnose, or add facts.',
-              'Preserve numbers, units, medication names, doses, anatomy, ECG terminology, laboratory values, and abbreviations accurately.',
-              'Return only the transcription text.'
-            ].join(' ') },
-            { inlineData: { mimeType, data } }
-          ]
-        }]
-      });
-      transcript = String(response.text || '').trim();
-    } catch (error) {
-      transcriptionError = error;
-    }
+    const transcript = await transcribeWithFallback(ai, mimeType, data);
 
     if (!transcript) {
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: [{
-            role: 'user',
-            parts: [
-              { text: [
-                'Transcribe the clinician audio exactly as spoken.',
-                'The clinician may speak Egyptian Arabic, Modern Standard Arabic, English, or mixed Arabic/English.',
-                'Do not infer or add clinical facts.',
-                'Return only the transcription text.'
-              ].join(' ') },
-              { inlineData: { mimeType, data } }
-            ]
-          }]
-        });
-        transcript = String(response.text || '').trim();
-      } catch (error) {
-        transcriptionError = error;
-      }
-    }
-
-    if (!transcript) {
-      console.error('Clinical voice transcription failed:', transcriptionError);
       return Response.json({ error: 'AI could not transcribe the recording. Please try again.' }, { status: 502 });
     }
 
@@ -92,8 +93,8 @@ export async function POST(request: Request) {
       });
 
       const raw = String(normalizeResponse.text || '').trim()
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/, '')
+        .replace(/^\`\`\`(?:json)?\s*/i, '')
+        .replace(/\s*\`\`\`$/, '')
         .trim();
       const parsed = JSON.parse(raw);
       normalizedEnglish = String(parsed?.normalizedEnglish || transcript).trim() || transcript;
