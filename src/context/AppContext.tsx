@@ -175,6 +175,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
        }
      }else{
        const result:any=await webGoogleSignIn();
+       // Redirect-based web Google sign-in navigates away and completes through
+       // checkWebRedirectResult() during the next app bootstrap.
+       if(!result) return;
        user=result;
      }
      if(!user?.uid)throw new Error('Google sign-in completed without a Firebase user.');
