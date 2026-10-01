@@ -91,11 +91,16 @@ export async function webGoogleSignIn(): Promise<User | null> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
+  // On mobile browsers, Firebase recommends redirect-based federation instead
+  // of popup. This avoids popup blockers and embedded-browser restrictions.
+  const isMobileBrowser = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
   try {
-    // Start with the normal Firebase popup on the web. This gives the user the
-    // Google account chooser directly from the button tap. If the browser blocks
-    // the popup (common on some mobile/embedded browsers), fall back to the
-    // full-page redirect flow.
+    if (isMobileBrowser) {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+
     return (await signInWithPopup(auth, provider)).user;
   } catch (error: any) {
     const code = String(error?.code || '');
