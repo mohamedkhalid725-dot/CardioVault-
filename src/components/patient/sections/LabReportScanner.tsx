@@ -40,6 +40,14 @@ export const LabReportScanner:React.FC<Props>=({patient,onClose,onConfirm})=>{
     try{
       const imageBase64=await readFileAsDataUrl(file);
       const response=await fetch('/api/ai/scan-lab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imageBase64,patientName:patient.fullName})});
+      const contentType=response.headers.get('content-type')||'';
+      if(!contentType.includes('application/json')){
+        const body=await response.text();
+        console.error('Lab AI returned a non-JSON response:',response.status,body.slice(0,300));
+        throw new Error(response.status===404||response.status===200
+          ? 'Lab AI endpoint is not available on this deployment. Please open the Vercel version of CardioVault.'
+          : `Lab AI service returned an unexpected response (${response.status}).`);
+      }
       const data=await response.json();
       if(!response.ok)throw new Error(String(data?.error||'Laboratory scan failed.'));
       setPanel(String(data?.panel||'Custom Lab'));
