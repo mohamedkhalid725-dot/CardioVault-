@@ -59,5 +59,8 @@
   },
   "engines": {
     "node": "24.x"
+  },
+  "overrides": {
+    "baseline-browser-mapping": "2.11.26"
   }
 }
