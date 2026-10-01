@@ -42,20 +42,15 @@ export async function POST(request: Request) {
 
     for (const modelName of models) {
       let lastError: any = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: match[1], data: match[2] } }] }],
-            config: { responseMimeType: 'application/json' },
-          });
-          raw = String(response.text || '').trim();
-          if (raw) break;
-        } catch (error: any) {
-          lastError = error;
-          if (!isRetryable(error) || attempt === 1) break;
-          await sleep(700);
-        }
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: match[1], data: match[2] } }] }],
+          config: { responseMimeType: 'application/json', httpOptions: { timeout: 30_000 } },
+        });
+        raw = String(response.text || '').trim();
+      } catch (error: any) {
+        lastError = error;
       }
       if (raw) break;
       errors.push(modelName + ': ' + String(lastError?.message || lastError || 'empty response').slice(0, 240));
