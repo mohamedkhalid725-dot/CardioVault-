@@ -20,7 +20,7 @@ interface AppContextType{
   toggleTheme:()=>void;
   auth:AuthState;
   loginWithGoogle:()=>Promise<void>;
-  loginWithEmail:(email:string)=>void;
+  loginWithEmail:(email:string,displayName?:string)=>void;
   unlockWithPin:(pin:string)=>boolean;
   lockApp:()=>void;
   logout:()=>void;
@@ -184,11 +184,17 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
        }catch(error){console.warn('Post-login cloud restore failed:',error);showToast('Signed in. Cloud sync will retry automatically.','warning');}
      })();
    }catch(error:any){
-     console.error('Native Google/Firebase sign-in failed:',error);
-     showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');
+     console.warn('Google/Firebase sign-in error:',error);
+     const isUnauthorizedDomain = error?.code === 'auth/unauthorized-domain' || String(error?.message||'').includes('auth/unauthorized-domain');
+     if (isUnauthorizedDomain) {
+       showToast('Google Sign-In domain unauthorized in Firebase Console. Use Master Sign-In or authorize domain.', 'warning');
+     } else {
+       showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');
+     }
+     throw error;
    }
  };
- const loginWithEmail=(email:string)=>{const clean=email.trim().toLowerCase();if(!clean)return;setStoredWorkspaceAccess(null);const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:clean,userName:auth.userName||clean.split('@')[0]};setAuth(a);StorageService.saveAuth(a);setCurrentView('home');};
+ const loginWithEmail=(email:string,displayName?:string)=>{const clean=email.trim().toLowerCase();if(!clean)return;setStoredWorkspaceAccess(null);const resolvedName=displayName||StorageService.getProfileName()||(clean==='mohamedkhalid725@gmail.com'?'Dr. Mohamed Khalid':clean.split('@')[0]);StorageService.saveProfileName(resolvedName);const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:clean,userName:resolvedName};setAuth(a);StorageService.saveAuth(a);hydrateClinicalState();setCurrentView('home');};
  const unlockWithPin=(_pin:string)=>{showToast('PIN / Offline access has been disabled. Sign in with your Firebase account.','warning');return false;};const lockApp=()=>{showToast('Offline lock screen is disabled. Use Sign Out to end the session.','info');};
  const logout=()=>{authNullGraceUntil.current=0;void (Capacitor.isNativePlatform()?FirebaseAuthentication.signOut():webSignOut()).catch(error=>console.warn('Firebase sign-out failed:',error));localStorage.removeItem('cardiovault_google_uid');clearActiveClinicalWorkspace();setUnits([]);setBeds([]);setPatients([]);setCurrentUnitId(null);setCurrentPatientId(null);const a={...auth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(a);StorageService.saveAuth(a);setCurrentView('login');};
  const getPatientById=(id:string)=>patients.find(p=>p.id===id);const getBedsByUnit=(id:string)=>beds.filter(b=>b.unitId===id);const getUnitById=(id:string)=>units.find(u=>u.id===id);const archivedPatients=patients.filter(p=>p.isArchived);

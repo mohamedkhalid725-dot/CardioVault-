@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Patient, PhysicalExam } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { SectionQuickRecordButton } from '../SectionQuickRecordButton';
 
 interface ExaminationSectionProps {
   patient: Patient;
@@ -110,27 +111,51 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            if (isEditing) handleSave();
-            else setIsEditing(true);
-          }}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
-            isEditing
-              ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
-              : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950'
-          }`}
-        >
-          {isEditing ? (
-            <>
-              <Check className="w-4 h-4" /> Save Exam
-            </>
-          ) : (
-            <>
-              <Save className="w-4 h-4" /> Edit Exam
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <SectionQuickRecordButton
+            patient={patient}
+            context="examination"
+            contextLabel="Physical Examination"
+            size="sm"
+            variant="badge"
+            onApply={(medicalText, mode) => {
+              const existing = exam.general.appearance || '';
+              const updated = mode === 'append' && existing ? `${existing}\n\n${medicalText}` : medicalText;
+              const updatedExam = {
+                ...exam,
+                general: { ...exam.general, appearance: updated },
+                customFields: [
+                  ...(exam.customFields || []),
+                  { label: 'Voice Dictated Exam', value: medicalText },
+                ],
+              };
+              setExam(updatedExam);
+              updatePatient(patient.id, { examination: updatedExam as any });
+              showToast('Physical Examination updated with voice recording.', 'success');
+            }}
+          />
+          <button
+            onClick={() => {
+              if (isEditing) handleSave();
+              else setIsEditing(true);
+            }}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
+              isEditing
+                ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
+                : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950'
+            }`}
+          >
+            {isEditing ? (
+              <>
+                <Check className="w-4 h-4" /> Save Exam
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" /> Edit Exam
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}

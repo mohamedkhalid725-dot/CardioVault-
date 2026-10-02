@@ -644,6 +644,11 @@ let runtimePatients: Patient[] = [];
 
 export const StorageService = {
   getUnits(): Unit[] {
+    if (runtimeUnits.length === 0) {
+      runtimeUnits = [...INITIAL_DEPARTMENT_UNITS];
+      runtimeBeds = [...INITIAL_DEPARTMENT_BEDS];
+      runtimePatients = [initialAhmedData];
+    }
     return runtimeUnits;
   },
 
@@ -652,6 +657,9 @@ export const StorageService = {
   },
 
   getBeds(): Bed[] {
+    if (runtimeBeds.length === 0) {
+      runtimeBeds = [...INITIAL_DEPARTMENT_BEDS];
+    }
     return runtimeBeds;
   },
 

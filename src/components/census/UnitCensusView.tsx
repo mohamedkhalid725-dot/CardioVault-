@@ -3,6 +3,7 @@ import { ArrowLeft, Plus, ChevronRight, BedDouble, UserPlus, LogOut, X, LockKeyh
 import { useApp } from '../../context/AppContext';
 import { PatientStatus, UserProfile } from '../../types/clinical';
 import { canEditClinicalData, canManageStructure, getStoredWorkspaceAccess, getTeamDirectoryMembers } from '../../services/workspaceAccess';
+import { generatePatientBriefSummary } from '../../services/clinicalSummaryUtils';
 
 export const UnitCensusView: React.FC = () => {
   const { currentUnitId, getUnitById, getBedsByUnit, units, beds, patients, setCurrentPatientId, setCurrentView, setCurrentUnitId, addBed, addPatient, setActivePatientSection, dischargePatient, showToast } = useApp();
@@ -72,7 +73,7 @@ export const UnitCensusView: React.FC = () => {
           {patient ? <>
             <button onClick={()=>handleOpenPatient(patient.id)} className="text-left min-w-0 overflow-hidden">
               <div className="flex items-center gap-1.5 min-w-0"><div className="text-xs font-bold text-slate-900 dark:text-white truncate">{patient.fullName}</div>{getStatusBadge(patient.status)}</div>
-              <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{patient.mrn} • {patient.primaryDiagnosis||'—'}</div>
+              <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{patient.mrn} • <b className="text-cyan-500 uppercase text-[8px] mr-1">Summary:</b>{generatePatientBriefSummary(patient)}</div>
             </button>
             <div className="hidden md:block text-xs text-slate-600 dark:text-slate-300 truncate">{patient.primaryDiagnosis||'—'}</div>
             <div className="hidden md:block">{getStatusBadge(patient.status)}</div>
