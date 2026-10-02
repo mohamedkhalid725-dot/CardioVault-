@@ -2,6 +2,7 @@ import React from 'react';
 import { Activity, AlertTriangle, Clock3, Droplet, FileText, FlaskConical, Heart, Pill, ShieldAlert, Wind } from 'lucide-react';
 import { Patient, PatientSectionId } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { patientBriefSummary } from '../../../services/patientBriefSummary';
 
 interface OverviewSectionProps { patient: Patient; }
 type EventItem={id:string;time:string;label:string;detail:string;section:PatientSectionId;icon:React.ElementType};
