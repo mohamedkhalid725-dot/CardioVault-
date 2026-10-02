@@ -180,3 +180,6 @@ exports.analyzeClinicalPatient = onRequest(
     }
   }
 );
+
+
+Object.assign(exports, require('./ai'));
