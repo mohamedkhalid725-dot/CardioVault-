@@ -1,0 +1,35 @@
+name: Deploy CardioVault Firebase preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/firebase-ai-voice-summary
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install web dependencies
+        run: npm install
+      - name: Build web app
+        run: npm run build
+      - name: Install Firebase Functions dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+      - name: Configure Firebase credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
+      - name: Deploy clinical AI functions
+        run: npx firebase-tools@latest deploy --only functions:transcribeClinical,functions:scanLab --project ccu-notebook --non-interactive --config firebase.json
+      - name: Deploy Firebase Hosting preview
+        run: npx firebase-tools@latest hosting:channel:deploy cardiovault-ai --expires 7d --project ccu-notebook --non-interactive --config firebase.json
