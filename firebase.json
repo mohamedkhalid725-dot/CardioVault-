@@ -17,6 +17,14 @@
     ],
     "rewrites": [
       {
+        "source": "/api/ai/scan-lab",
+        "function": { "functionId": "scanLab", "region": "us-central1" }
+      },
+      {
+        "source": "/api/ai/transcribe-clinical",
+        "function": { "functionId": "transcribeClinical", "region": "us-central1" }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
