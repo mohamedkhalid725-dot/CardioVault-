@@ -24,7 +24,9 @@ export async function transcribeClinicalAudio(
   field: ClinicalVoiceField,
 ): Promise<ClinicalVoiceResult> {
   const base64 = await blobToDataUrl(blob);
-  const response = await fetch('/api/ai/transcribe-clinical', {
+  const baseEndpoint = String(import.meta.env.VITE_CARDIOVAULT_AI_ENDPOINT || '').replace(/\/$/, '');
+  const endpoint = baseEndpoint ? `${baseEndpoint}/transcribe-clinical` : '/api/ai/transcribe-clinical';
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
@@ -42,7 +44,7 @@ export async function transcribeClinicalAudio(
     throw new Error(response.status===404
       ? 'AI voice service is not available on this deployment.'
       : response.status===200
-        ? 'AI voice endpoint returned the app page instead of JSON. Please open the Vercel version of CardioVault.'
+        ? 'AI voice endpoint returned the app page instead of JSON. Please verify that the CardioVault AI service endpoint is configured for this web app.'
         : `AI voice service returned an unexpected response (${response.status}).`);
   }
   if (!response.ok) {
