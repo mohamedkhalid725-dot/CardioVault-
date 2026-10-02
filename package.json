@@ -56,6 +56,6 @@
     "@types/react-dom": "^19.1.9"
   },
   "engines": {
-    "node": "24.x"
+    "node": ">=22"
   }
 }
