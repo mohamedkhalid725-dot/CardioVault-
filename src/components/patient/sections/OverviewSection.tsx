@@ -26,7 +26,7 @@ export const OverviewSection:React.FC<OverviewSectionProps>=({patient})=>{
  ].filter(Boolean) as EventItem[];
  const safety=[
   ['Allergies',patient.allergies?.length?patient.allergies.join(', '):'NKDA',patient.allergies?.length?'rose':'slate'],
-  ['Code status',dash(patient.codeStatus),'slate'],
+  ['Brief summary',patientBriefSummary(patient),'cyan'],
   ['Active problems',patient.secondaryDiagnoses?.length?`${patient.secondaryDiagnoses.length} recorded`:'None recorded','slate'],
  ] as const;
  const metrics:[string,string,string,PatientSectionId][]=[
