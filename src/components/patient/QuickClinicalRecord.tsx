@@ -5,6 +5,7 @@ import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { uploadClinicalMedia } from '../../services/mediaStorage';
 import { Patient, ProgressNote } from '../../types/clinical';
 import { useApp } from '../../context/AppContext';
+import { transcribeClinicalAudio } from '../../services/clinicalVoiceService';
 
 interface Props { patient: Patient; onClose: () => void; }
 
@@ -17,6 +18,9 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
 export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const { updatePatient, showToast, auth } = useApp();
   const [text, setText] = useState('');
+  const [rawTranscript, setRawTranscript] = useState('');
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
   const [type, setType] = useState('Quick Clinical Record');
   const [recording, setRecording] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
@@ -50,6 +54,18 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
+  };
+
+  const transcribe = async (blob: Blob) => {
+    setTranscribing(true); setVoiceError('');
+    try {
+      const result = await transcribeClinicalAudio(blob, 'progress_note');
+      setRawTranscript(result.transcript);
+      setText(result.normalizedEnglish.trim() || result.transcript);
+      if (result.confidence === 'low') setVoiceError('Low-confidence draft. Review the raw transcript and edit before saving.');
+    } catch (error: any) {
+      setVoiceError(String(error?.message || 'Transcription failed. Retry when ready.'));
+    } finally { setTranscribing(false); }
   };
 
   const startRecording = async () => {
@@ -86,6 +102,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
         setDuration(Math.max(1, Math.round((Date.now() - startedRef.current) / 1000)));
+        void transcribe(blob);
       };
       webRecorderRef.current = recorder;
       recorder.start();
@@ -116,12 +133,13 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
         setDuration(Math.max(1, Math.round(Number(value?.msDuration || 0) / 1000)) || Math.max(1, Math.round((Date.now() - startedRef.current) / 1000)));
+        await transcribe(blob);
       } else {
         webRecorderRef.current?.stop();
         webRecorderRef.current = null;
       }
       setRecording(false);
-      showToast('Voice recording ready to save.', 'success');
+      showToast('Recording stopped. Transcribing into a clinical draft…', 'info');
     } catch (error: any) {
       console.error('Voice recording stop failed:', error);
       setRecording(false);
@@ -140,10 +158,10 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   };
 
   const save = async () => {
-    if (saving || recording) return;
+    if (saving || recording || transcribing) return;
     const value = text.trim();
-    if (!value && !audioBlob) {
-      showToast('Add a note or record a voice note first.', 'error');
+    if (!value) {
+      showToast(audioBlob ? 'Wait for transcription or enter the clinical note before saving.' : 'Add a note or record a voice note first.', 'error');
       return;
     }
 
@@ -233,13 +251,16 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
             </div>
           </div>
           {audioUrl && <audio controls src={audioUrl} className="w-full mt-3" />}
+          {voiceError && <div role="status" className="mt-2 text-xs text-amber-600">{voiceError} {audioBlob && <button type="button" className="underline font-bold" onClick={() => void transcribe(audioBlob)} disabled={transcribing}>Retry transcription</button>}</div>}
+          {transcribing && <div className="mt-2 text-xs text-cyan-600 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/>Transcribing and normalizing to Medical English…</div>}
+          {rawTranscript && <div className="mt-3"><label className="text-[10px] font-bold uppercase text-slate-500">Raw transcript</label><div className="mt-1 p-2 rounded-lg bg-white dark:bg-slate-950 text-xs whitespace-pre-wrap">{rawTranscript}</div></div>}
         </div>
 
-        <textarea autoFocus value={text} onChange={(event) => setText(event.target.value)} disabled={saving || recording} placeholder="Document the important clinical event, observation, response, or update…" className="mt-3 w-full min-h-[170px] resize-y rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3 text-sm outline-none focus:border-cyan-500 text-slate-900 dark:text-white" />
+        <label className="block mt-3 text-xs font-bold text-slate-600 dark:text-slate-300">Editable Medical English draft<textarea autoFocus value={text} onChange={(event) => setText(event.target.value)} disabled={saving || recording || transcribing} placeholder="The normalized clinical note will appear here for review…" className="mt-1 w-full min-h-[170px] resize-y rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3 text-sm outline-none focus:border-cyan-500 text-slate-900 dark:text-white" /></label>
 
         <div className="flex justify-end gap-2 mt-4">
           <button type="button" onClick={onClose} disabled={saving || recording} className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 disabled:opacity-40">Cancel</button>
-          <button type="button" disabled={saving || recordingBusy || recording || (!text.trim() && !audioBlob)} onClick={() => void save()} className="px-5 py-2.5 rounded-xl bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-2">
+          <button type="button" disabled={saving || recordingBusy || recording || transcribing || !text.trim()} onClick={() => void save()} className="px-5 py-2.5 rounded-xl bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />} {saving ? 'Saving…' : 'Save Record'}
           </button>
         </div>
