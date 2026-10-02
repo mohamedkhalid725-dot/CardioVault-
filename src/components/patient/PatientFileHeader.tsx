@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState}from'react';
 import{ArrowLeft,Edit,ArrowRightLeft,LogOut,ChevronDown}from'lucide-react';
 import{useApp}from'../../context/AppContext';
 import{Patient,PatientStatus}from'../../types/clinical';
+import{patientBriefSummary}from'../../services/patientBriefSummary';
 interface PatientFileHeaderProps{patient:Patient;onEditClick?:()=>void;readOnly?:boolean;}
 
 export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEditClick,readOnly=false})=>{
@@ -31,7 +32,7 @@ export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEdit
       </div>
       {!compact&&!readOnly&&<div className="hidden sm:flex items-center gap-1.5 shrink-0"><button onClick={onEditClick} className="flex items-center gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-bold"><Edit className="w-3 h-3 text-cyan-500"/>Edit</button><button onClick={openTransfer} className="flex items-center gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-bold"><ArrowRightLeft className="w-3 h-3 text-sky-500"/>Transfer</button><button onClick={()=>setShowDischargeModal(true)} className="flex items-center gap-1 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-rose-600 px-2.5 py-1.5 text-[10px] font-bold"><LogOut className="w-3 h-3"/>Discharge</button></div>}
      </div>
-     {!compact&&<div className="absolute left-12 right-0 top-[4.05rem] flex items-center justify-between gap-2 pb-3"><div className="min-w-0 text-[10px] sm:text-xs text-slate-500 truncate"><b className="text-slate-700 dark:text-slate-300">Diagnosis:</b> {patient.primaryDiagnosis||'Not documented'}</div></div>}
+     {!compact&&<div className="absolute left-12 right-0 top-[4.05rem] flex items-center justify-between gap-2 pb-3"><div className="min-w-0 text-[10px] sm:text-xs text-slate-500 truncate"><b className="text-slate-700 dark:text-slate-300">Brief summary:</b> {patientBriefSummary(patient)}</div></div>}
     </div>
    </div>
   </div>
