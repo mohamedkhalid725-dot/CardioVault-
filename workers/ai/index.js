@@ -4,7 +4,7 @@ const PROJECT_ID = 'ccu-notebook';
 const MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
 const FIREBASE_ISSUER = `https://securetoken.google.com/${PROJECT_ID}`;
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
-const MAX_BODY_BYTES = 450000;
+const MAX_BODY_BYTES = 12_000_000;
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 12;
 const requestWindows = new Map();
@@ -225,25 +225,92 @@ async function generateClinicalAnalysis(patient, apiKey) {
   throw lastError || new Error('All Gemini AI models are temporarily unavailable. Please try again later.');
 }
 
+async function generateMultimodalJson(parts, apiKey) {
+  let lastError = null;
+  for (const model of MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.1, maxOutputTokens: 5000 },
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = String(payload?.error?.message || payload?.error || 'Gemini request failed.');
+          lastError = new Error(`Gemini ${model} HTTP ${response.status}: ${message.slice(0, 350)}`);
+          if ([429,500,502,503].includes(response.status) && attempt === 0) { await new Promise(r => setTimeout(r, 900)); continue; }
+          if (response.status === 404) break;
+          throw lastError;
+        }
+        const raw = String(payload?.candidates?.[0]?.content?.parts?.map(p => p?.text || '').join('') || '').trim();
+        if (!raw) throw new Error(`Gemini ${model} returned an empty response.`);
+        return JSON.parse(raw.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '').trim());
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt === 0 && /fetch|network|temporarily unavailable|timed out/i.test(lastError.message)) {
+          await new Promise(r => setTimeout(r, 700));
+          continue;
+        }
+        break;
+      }
+    }
+  }
+  throw lastError || new Error('All Gemini AI models are temporarily unavailable.');
+}
+
+function normalizeLab(data) {
+  const tests = Array.isArray(data?.tests) ? data.tests.map(t => ({
+    testName: String(t?.testName || t?.name || '').trim(),
+    value: String(t?.value ?? '').trim(),
+    unit: String(t?.unit || '').trim(),
+    referenceRange: String(t?.referenceRange || '').trim(),
+    status: ['Normal','High','Low','Critical','Abnormal','Unknown'].includes(t?.status) ? t.status : 'Unknown',
+    confidence: typeof t?.confidence === 'number' ? Math.max(0, Math.min(100, Math.round(t.confidence))) : 80,
+    isUncertain: Boolean(t?.isUncertain),
+  })).filter(t => t.testName && t.value) : [];
+  return {
+    patientName: data?.patientName ? String(data.patientName).trim() : null,
+    reportDate: data?.reportDate ? String(data.reportDate).trim() : null,
+    reportTime: data?.reportTime ? String(data.reportTime).trim() : null,
+    laboratoryName: data?.laboratoryName ? String(data.laboratoryName).trim() : null,
+    panelName: String(data?.panelName || 'General Laboratory').trim(),
+    imageQuality: ['good','acceptable','blurry','partially_unreadable'].includes(data?.imageQuality) ? data.imageQuality : 'good',
+    qualityNotes: String(data?.qualityNotes || ''),
+    tests,
+    interpretationSummary: String(data?.interpretationSummary || ''),
+  };
+}
+
+const VOICE_PROMPT = (context) => `You are CardioVault's medical documentation transcription engine. The physician may speak Egyptian Arabic, Modern Standard Arabic, English, or mixed Arabic/English. Transcribe only what was spoken, then convert it into concise professional Medical English for the target section: ${context || 'clinical_note'}.
+
+Do not invent diagnoses, medications, doses, dates, values, findings, or durations. Preserve numbers, units, drug names, anatomy, ECG terminology and abbreviations exactly when spoken. If unclear, flag it instead of guessing. For mixed speech, output coherent Medical English. Return JSON only:
+{"transcription":"verbatim","medicalText":"professional Medical English","confidence":0.0,"uncertainItems":[],"detectedLanguage":"English|Arabic|Mixed","clinicalNote":{"chiefComplaint":"","historyOfPresentIllness":"","pastMedicalHistory":"","pastSurgicalHistory":"","drugHistory":"","allergies":"","examination":"","vitalSigns":{},"investigations":[],"ecg":"","echo":"","laboratoryResults":[],"medications":[],"assessment":"","diagnosis":"","plan":"","progressNote":""}}`;
+
+const LAB_PROMPT = (patientName) => `You are CardioVault's laboratory report OCR/extraction engine. Read ALL legible laboratory values from this image. Extract exactly what is visible; never guess or invent. Preserve decimal places, symbols, units and the report's own reference ranges. For CBC explicitly extract Hb/Hemoglobin, WBC/white blood cell count, RBC, Hct/PCV, MCV, MCH, MCHC, RDW, platelets and differential counts whenever visible. Also extract every other visible test, regardless of panel.
+
+Determine status from the reference range/flags printed on this report. If the report does not provide enough information, use Unknown. Mark uncertain values. Return JSON only:
+{"patientName":null,"reportDate":null,"reportTime":null,"laboratoryName":null,"panelName":"Complete Blood Count (CBC)","imageQuality":"good","qualityNotes":"","tests":[{"testName":"","value":"","unit":"","referenceRange":"","status":"Normal|High|Low|Critical|Abnormal|Unknown","confidence":95,"isUncertain":false}],"interpretationSummary":""}
+Current patient name: ${patientName || ''}`;
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return optionsResponse();
     if (request.method !== 'POST') return json({ error: 'POST required.' }, 405);
 
     const contentLength = Number(request.headers.get('content-length') || 0);
-    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) return json({ error: 'Patient record is too large for AI analysis.' }, 413);
+    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) return json({ error: 'Request is too large for CardioVault AI.' }, 413);
 
     const auth = request.headers.get('authorization') || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
     if (!token) return json({ error: 'Authentication required.' }, 401);
 
     let decoded;
-    try {
-      decoded = await verifyFirebaseToken(token);
-    } catch (error) {
-      console.error('Firebase token verification failed:', String(error?.message || error).slice(0, 300));
-      return json({ error: 'Firebase authentication token is invalid or expired.' }, 401);
-    }
+    try { decoded = await verifyFirebaseToken(token); }
+    catch (error) { return json({ error: 'Firebase authentication token is invalid or expired.' }, 401); }
 
     const uid = String(decoded.sub || '');
     if (!uid) return json({ error: 'Firebase authentication token has no user id.' }, 401);
@@ -252,21 +319,51 @@ export default {
     let body;
     try {
       const rawBody = await request.text();
-      if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) return json({ error: 'Patient record is too large for AI analysis.' }, 413);
+      if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) return json({ error: 'AI request is too large.' }, 413);
       body = JSON.parse(rawBody);
-    } catch {
-      return json({ error: 'Invalid JSON request.' }, 400);
-    }
+    } catch { return json({ error: 'Invalid JSON request.' }, 400); }
+
+    if (!env.GEMINI_API_KEY) return json({ error: 'CardioVault AI backend is not configured yet.' }, 503);
+    const path = new URL(request.url).pathname.replace(/\/+$/, '');
 
     try {
-      if (!env.GEMINI_API_KEY) return json({ error: 'CardioVault AI backend is not configured yet.' }, 503);
+      if (path.endsWith('/voice-record') || body?.action === 'voice-record') {
+        const audioBase64 = String(body?.audioBase64 || '');
+        const match = audioBase64.match(/^data:(audio\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+        if (!match) return json({ error: 'Unsupported audio format. Please record again using a supported browser/device format.' }, 400);
+        const result = await generateMultimodalJson([
+          { inlineData: { mimeType: match[1], data: match[2] } },
+          { text: VOICE_PROMPT(String(body?.context || 'clinical_note')) },
+        ], env.GEMINI_API_KEY);
+        return json({
+          context: String(body?.context || 'clinical_note'),
+          transcription: String(result?.transcription || ''),
+          medicalText: String(result?.medicalText || result?.transcription || ''),
+          confidence: typeof result?.confidence === 'number' ? result.confidence : 0.9,
+          uncertainItems: Array.isArray(result?.uncertainItems) ? result.uncertainItems.map(String) : [],
+          detectedLanguage: ['English','Arabic','Mixed'].includes(result?.detectedLanguage) ? result.detectedLanguage : 'Mixed',
+          clinicalNote: result?.clinicalNote || {},
+          uncertainties: Array.isArray(result?.uncertainties) ? result.uncertainties.map(String) : [],
+        });
+      }
+
+      if (path.endsWith('/analyze-lab') || path.endsWith('/scan-lab') || body?.action === 'analyze-lab') {
+        const imageBase64 = String(body?.imageBase64 || '');
+        const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+        if (!match) return json({ error: 'Unsupported lab image format.' }, 400);
+        const result = await generateMultimodalJson([
+          { inlineData: { mimeType: match[1], data: match[2] } },
+          { text: LAB_PROMPT(String(body?.patientNameHint || body?.patientName || '')) },
+        ], env.GEMINI_API_KEY);
+        return json(normalizeLab(result));
+      }
+
       const patient = compactPatient(body?.patient);
       const result = await generateClinicalAnalysis(patient, env.GEMINI_API_KEY);
       return json(result, 200);
     } catch (error) {
       const message = String(error?.message || error || 'AI request failed');
       console.error('CardioVault AI request failed:', message.slice(0, 500));
-      if (/JSON|Unexpected token|parse/i.test(message)) return json({ error: 'Gemini returned an invalid clinical response. Please re-analyze.' }, 502);
       return json({ error: message.slice(0, 400) }, 502);
     }
   },
