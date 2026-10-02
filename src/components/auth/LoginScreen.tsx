@@ -37,24 +37,6 @@ export const LoginScreen:React.FC=()=>{
     }
   };
 
-  const handleQuickMasterLogin=async()=>{
-    setBusy(true);
-    try{
-      showToast('Authenticating as Master Physician…','info');
-      const masterUser={
-        uid:'master-owner-mohamedkhalid',
-        email:MASTER_ACCOUNT_EMAIL,
-        displayName:'Dr. Mohamed Khalid',
-      };
-      await finishFirebaseAccount(masterUser,'Signed in as Master Account (Dr. Mohamed Khalid)');
-    }catch(err:any){
-      console.error('Quick master sign-in error:',err);
-      showToast(`Quick sign-in failed: ${String(err?.message||err)}`,'error');
-    }finally{
-      setBusy(false);
-    }
-  };
-
   const handleGoogleLogin=async()=>{
     setBusy(true);
     try{
@@ -93,11 +75,6 @@ export const LoginScreen:React.FC=()=>{
     }catch(error:any){
       const code=String(error?.code||'');
       const msg=String(error?.message||'');
-      if(cleanEmail===MASTER_ACCOUNT_EMAIL&&(code.includes('operation-not-allowed')||code.includes('unauthorized-domain')||code.includes('invalid-credential')||code.includes('user-not-found'))){
-        showToast('Authenticating Master Account…','info');
-        await finishFirebaseAccount({uid:'master-owner-mohamedkhalid',email:cleanEmail,displayName:'Dr. Mohamed Khalid'},'Signed in as Master Account.');
-        return;
-      }
       console.warn('Email authentication error:',error);
       const message=code.includes('email-already-in-use')?'This email already has an account. Use Sign In instead.':code.includes('invalid-credential')||code.includes('wrong-password')||code.includes('invalid-login-credentials')?'Incorrect email or password.':code.includes('user-not-found')?'No account exists for this email. Choose Create Account first.':code.includes('operation-not-allowed')?'Email/Password sign-in is not enabled in Firebase yet.':code.includes('weak-password')?'Password is too weak. Use at least 6 characters.':String(msg||'Unable to authenticate with email.');
       showToast(message,'error');
