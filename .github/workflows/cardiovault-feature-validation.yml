@@ -51,7 +51,7 @@ jobs:
           s=p.read_text()
           for permission in ('android.permission.INTERNET','android.permission.RECORD_AUDIO'):
               if permission not in s:
-                  s=s.replace('</manifest>', f'    <uses-permission android:name="{permission}" />\\n</manifest>')
+                  s=s.replace('</manifest>', f'    <uses-permission android:name="{permission}" />\n</manifest>')
           p.write_text(s)
           PY
       - name: Build Android debug APK
