@@ -1,11 +1,11 @@
 import React,{useState}from'react';
-import {Mail,ArrowRight,UserPlus,ShieldCheck,AlertTriangle,Copy,Check}from'lucide-react';
+import {Mail,ArrowRight,UserPlus,AlertTriangle,Copy,Check}from'lucide-react';
 import {CardioLogo}from'../CardioLogo';
 import {useApp}from'../../context/AppContext';
 import {Capacitor}from'@capacitor/core';
 import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {webEmailSignIn,webEmailCreate}from'../../services/webFirebase';
-import {isMasterAccount,ensureOwnerWorkspace,setStoredWorkspaceAccess,MASTER_ACCOUNT_EMAIL} from '../../services/workspaceAccess';
+import {isMasterAccount,ensureOwnerWorkspace,setStoredWorkspaceAccess} from '../../services/workspaceAccess';
 import {AuthorizationService} from '../../services/authorizationService';
 
 export const LoginScreen:React.FC=()=>{
@@ -34,24 +34,6 @@ export const LoginScreen:React.FC=()=>{
       }
     }catch(error){
       console.warn('Master workspace bootstrap after sign-in note:',error);
-    }
-  };
-
-  const handleQuickMasterLogin=async()=>{
-    setBusy(true);
-    try{
-      showToast('Authenticating as Master Physician…','info');
-      const masterUser={
-        uid:'master-owner-mohamedkhalid',
-        email:MASTER_ACCOUNT_EMAIL,
-        displayName:'Dr. Mohamed Khalid',
-      };
-      await finishFirebaseAccount(masterUser,'Signed in as Master Account (Dr. Mohamed Khalid)');
-    }catch(err:any){
-      console.error('Quick master sign-in error:',err);
-      showToast(`Quick sign-in failed: ${String(err?.message||err)}`,'error');
-    }finally{
-      setBusy(false);
     }
   };
 
@@ -93,11 +75,6 @@ export const LoginScreen:React.FC=()=>{
     }catch(error:any){
       const code=String(error?.code||'');
       const msg=String(error?.message||'');
-      if(cleanEmail===MASTER_ACCOUNT_EMAIL&&(code.includes('operation-not-allowed')||code.includes('unauthorized-domain')||code.includes('invalid-credential')||code.includes('user-not-found'))){
-        showToast('Authenticating Master Account…','info');
-        await finishFirebaseAccount({uid:'master-owner-mohamedkhalid',email:cleanEmail,displayName:'Dr. Mohamed Khalid'},'Signed in as Master Account.');
-        return;
-      }
       console.warn('Email authentication error:',error);
       const message=code.includes('email-already-in-use')?'This email already has an account. Use Sign In instead.':code.includes('invalid-credential')||code.includes('wrong-password')||code.includes('invalid-login-credentials')?'Incorrect email or password.':code.includes('user-not-found')?'No account exists for this email. Choose Create Account first.':code.includes('operation-not-allowed')?'Email/Password sign-in is not enabled in Firebase yet.':code.includes('weak-password')?'Password is too weak. Use at least 6 characters.':String(msg||'Unable to authenticate with email.');
       showToast(message,'error');
@@ -148,17 +125,6 @@ export const LoginScreen:React.FC=()=>{
             <p className="text-[10px] text-slate-400 leading-normal">
               To enable Google OAuth: <strong className="text-slate-300">Firebase Console → Authentication → Settings → Authorized domains → Add domain</strong>.
             </p>
-            <div className="pt-1.5 border-t border-amber-500/20">
-              <button
-                type="button"
-                onClick={handleQuickMasterLogin}
-                disabled={busy}
-                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition-all"
-              >
-                <ShieldCheck className="w-4 h-4"/>
-                <span>Continue as Dr. Mohamed Khalid (Master Account)</span>
-              </button>
-            </div>
           </div>
         )}
 
@@ -196,21 +162,6 @@ export const LoginScreen:React.FC=()=>{
             >
               <UserPlus className="w-4 h-4"/>Create Account
             </button>
-
-            <div className="pt-2 border-t border-slate-800/80 w-full space-y-2">
-              <button
-                type="button"
-                onClick={handleQuickMasterLogin}
-                disabled={busy}
-                className="w-full py-2.5 px-4 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 rounded-xl font-semibold text-xs flex items-center justify-center gap-2.5 border border-cyan-700/40 transition-colors shadow-sm"
-              >
-                <ShieldCheck className="w-4 h-4 text-cyan-400"/>
-                <span>Master Physician Sign-In (Dr. Mohamed Khalid)</span>
-              </button>
-              <div className="text-[10px] text-slate-500">
-                Cloud-authoritative • Cardiology / CCU / ICU
-              </div>
-            </div>
           </div>
         ):(
           <form onSubmit={handleEmailAuth} className="w-full space-y-4 text-left">
