@@ -72,8 +72,8 @@ exports.transcribeClinical = handler(async (req, res, ai) => {
   const match = audio.match(/^data:(audio\/[a-zA-Z0-9+.-]+);base64,(.+)$/s);
   if (!match) return json(res, 400, { error: 'Unsupported audio format.' });
   if (match[2].length > 8_000_000) return json(res, 413, { error: 'Recorded audio is too large. Shorten it and retry.' });
-  const mimeType = match[1].toLowerCase();
-  if (!['audio/webm','audio/mp4','audio/aac','audio/mpeg','audio/wav','audio/ogg','audio/3gpp'].includes(mimeType)) {
+  const mimeType = match[1].toLowerCase() === 'audio/mp4' ? 'audio/m4a' : match[1].toLowerCase();
+  if (!['audio/webm','audio/mp4','audio/m4a','audio/aac','audio/mpeg','audio/wav','audio/ogg','audio/3gpp'].includes(mimeType)) {
     return json(res, 400, { error: 'Unsupported audio format.' });
   }
   const transcriptResponse = await ai.models.generateContent({
