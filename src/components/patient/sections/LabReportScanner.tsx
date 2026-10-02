@@ -3,6 +3,7 @@ import {Camera,CheckCircle2,FileSearch,Loader2,TriangleAlert,X} from 'lucide-rea
 import {LabResult,Patient} from '../../../types/clinical';
 import {uploadClinicalMedia} from '../../../services/mediaStorage';
 import {createPanelAlarm} from '../PanelAlarmManager';
+import {getFirebaseIdToken} from '../../../services/webFirebase';
 
 interface Props { patient:Patient; onClose:()=>void; onConfirm:(results:LabResult[])=>void; }
 
@@ -11,9 +12,28 @@ interface ExtractedTest {
   status:'normal'|'low'|'high'|'critical'|'unknown'; confidence:'low'|'moderate'|'high';
 }
 
-const readFileAsDataUrl=(file:File)=>new Promise<string>((resolve,reject)=>{
+const readFileAsDataUrl=(file:Blob)=>new Promise<string>((resolve,reject)=>{
   const reader=new FileReader(); reader.onload=()=>resolve(String(reader.result||'')); reader.onerror=()=>reject(new Error('Unable to read the report image.')); reader.readAsDataURL(file);
 });
+
+async function prepareImage(file:File):Promise<string>{
+  try {
+    const bitmap=await createImageBitmap(file);
+    const scale=Math.min(1,2200/Math.max(bitmap.width,bitmap.height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(bitmap.width*scale));
+    canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+    const context=canvas.getContext('2d');
+    if(!context) throw new Error('Image processing is unavailable.');
+    context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    bitmap.close();
+    const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('Could not prepare image.')),'image/jpeg',0.82));
+    return readFileAsDataUrl(blob);
+  } catch {
+    if(file.size>6*1024*1024) throw new Error('This image is too large to process on this device. Choose a smaller image.');
+    return readFileAsDataUrl(file);
+  }
+}
 
 export const LabReportScanner:React.FC<Props>=({patient,onClose,onConfirm})=>{
   const [file,setFile]=useState<File|null>(null);
@@ -38,14 +58,18 @@ export const LabReportScanner:React.FC<Props>=({patient,onClose,onConfirm})=>{
     if(!file)return;
     setScanning(true);setError('');
     try{
-      const imageBase64=await readFileAsDataUrl(file);
-      const response=await fetch('/api/ai/scan-lab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imageBase64,patientName:patient.fullName})});
+      const [imageBase64,token]=await Promise.all([prepareImage(file),getFirebaseIdToken()]);
+      const controller=new AbortController();
+      const timeout=window.setTimeout(()=>controller.abort(),120000);
+      let response:Response;
+      try{response=await fetch('/api/ai/scan-lab',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({imageBase64,patientName:patient.fullName})});}
+      finally{window.clearTimeout(timeout)}
       const contentType=response.headers.get('content-type')||'';
       if(!contentType.includes('application/json')){
         const body=await response.text();
         console.error('Lab AI returned a non-JSON response:',response.status,body.slice(0,300));
         throw new Error(response.status===404||response.status===200
-          ? 'Lab AI endpoint is not available on this deployment. Please open the Vercel version of CardioVault.'
+          ? 'Lab AI endpoint is not available. Check Firebase AI function deployment and retry.'
           : `Lab AI service returned an unexpected response (${response.status}).`);
       }
       const data=await response.json();
