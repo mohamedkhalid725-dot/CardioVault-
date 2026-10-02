@@ -5,9 +5,12 @@ import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, de
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
+  browserPopupRedirectResolver,
   indexedDBLocalPersistence,
   initializeAuth,
-  signInWithCredential,
+  getRedirectResult,
+  signInWithPopup,
+  signInWithRedirect,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -58,6 +61,7 @@ function getWebAuth(): Auth {
   if (!webAuthInstance) {
     webAuthInstance = initializeAuth(app, {
       persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
     });
   }
   return webAuthInstance;
@@ -79,94 +83,36 @@ function getWebDb(): Firestore {
   return webDbInstance;
 }
 
-const WEB_GOOGLE_CLIENT_ID = '963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com';
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        oauth2: {
-          initTokenClient: (config: {
-            client_id: string;
-            scope: string;
-            prompt?: string;
-            callback: (response: { access_token?: string; error?: string; error_description?: string }) => void;
-          }) => { requestAccessToken: () => void };
-        };
-      };
-    };
-  }
-}
-
-async function getGoogleIdentityServices() {
-  if (window.google?.accounts?.oauth2?.initTokenClient) return window.google;
-
-  await new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector('script[data-cardiovault-google-gsi]') as HTMLScriptElement | null;
-    if (existing) {
-      const timeout = window.setTimeout(() => reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.')), 10000);
-      existing.addEventListener('load', () => { window.clearTimeout(timeout); resolve(); }, { once: true });
-      existing.addEventListener('error', () => { window.clearTimeout(timeout); reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.')); }, { once: true });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.dataset.cardiovaultGoogleGsi = '1';
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.'));
-    document.head.appendChild(script);
-    window.setTimeout(() => reject(new Error('Google Sign-In could not load. Check your internet connection or browser settings.')), 10000);
-  });
-
-  if (!window.google?.accounts?.oauth2?.initTokenClient) {
-    throw new Error('Google Sign-In loaded, but the Google authentication service is unavailable.');
-  }
-  return window.google;
-}
-
 export async function webGoogleSignIn(): Promise<User> {
   const auth = getWebAuth();
-  const google = await getGoogleIdentityServices();
-  return await new Promise<User>((resolve, reject) => {
-    let finished = false;
-    const fail = (message: string) => { if (!finished) { finished = true; reject(new Error(message)); } };
-    try {
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: WEB_GOOGLE_CLIENT_ID,
-        scope: 'openid email profile',
-        prompt: 'select_account',
-        callback: async response => {
-          if (finished) return;
-          if (response?.error) {
-            fail(`Google Sign-In failed: ${response.error_description || response.error}`);
-            return;
-          }
-          if (!response?.access_token) {
-            fail('Google Sign-In did not return an access token.');
-            return;
-          }
-          try {
-            const credential = GoogleAuthProvider.credential(null, response.access_token);
-            const result = await signInWithCredential(auth, credential);
-            if (!finished) { finished = true; resolve(result.user); }
-          } catch (error: any) {
-            fail(String(error?.message || error?.code || 'Firebase could not complete Google Sign-In.'));
-          }
-        },
-      });
-      client.requestAccessToken();
-    } catch (error: any) {
-      fail(String(error?.message || error?.code || 'Google Identity Services could not start.'));
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  try {
+    const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+    return result.user;
+  } catch (error: any) {
+    const code = String(error?.code || '');
+    // Mobile browsers can block the popup window. In that case use Firebase's
+    // redirect flow instead of calling Google Identity Services directly.
+    if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+      await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
+      throw new Error('Google Sign-In is continuing in the browser.');
     }
-  });
+    throw error;
+  }
 }
 
 export async function checkWebRedirectResult(): Promise<User | null> {
   if (Capacitor.isNativePlatform()) return null;
-  return getWebAuth().currentUser;
+  const auth = getWebAuth();
+  try {
+    const result = await getRedirectResult(auth, browserPopupRedirectResolver);
+    return result?.user || auth.currentUser;
+  } catch (error) {
+    console.warn('Firebase web redirect result failed:', error);
+    return auth.currentUser;
+  }
 }
 export function subscribeWebAuthState(callback: (user: User | null) => void): () => void {
   if (Capacitor.isNativePlatform()) return () => {};
