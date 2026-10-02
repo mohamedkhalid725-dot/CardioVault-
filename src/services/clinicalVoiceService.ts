@@ -73,7 +73,10 @@ export async function transcribeClinicalAudio(
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      resolve(dataUrl.replace(/^(data:audio\\/[^;,]+)[^,]*;base64,/, '$1;base64,'));
+    }
     reader.onerror = () => reject(new Error('Unable to read recorded audio.'));
     reader.readAsDataURL(blob);
   });
