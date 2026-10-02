@@ -75,7 +75,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = String(reader.result || '');
-      resolve(dataUrl.replace(/^(data:audio\\/[^;,]+)[^,]*;base64,/, '$1;base64,'));
+      resolve(dataUrl.replace(/^data:([^;,]+)[^,]*;base64,/, '$1;base64,'));
     }
     reader.onerror = () => reject(new Error('Unable to read recorded audio.'));
     reader.readAsDataURL(blob);
