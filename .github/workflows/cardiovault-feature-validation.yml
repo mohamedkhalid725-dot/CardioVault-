@@ -1,0 +1,29 @@
+name: CardioVault feature validation
+
+on:
+  push:
+    branches: [fix/firebase-ai-voice-summary]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm install
+      - name: TypeScript check
+        run: npm run lint
+      - name: Production web build
+        run: npm run build
+      - name: Validate Firebase AI handlers
+        run: |
+          node --check functions/index.js
+          node --check functions/ai.js
+          node -e "const c=require('./firebase.json'); const rewrites=c.hosting.rewrites; for (const [source,functionId] of [['/api/ai/scan-lab','scanLab'],['/api/ai/transcribe-clinical','transcribeClinical']]) { if (!rewrites.some(r=>r.source===source && r.function.functionId===functionId)) throw new Error('Missing Firebase rewrite: '+source); } console.log('Firebase AI Hosting rewrites are valid.');"
