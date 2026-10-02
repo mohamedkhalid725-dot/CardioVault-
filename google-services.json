@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "963615758407",
+    "project_id": "ccu-notebook",
+    "storage_bucket": "ccu-notebook.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:963615758407:android:56a114967ef9429250b962",
+        "android_client_info": {"package_name": "com.cardiovault.app"}
+      },
+      "oauth_client": [
+        {
+          "client_id": "963615758407-hd8jf9ue7f7dtmt7pf0f8956tq2khoam.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cardiovault.app",
+            "certificate_hash": "f5ac589a4738ae1ced074faf3831caa6b4517d45"
+          }
+        },
+        {
+          "client_id": "963615758407-oemqonv5aqe3o53dpelvcvt9en13sooa.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cardiovault.app",
+            "certificate_hash": "d9f44e6cbfd5a9aaac9610dfb9963a6480de90b5"
+          }
+        },
+        {
+          "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [{"current_key": "AIzaSyCwoEwTLG3yfY7gnd2LDk2sFm6oFKBqX7c"}],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [{
+            "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
+            "client_type": 3
+          }]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:963615758407:android:09287d881e4b566a50b962",
+        "android_client_info": {"package_name": "com.ccunotebook.app"}
+      },
+      "oauth_client": [
+        {"client_id": "963615758407-296gqggeia1nag423kokfaur8th77gbg.apps.googleusercontent.com", "client_type": 1, "android_info": {"package_name": "com.ccunotebook.app", "certificate_hash": "16dbf970f5d79bbdf08c952476f841268ead3731"}},
+        {"client_id": "963615758407-2udfprlj0bc5bvccjeg1r3stjtggb4li.apps.googleusercontent.com", "client_type": 1, "android_info": {"package_name": "com.ccunotebook.app", "certificate_hash": "7e4e145681681f9386da5f494ccc7c1a5a343365"}},
+        {"client_id": "963615758407-cq5jda0jg65knhdb2nf4aokg14cml73b.apps.googleusercontent.com", "client_type": 1, "android_info": {"package_name": "com.ccunotebook.app", "certificate_hash": "055ec92201287932ed06c149c9759e4f4c1af961"}},
+        {"client_id": "963615758407-d3t25dteh6kjnps3bv5sf73mlunmvm7n.apps.googleusercontent.com", "client_type": 1, "android_info": {"package_name": "com.ccunotebook.app", "certificate_hash": "297c6a432ac8bd0a317e612f041ac70852b87259"}},
+        {"client_id": "963615758407-kf9o6r6dbn8s6epafhnh1p7198cukuqv.apps.googleusercontent.com", "client_type": 1, "android_info": {"package_name": "com.ccunotebook.app", "certificate_hash": "162f558eb874f4b02952804d21aee8c9aa903a58"}},
+        {"client_id": "963615758407-o5qdl4skh86te5p1cotmlcnhpglef8nv.apps.googleusercontent.com", "client_type": 1, "android_info": {"package_name": "com.ccunotebook.app", "certificate_hash": "672d141b148345e1feaafa1ce3fe998a04f589a3"}},
+        {"client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com", "client_type": 3}
+      ],
+      "api_key": [{"current_key": "AIzaSyCwoEwTLG3yfY7gnd2LDk2sFm6oFKBqX7c"}],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [{"client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com", "client_type": 3}]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
