@@ -127,6 +127,13 @@ export async function webEmailCreate(email:string,password:string):Promise<User>
 export async function webSignOut(){ await signOut(getWebAuth()); }
 export function webCurrentUser(){ return Capacitor.isNativePlatform() ? null : getWebAuth().currentUser; }
 
+export async function getFirebaseIdToken(): Promise<string> {
+  if (Capacitor.isNativePlatform()) return getNativeIdToken();
+  const user = getWebAuth().currentUser;
+  if (!user) throw new Error('Sign in to use clinical AI.');
+  return user.getIdToken();
+}
+
 export const webDoc = (path:string) => doc(getWebDb(), path);
 export const webCollection = (path:string) => collection(getWebDb(), path);
 export { getDoc, getDocs, setDoc, deleteDoc, query, where };
