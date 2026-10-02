@@ -36,7 +36,8 @@ export async function POST(request: Request) {
     ].join('\n');
 
     const ai = getGenAI();
-    // Lab extraction is a latency-sensitive OCR task: use the low-latency multimodal model first.\n    const models = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+    // Lab extraction is a latency-sensitive OCR task: use the low-latency multimodal model first.
+    const models = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
     let raw = '';
     const errors: string[] = [];
 
