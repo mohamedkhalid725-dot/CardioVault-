@@ -4,6 +4,7 @@ import { Patient, ProgressNote } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { ClinicalAudioPlayer } from '../ClinicalAudioPlayer';
 import { ClinicalVoiceInput } from '../ClinicalVoiceInput';
+import { AiMedicalVoiceRecordModal } from '../AiMedicalVoiceRecordModal';
 
 interface Props { patient: Patient; }
 
@@ -15,6 +16,7 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
   const [selectedId, setSelectedId] = useState<string | null>(notes[0]?.id || null);
   const [editing, setEditing] = useState<ProgressNote | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showAiVoice, setShowAiVoice] = useState(false);
   const [voiceClips, setVoiceClips] = useState<Record<string,{blob:Blob;duration:number;sourceLanguage?:'ar'|'en'|'mixed'|'unknown';transcript?:string;normalizedEnglish?:string;confidence?:'low'|'moderate'|'high'}>>({});
 
   useEffect(() => {
@@ -71,7 +73,7 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
     showToast('Progress note deleted.', 'info');
   };
 
-  return <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-150">
+  return <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-150"><div className="flex justify-end"><button onClick={()=>setShowAiVoice(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-sky-500 text-slate-950 font-black text-xs shadow-md shadow-cyan-500/20"><Mic className="w-3.5 h-3.5"/>AI Medical Voice</button></div>
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><FileText className="w-5 h-5 text-cyan-500" /> Progress Notes</h2><p className="text-xs text-slate-500 dark:text-slate-400">Independent dated clinical notes with persistent history.</p></div><button onClick={openNew} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-4 h-4" /> New Progress Note</button></div>
 
     {notes.length === 0 ? <div className="p-10 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E]"><FileText className="w-8 h-8 mx-auto text-slate-400 mb-3" /><p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No Progress Notes recorded yet.</p><p className="text-xs text-slate-400 mt-1">Create the first clinical note for this patient.</p></div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -83,5 +85,5 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
     </div>}
 
     {showModal && editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xl"><div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800"><h3 className="text-lg font-bold text-slate-900 dark:text-white">{editing.id ? 'Edit Progress Note' : 'New Progress Note'}</h3><button onClick={() => { setShowModal(false); setEditing(null); }}><X className="w-5 h-5 text-slate-400" /></button></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4"><label className="text-xs font-semibold">Date<input type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Time<input type="time" value={editing.time} onChange={(e) => setEditing({ ...editing, time: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Author<input value={editing.author} onChange={(e) => setEditing({ ...editing, author: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label><label className="text-xs font-semibold">Note Type<select value={editing.type || 'SOAP Note'} onChange={(e) => setEditing({ ...editing, type: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2"><option>SOAP Note</option><option>ICU Rounding</option><option>Consultation</option><option>Transfer Note</option><option>Discharge Summary</option></select></label></div>{([['subjective','Subjective'],['objective','Objective'],['assessment','Assessment'],['plan','Plan']] as const).map(([field,label]) => <div key={field} className="mb-3"><label className="block text-xs font-semibold">{label}<div className="mt-1 mb-1"><ClinicalVoiceInput value={editing[field] || ''} onChange={(value)=>setEditing({...editing,[field]:value})} field="progress_note" onRecordingReady={(blob,duration,result)=>setVoiceClips(p=>({...p,[field]:{blob,duration,sourceLanguage:result?.sourceLanguage,transcript:result?.transcript,normalizedEnglish:result?.normalizedEnglish,confidence:result?.confidence}}))}/></div><textarea rows={field === 'plan' || field === 'objective' ? 4 : 3} value={editing[field] || ''} onChange={(e) => setEditing({ ...editing, [field]: e.target.value })} className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2" /></label></div>)}<div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"><button onClick={() => { setShowModal(false); setEditing(null); }} className="px-4 py-2 text-xs text-slate-500">Cancel</button><button onClick={save} className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold">Save Note</button></div></div></div>}
-  </div>;
+  {showAiVoice&&<AiMedicalVoiceRecordModal patient={patient} isOpen={showAiVoice} onClose={()=>setShowAiVoice(false)}/>} </div>;
 };
