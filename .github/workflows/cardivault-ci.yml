@@ -156,21 +156,13 @@ jobs:
       - name: Deploy CardioVault AI Firebase Functions
         # Firebase Functions provide the protected clinical AI API used by web and Android.
         continue-on-error: true
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
           npx firebase-tools@latest deploy --only functions:analyzeClinicalPatient,functions:transcribeClinical,functions:scanLab --project ccu-notebook --non-interactive --config firebase.json
-      - name: Deploy Firebase Hosting preview
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref != 'refs/heads/main' }}
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest hosting:channel:deploy cardio-vault-ai --expires 7d --project ccu-notebook --non-interactive --config firebase.json
       - name: Deploy Firebase Hosting production
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref == 'refs/heads/main' }}
         env:
@@ -182,7 +174,7 @@ jobs:
       - name: Deploy Firestore rules
         # Use the Admin SDK directly so rules deployment does not depend on the CLI
         # Service Usage preflight permission that blocked the Pages workflow.
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
