@@ -1,5 +1,6 @@
 import { Patient } from '../types/clinical';
 import { fileToDataUrl } from './mediaStorage';
+import { getFirebaseIdToken } from './webFirebase';
 
 export interface MedicalVoiceRecordResult {
   context?: string;
@@ -92,10 +93,13 @@ export async function processMedicalVoiceRecord(
   const audioDataUrl = await fileToDataUrl(audioBlob);
   const mimeType = audioBlob.type || 'audio/webm';
 
-  const response = await fetch('/api/ai/voice-record', {
+  const endpoint = `${String(import.meta.env.VITE_CARDIOVAULT_AI_ENDPOINT || 'https://cardiovault-ai.mohamedkhalid725.workers.dev').replace(/\/$/, '')}/voice-record`;
+  const token = await getFirebaseIdToken();
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       audioBase64: audioDataUrl,
@@ -160,10 +164,13 @@ export async function analyzeLabReportImage(
   const imageDataUrl = await fileToDataUrl(imageBlob);
   const mimeType = imageBlob.type || 'image/jpeg';
 
-  const response = await fetch('/api/ai/analyze-lab', {
+  const endpoint = `${String(import.meta.env.VITE_CARDIOVAULT_AI_ENDPOINT || 'https://cardiovault-ai.mohamedkhalid725.workers.dev').replace(/\/$/, '')}/analyze-lab`;
+  const token = await getFirebaseIdToken();
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       imageBase64: imageDataUrl,
