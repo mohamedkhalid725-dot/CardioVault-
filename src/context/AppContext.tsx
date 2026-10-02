@@ -195,10 +195,12 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
        }catch(error){console.warn('Post-login cloud restore failed:',error);showToast('Signed in. Cloud sync will retry automatically.','warning');}
      })();
    }catch(error:any){
-     console.error('Native Google/Firebase sign-in failed:',error);
-     showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');
+     console.warn('Google/Firebase sign-in error:',error);
+     const isUnauthorizedDomain=error?.code==='auth/unauthorized-domain'||String(error?.message||'').includes('auth/unauthorized-domain');
+     if(isUnauthorizedDomain)showToast('Google Sign-In domain unauthorized in Firebase Console. Authorize this domain in Firebase Console.','warning');
+     else showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Google sign-in failed').slice(0,240)}`,'error');
+     throw error;
    }
- };
  const loginWithEmail=(email:string,firebaseUser?:any)=>{
    const clean=email.trim().toLowerCase();
    if(!clean)return;

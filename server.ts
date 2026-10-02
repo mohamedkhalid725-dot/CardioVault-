@@ -6,7 +6,8 @@ import { GoogleGenAI } from '@google/genai';
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Lazy GoogleGenAI client
 let genAIClient: GoogleGenAI | null = null;
@@ -390,6 +391,263 @@ Structure format:
     return res.status(500).json({ error: msg });
   }
 });
+
+function cleanJsonResponse(raw: string): any {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  return JSON.parse(cleaned);
+}
+
+// AI Medical Voice Record Endpoint
+app.post('/api/ai/voice-record', async (req, res) => {
+  try {
+    const { audioBase64, mimeType, patient, clinician, context } = req.body || {};
+
+    if (!audioBase64) {
+      return res.status(400).json({ error: 'Audio data is required for medical voice processing.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        error: 'CardioVault AI requires GEMINI_API_KEY to be configured in project settings.',
+      });
+    }
+
+    const cleanBase64 = String(audioBase64).replace(/^data:audio\/[a-zA-Z0-9+.-]+;base64,/, '');
+    const cleanMimeType = mimeType || 'audio/webm';
+    const targetContext = context ? String(context).trim() : 'progressNote';
+
+    const systemPrompt = `You are CardioVault's AI Medical Audio Dictation and Clinical Documentation Engine.
+The user is Dr. ${clinician?.name || 'Physician'} (${clinician?.role || 'Clinician'}) in an inpatient Cardiology / CCU / ICU clinical setting.
+The clinician is recording a clinical dictation, patient examination, bedside rounding note, or section-specific medical entry.
+The recording can be in English, Arabic, or mixed English/Arabic (medical terms in English with Arabic conversation/connectives, e.g. "المريض عنده سكر وضغط وعنده ischemic heart disease وكان عامل PCI وركب stent من سنتين").
+
+TARGET CLINICAL SECTION: "${targetContext}"
+
+CONTEXT-AWARE TRANSFORMATION DIRECTIVES:
+- If target is "chiefComplaint": Produce a concise, standard clinical Chief Complaint (e.g. "Acute crushing substernal chest pain radiating to left arm x 2 hours").
+- If target is "history" or "hpi": Produce an accurate, chronologically structured History of Present Illness (HPI).
+- If target is "pmh": Transform into concise standard medical terminology (e.g. "Known case of diabetes mellitus type 2, essential hypertension, and ischemic heart disease").
+- If target is "psh": Transform into concise surgical history (e.g. "Status post PCI with drug-eluting stent placement 2 years ago, appendectomy 2015").
+- If target is "drugHistory" or "medications": Transform into clear medication entries with drug name, dose, route, frequency where stated.
+- If target is "allergies": Transform into specific documented allergies and reaction types, or "No known drug allergies (NKDA)".
+- If target is "examination": Transform into formal physical examination documentation (General, CVS, Resp, Abdomen, Neuro, Extremities).
+- If target is "assessment": Transform into clinical assessment and diagnostic synthesis language.
+- If target is "plan": Transform into structured medical/interventional/monitoring management plan.
+- If target is "progressNote": Produce a comprehensive, cohesive, structured progress note (SOAP / clinical summary).
+- If target is "investigations": List diagnostic tests, labs, imaging, or cardiac procedures ordered or discussed.
+
+STRICT ANTI-HALLUCINATION RULES:
+1. Verbatim Transcription: In "transcription", transcribe faithfully what was spoken in the audio. If spoken in Arabic or mixed, capture the actual words spoken.
+2. Medical Transformation: In "medicalText", convert what was spoken into proper, professional medical English documentation suitable for the target section "${targetContext}".
+3. ZERO INVENTIONS: NEVER invent diagnoses, medications, doses, duration, lab values, vital signs, procedures, dates, or events that were not spoken in the audio.
+4. If the physician did not say it, do NOT add it.
+5. If a spoken number, name, or word is ambiguous or unclear, preserve the uncertainty and list it in "uncertainItems".
+6. In addition to "medicalText", also populate the structured "clinicalNote" object fields where relevant.
+
+${patient ? `Patient Context (for reference only, do not assume findings not spoken in audio): Patient: ${patient.fullName || patient.name || 'Unknown'}, Age: ${patient.age || '—'}, Diagnosis: ${patient.primaryDiagnosis || '—'}` : ''}
+
+Return ONLY valid JSON with this exact structure:
+{
+  "context": "${targetContext}",
+  "transcription": "Verbatim spoken words",
+  "medicalText": "Transformed professional medical documentation for the target section",
+  "confidence": 0.95,
+  "uncertainItems": [],
+  "detectedLanguage": "English|Arabic|Mixed",
+  "clinicalNote": {
+    "chiefComplaint": "",
+    "historyOfPresentIllness": "",
+    "pastMedicalHistory": "",
+    "pastSurgicalHistory": "",
+    "drugHistory": "",
+    "allergies": "",
+    "examination": "",
+    "vitalSigns": {
+      "sbp": null,
+      "dbp": null,
+      "hr": null,
+      "rr": null,
+      "spo2": null,
+      "temp": null,
+      "gcs": null,
+      "pain": null,
+      "notes": ""
+    },
+    "investigations": [],
+    "ecg": "",
+    "echo": "",
+    "laboratoryResults": [],
+    "medications": [],
+    "assessment": "",
+    "diagnosis": "",
+    "plan": "",
+    "progressNote": ""
+  },
+  "uncertainties": []
+}`;
+
+    const ai = getGenAI();
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-transcribe', 'gemini-3.1-flash-lite'];
+    let lastError: any = null;
+    let raw = '';
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: cleanMimeType,
+                    data: cleanBase64,
+                  },
+                },
+                { text: systemPrompt },
+              ],
+            },
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+          },
+        });
+        raw = String(response.text || '').trim();
+        if (raw) break;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Voice record model ${modelName} failed, trying candidate fallback:`, err?.message || err);
+      }
+    }
+
+    if (!raw && lastError) throw lastError;
+    if (!raw) return res.status(502).json({ error: 'AI returned an empty response for audio transcription.' });
+
+    const result = cleanJsonResponse(raw);
+    return res.status(200).json(result);
+  } catch (error: any) {
+    console.error('AI Voice Record error:', error);
+    const msg = String(error?.message || error || 'Medical voice processing failed.');
+    return res.status(500).json({ error: msg });
+  }
+});
+
+// AI Laboratory Image Analyzer Endpoint
+app.post('/api/ai/analyze-lab', async (req, res) => {
+  try {
+    const { imageBase64, mimeType, patientNameHint, clinician } = req.body || {};
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Laboratory report image is required.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        error: 'CardioVault AI requires GEMINI_API_KEY to be configured in project settings.',
+      });
+    }
+
+    const cleanBase64 = String(imageBase64).replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+    const cleanMimeType = mimeType || 'image/jpeg';
+
+    const systemPrompt = `You are CardioVault's AI Clinical Laboratory Document Analyzer.
+Examine this medical laboratory report image with optical character recognition and clinical accuracy.
+
+MANDATORY RULES:
+1. Extract ALL readable laboratory tests shown in the document. Do not limit to a predefined list.
+2. PRESERVE NUMERICAL VALUES EXACTLY: Keep all decimal places (e.g. 2.9 must remain 2.9, 0.7 must remain 0.7; NEVER round 2.9 to 3). Preserve symbols (<, >, +, -), units, and scientific notation.
+3. Status determination: For each test, compare the extracted value to the test's SPECIFIC REFERENCE RANGE shown on THIS report:
+   - "Normal": value is within the stated reference range
+   - "High": value is above the upper limit of the reference range
+   - "Low": value is below the lower limit of the reference range
+   - "Critical": value is marked with panic/critical flags (*, H*, L*, CRITICAL, PANIC, RED) or is at extreme dangerous levels
+   - "Abnormal": test is abnormal or positive for qualitative/binary tests
+   - "Unknown": no reference range is visible on the report
+4. Extract document header information if legible:
+   - patientName: Patient name printed on the report, or null if obscured/not present
+   - reportDate: Date of report (YYYY-MM-DD format if possible), or null
+   - reportTime: Time of report (HH:MM format if possible), or null
+   - laboratoryName: Name of the laboratory or hospital facility, or null
+   - panelName: Primary category or panel name (e.g. "Complete Blood Count (CBC)", "Comprehensive Metabolic Panel (CMP)", "Cardiac Markers", "Coagulation Profile", "Arterial Blood Gas (ABG)", "Electrolytes", "Liver Function Tests", "Lipid Profile", "Renal Function", "Urinalysis", "Special Chemistry", "General Laboratory")
+5. Assess image readability/quality:
+   - imageQuality: "good" | "acceptable" | "blurry" | "partially_unreadable"
+   - qualityNotes: Brief description if any part is cut off, shadowed, skewed, or illegible
+6. DO NOT INVENT OR FABRICATE ANY VALUES, TESTS, UNITS, DATES, OR PATIENT NAMES. If a value is unreadable, cut off, or blurry, omit it or flag it as uncertain.
+${patientNameHint ? `Current patient name in system: ${patientNameHint}` : ''}
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "patientName": null,
+  "reportDate": null,
+  "reportTime": null,
+  "laboratoryName": null,
+  "panelName": "General Laboratory",
+  "imageQuality": "good",
+  "qualityNotes": "",
+  "tests": [
+    {
+      "testName": "Example Test",
+      "value": "1.0",
+      "unit": "mg/dL",
+      "referenceRange": "0.5 - 1.5",
+      "status": "Normal",
+      "confidence": 95,
+      "isUncertain": false
+    }
+  ],
+  "interpretationSummary": ""
+}`;
+
+    const ai = getGenAI();
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+    let lastError: any = null;
+    let raw = '';
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: cleanMimeType,
+                    data: cleanBase64,
+                  },
+                },
+                { text: systemPrompt },
+              ],
+            },
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+          },
+        });
+        raw = String(response.text || '').trim();
+        if (raw) break;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Lab analyzer model ${modelName} failed, trying candidate fallback:`, err?.message || err);
+      }
+    }
+
+    if (!raw && lastError) throw lastError;
+    if (!raw) return res.status(502).json({ error: 'AI returned an empty response for laboratory analysis.' });
+
+    const result = cleanJsonResponse(raw);
+    return res.status(200).json(result);
+  } catch (error: any) {
+    console.error('AI Lab Analyzer error:', error);
+    const msg = String(error?.message || error || 'Laboratory report analysis failed.');
+    return res.status(500).json({ error: msg });
+  }
+});
+
 
 // Vite middleware / static serving
 async function startServer() {
