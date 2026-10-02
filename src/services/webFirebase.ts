@@ -123,6 +123,16 @@ export async function webEmailCreate(email:string,password:string):Promise<User>
 }
 export async function webSignOut(){ await signOut(getWebAuth()); }
 export function webCurrentUser(){ return Capacitor.isNativePlatform() ? null : getWebAuth().currentUser; }
+export async function getFirebaseIdToken(): Promise<string> {
+  if (Capacitor.isNativePlatform()) {
+    return getNativeIdToken();
+  }
+  const user = getWebAuth().currentUser;
+  if (!user) throw new Error('No authenticated Firebase user is available.');
+  const token = await user.getIdToken(false);
+  if (!token) throw new Error('Could not obtain the Firebase Auth ID token.');
+  return token;
+}
 
 export const webDoc = (path:string) => doc(getWebDb(), path);
 export const webCollection = (path:string) => collection(getWebDb(), path);
