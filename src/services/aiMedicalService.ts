@@ -92,7 +92,9 @@ export async function processMedicalVoiceRecord(
   const audioDataUrl = await fileToDataUrl(audioBlob);
   const mimeType = audioBlob.type || 'audio/webm';
 
-  const response = await fetch('/api/ai/voice-record', {
+  const baseEndpoint = String(import.meta.env.VITE_CARDIOVAULT_AI_ENDPOINT || '').replace(/\/$/, '');
+  const endpoint = baseEndpoint ? `${baseEndpoint}/voice-record` : '/api/ai/voice-record';
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -160,7 +162,9 @@ export async function analyzeLabReportImage(
   const imageDataUrl = await fileToDataUrl(imageBlob);
   const mimeType = imageBlob.type || 'image/jpeg';
 
-  const response = await fetch('/api/ai/analyze-lab', {
+  const baseEndpoint = String(import.meta.env.VITE_CARDIOVAULT_AI_ENDPOINT || '').replace(/\/$/, '');
+  const endpoint = baseEndpoint ? `${baseEndpoint}/analyze-lab` : '/api/ai/analyze-lab';
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
