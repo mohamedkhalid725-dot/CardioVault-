@@ -2,7 +2,7 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai]
+    branches: [main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai, task2-appcheck-preview-skip]
   pull_request:
     branches: [main, department-system-v1]
   workflow_dispatch:
@@ -18,6 +18,8 @@ env:
   HAS_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
   VITE_AI_TEST_DATA_ONLY: 'true'
   VITE_AI_APPCHECK_DEBUG: 'false'
+  VITE_AI_APPCHECK_SKIP: 'false'
+  VITE_CARDIOVAULT_PREVIEW: 'false'
   VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ secrets.FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY }}
 
 jobs:
@@ -54,7 +56,23 @@ jobs:
       - name: Preview web build
         env:
           VITE_AI_APPCHECK_DEBUG: 'true'
+          VITE_AI_APPCHECK_SKIP: 'true'
+          VITE_CARDIOVAULT_PREVIEW: 'true'
         run: npm run build
+      - name: Build web bundle for Android and release with App Check enabled
+        env:
+          VITE_AI_APPCHECK_DEBUG: 'false'
+          VITE_AI_APPCHECK_SKIP: 'false'
+          VITE_CARDIOVAULT_PREVIEW: 'false'
+        run: npm run build
+      - name: Verify release web bundle has App Check skip disabled
+        run: |
+          set -euo pipefail
+          if grep -R -F "App Check skipped - test only" dist >/dev/null 2>&1; then
+            echo "SECURITY CHECK FAILED: preview-only App Check banner/skip marker is present in the release web bundle."
+            exit 1
+          fi
+          echo "Release web bundle: App Check skip is disabled."
       - name: Setup Java 21
         uses: actions/setup-java@v5
         with:
@@ -210,6 +228,14 @@ jobs:
           PY
       - name: Sync Capacitor Android project
         run: npx cap sync android
+      - name: Verify Android bundle has App Check skip disabled
+        run: |
+          set -euo pipefail
+          if grep -R -F "App Check skipped - test only" android/app/src/main/assets android/app/build/generated/assets 2>/dev/null; then
+            echo "SECURITY CHECK FAILED: preview-only App Check skip is present in the Android web bundle."
+            exit 1
+          fi
+          echo "Android web bundle: App Check skip is disabled."
       - name: Harden Android auth/network manifest
         run: |
           python - <<'PY'
@@ -329,6 +355,15 @@ jobs:
           CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
           CARDIOVAULT_RELEASE_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
+      - name: Verify release APK does not contain preview-only App Check skip
+        working-directory: android
+        run: |
+          set -euo pipefail
+          if unzip -p app/build/outputs/apk/release/app-release.apk 2>/dev/null | strings | grep -F "App Check skipped - test only" >/dev/null 2>&1; then
+            echo "SECURITY CHECK FAILED: preview-only App Check skip is present in the release APK."
+            exit 1
+          fi
+          echo "Release APK: App Check skip is disabled."
       - name: Build debug APK
         working-directory: android
         env:
@@ -366,11 +401,26 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Build preview web bundle with App Check skip enabled
+        if: ${{ github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' }}
+        env:
+          VITE_AI_APPCHECK_DEBUG: 'true'
+          VITE_AI_APPCHECK_SKIP: 'true'
+          VITE_CARDIOVAULT_PREVIEW: 'true'
+        run: npm run build
+      - name: Verify preview bundle is explicitly marked test-only
+        if: ${{ github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' }}
+        run: |
+          set -euo pipefail
+          grep -R -F "App Check skipped - test only" dist >/dev/null
+          echo "Preview web bundle: App Check skip enabled and visibly marked test-only."
       - name: Deploy CardioVault Web App to Firebase Hosting preview channel
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref == 'refs/heads/task2-firebase-ai' }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip') }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VITE_AI_APPCHECK_DEBUG: 'true'
+          VITE_AI_APPCHECK_SKIP: 'true'
+          VITE_CARDIOVAULT_PREVIEW: 'true'
         run: |
           set -euo pipefail
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
@@ -378,10 +428,12 @@ jobs:
           npx firebase-tools@latest hosting:channel:deploy task2-preview --expires 7d --project ccu-notebook --non-interactive --config firebase.json
 
       - name: Deploy CardioVault Web App to Firebase Hosting live
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref != 'refs/heads/task2-firebase-ai' }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/department-system-v1' || github.ref == 'refs/heads/build-972-clean' || github.ref == 'refs/heads/task1-email-auth') }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VITE_AI_APPCHECK_DEBUG: 'false'
+          VITE_AI_APPCHECK_SKIP: 'false'
+          VITE_CARDIOVAULT_PREVIEW: 'false'
         run: |
           set -euo pipefail
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
