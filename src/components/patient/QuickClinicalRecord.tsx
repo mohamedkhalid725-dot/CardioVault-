@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardPlus, X, Mic, Square, Loader2 } from 'lucide-react';
+import { ClipboardPlus, X, Mic, Square, Loader2, Sparkles } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { uploadClinicalMedia } from '../../services/mediaStorage';
 import { Patient, ProgressNote } from '../../types/clinical';
 import { useApp } from '../../context/AppContext';
+import { transcribeMedicalVoice } from '../../services/aiLogic';
+import { AIDataWarning } from './AIDataWarning';
 
 interface Props { patient: Patient; onClose: () => void; }
 
@@ -24,6 +26,8 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState('');
   const [duration, setDuration] = useState(0);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiDraft, setAiDraft] = useState('');
 
   const webRecorderRef = useRef<MediaRecorder | null>(null);
   const webChunksRef = useRef<Blob[]>([]);
@@ -139,9 +143,11 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
     setDuration(0);
   };
 
+  const transcribeWithAI = async () => { if (!audioBlob || aiBusy) return; setAiBusy(true); try { const result = await transcribeMedicalVoice(audioBlob); setAiDraft(result.medicalEnglish || result.transcription || ''); showToast('AI transcription is ready for review. Nothing was saved automatically.','success'); } catch (error:any) { showToast(String(error?.message || 'AI voice transcription failed.'),'error'); } finally { setAiBusy(false); } };
+
   const save = async () => {
     if (saving || recording) return;
-    const value = text.trim();
+    const value = (aiDraft.trim() || text.trim());
     if (!value && !audioBlob) {
       showToast('Add a note or record a voice note first.', 'error');
       return;
@@ -213,6 +219,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
           </select>
         </label>
 
+        <AIDataWarning compact />
         <div className="mt-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -232,10 +239,10 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
               {audioBlob && <button type="button" onClick={clearRecording} disabled={saving || recordingBusy} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:opacity-40">Clear</button>}
             </div>
           </div>
-          {audioUrl && <audio controls src={audioUrl} className="w-full mt-3" />}
+          {audioUrl && <audio controls src={audioUrl} className="w-full mt-3" />}\n          {audioBlob && <button type="button" onClick={() => void transcribeWithAI()} disabled={aiBusy || saving || recording} className="mt-3 px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-50">{aiBusy?<Loader2 className="w-4 h-4 animate-spin"/>:<Sparkles className="w-4 h-4"/>}{aiBusy?"Transcribing…":"Convert to Medical English"}</button>}
         </div>
 
-        <textarea autoFocus value={text} onChange={(event) => setText(event.target.value)} disabled={saving || recording} placeholder="Document the important clinical event, observation, response, or update…" className="mt-3 w-full min-h-[170px] resize-y rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3 text-sm outline-none focus:border-cyan-500 text-slate-900 dark:text-white" />
+        {aiDraft && <div className="mt-3 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-3"><div className="text-[10px] font-bold text-violet-600 dark:text-violet-300 mb-1">AI draft — review/edit before saving</div><textarea value={aiDraft} onChange={e=>setAiDraft(e.target.value)} disabled={saving || recording} className="w-full min-h-[130px] rounded-xl bg-white dark:bg-slate-900 px-3 py-2 text-sm border border-violet-500/20"/></div>}\n\n        <textarea autoFocus value={text} onChange={(event) => setText(event.target.value)} disabled={saving || recording} placeholder="Document the important clinical event, observation, response, or update…" className="mt-3 w-full min-h-[170px] resize-y rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3 text-sm outline-none focus:border-cyan-500 text-slate-900 dark:text-white" />
 
         <div className="flex justify-end gap-2 mt-4">
           <button type="button" onClick={onClose} disabled={saving || recording} className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 disabled:opacity-40">Cancel</button>
