@@ -51,7 +51,7 @@ function blobToBase64(blob: Blob): Promise<string> {
 }
 
 function parseJson<T>(raw: string): T {
-  const cleaned = raw.trim().replace(/^\`\`\`json\\s*/i, '').replace(/^\`\`\`\\s*/i, '').replace(/\s*\`\`\`$/i, '');
+  const cleaned = raw.trim().replace(/^\`\`\`json\s*/i, '').replace(/^\`\`\`\s*/i, '').replace(/\s*\`\`\`$/i, '');
   try { return JSON.parse(cleaned) as T; } catch { throw new Error('AI returned an invalid structured response. Please try again.'); }
 }
 
