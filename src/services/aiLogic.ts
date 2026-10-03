@@ -9,10 +9,7 @@ export { AI_DATA_WARNING_PLACEHOLDER };
 
 let appCheckPromise: Promise<void> | null = null;
 const requestTimes: number[] = [];
-const APP_CHECK_SKIP = import.meta.env.VITE_AI_APPCHECK_SKIP === 'true' && import.meta.env.VITE_CARDIOVAULT_PREVIEW === 'true';
-
 export async function initializeCardioVaultAppCheck(): Promise<void> {
-  if (APP_CHECK_SKIP) return;
   if (!appCheckPromise) {
     appCheckPromise = (async () => {
       if (Capacitor.isNativePlatform()) {
