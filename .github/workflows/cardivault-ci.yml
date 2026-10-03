@@ -2,7 +2,7 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [main, department-system-v1, build-972-clean]
+    branches: [main, department-system-v1, build-972-clean, task1-email-auth]
   pull_request:
     branches: [main, department-system-v1]
   workflow_dispatch:
@@ -377,6 +377,16 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Deploy CardioVault Web App to Firebase Hosting
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          npx firebase-tools@latest deploy --only hosting --project ccu-notebook --non-interactive --config firebase.json
+
       - name: Upload CardioVault Web App
         uses: actions/upload-artifact@v4
         with:
