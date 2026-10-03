@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShieldAlert } from 'lucide-react';
-import { AI_DATA_WARNING_PLACEHOLDER } from '../../services/aiLogic';
+import { AI_DATA_WARNING_PLACEHOLDER } from '../../config/aiConfig';
 
 export const AIDataWarning: React.FC<{ compact?: boolean }> = ({ compact = false }) => (
   <div className={`rounded-xl border border-amber-400/40 bg-amber-500/10 ${compact ? 'px-3 py-2' : 'px-4 py-3'}`} role="note" aria-label="AI data warning">
