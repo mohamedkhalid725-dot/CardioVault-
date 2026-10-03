@@ -41,7 +41,8 @@
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "@capacitor-firebase/app-check": "7.5.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
