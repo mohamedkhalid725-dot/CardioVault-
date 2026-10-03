@@ -17,7 +17,7 @@ env:
   HAS_CARDIOVAULT_RELEASE_KEYSTORE: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_BASE64 }}
   HAS_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
   VITE_AI_TEST_DATA_ONLY: 'true'
-  VITE_AI_APPCHECK_DEBUG: 'true'
+  VITE_AI_APPCHECK_DEBUG: 'false'
   VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ secrets.FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY }}
 
 jobs:
@@ -51,7 +51,9 @@ jobs:
           path: tscheck.log
           retention-days: 3
 
-      - name: Production web build
+      - name: Preview web build
+        env:
+          VITE_AI_APPCHECK_DEBUG: 'true'
         run: npm run build
       - name: Setup Java 21
         uses: actions/setup-java@v5
@@ -364,15 +366,16 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Deploy CardioVault Web App to Firebase Hosting
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+      - name: Deploy CardioVault Web App to Firebase Hosting preview channel
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref == 'refs/heads/task2-firebase-ai' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          VITE_AI_APPCHECK_DEBUG: 'true'
         run: |
           set -euo pipefail
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools@latest deploy --only hosting --project ccu-notebook --non-interactive --config firebase.json
+          npx firebase-tools@latest hosting:channel:deploy task2-preview --expires 7d --project ccu-notebook --non-interactive --config firebase.json
 
       - name: Upload CardioVault Web App
         uses: actions/upload-artifact@v4
