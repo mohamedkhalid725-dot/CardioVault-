@@ -44,7 +44,7 @@ const firebaseConfig = {
 // The native Android/iOS builds use the Capacitor Firebase plugins.
 // Do not initialize Firebase Web Auth/Firestore/Storage inside the native WebView.
 // Keeping the Web SDK lazy also prevents IndexedDB persistence from touching startup.
-const app: FirebaseApp = initializeApp(firebaseConfig);
+export const firebaseApp: FirebaseApp = initializeApp(firebaseConfig);
 
 let webAuthInstance: Auth | null = null;
 let webStorageInstance: FirebaseStorage | null = null;
@@ -59,7 +59,7 @@ function assertWebPlatform(): void {
 function getWebAuth(): Auth {
   assertWebPlatform();
   if (!webAuthInstance) {
-    webAuthInstance = initializeAuth(app, {
+    webAuthInstance = initializeAuth(firebaseApp, {
       persistence: [indexedDBLocalPersistence, browserLocalPersistence],
       popupRedirectResolver: browserPopupRedirectResolver,
     });
@@ -69,14 +69,14 @@ function getWebAuth(): Auth {
 
 function getWebStorage(): FirebaseStorage {
   assertWebPlatform();
-  if (!webStorageInstance) webStorageInstance = getStorage(app);
+  if (!webStorageInstance) webStorageInstance = getStorage(firebaseApp);
   return webStorageInstance;
 }
 
 function getWebDb(): Firestore {
   assertWebPlatform();
   if (!webDbInstance) {
-    webDbInstance = initializeFirestore(app, {
+    webDbInstance = initializeFirestore(firebaseApp, {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
   }
