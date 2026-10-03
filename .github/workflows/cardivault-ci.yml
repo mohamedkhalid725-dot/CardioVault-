@@ -377,6 +377,17 @@ jobs:
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
           npx firebase-tools@latest hosting:channel:deploy task2-preview --expires 7d --project ccu-notebook --non-interactive --config firebase.json
 
+      - name: Deploy CardioVault Web App to Firebase Hosting live
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref != 'refs/heads/task2-firebase-ai' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          VITE_AI_APPCHECK_DEBUG: 'false'
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          npx firebase-tools@latest deploy --only hosting --project ccu-notebook --non-interactive --config firebase.json
+
       - name: Upload CardioVault Web App
         uses: actions/upload-artifact@v4
         with:
