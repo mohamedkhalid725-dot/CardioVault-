@@ -32,8 +32,7 @@ export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,show
     if(mode==='create'&&password!==confirmPassword){const message='Password confirmation does not match.';setEmailError(message);showToast(message,'error');return;}
     setBusy(true);
     try{
-      console.info('[CardioVault] Email auth handler running:',mode,cleanEmail);
-      console.info('[CardioVault] Calling Firebase email authentication:',mode==='create'?'createUserWithEmailAndPassword':'signInWithEmailAndPassword');
+
       const result=Capacitor.isNativePlatform()
         ?(mode==='create'?await FirebaseAuthentication.createUserWithEmailAndPassword({email:cleanEmail,password}):await FirebaseAuthentication.signInWithEmailAndPassword({email:cleanEmail,password}))
         :{user:mode==='create'?await webEmailCreate(cleanEmail,password):await webEmailSignIn(cleanEmail,password)};
