@@ -3,6 +3,8 @@ import {FlaskConical,Plus,Trash2,ChevronDown,ChevronUp,X} from 'lucide-react';
 import {LabResult,Patient} from '../../../types/clinical';
 import {useApp} from '../../../context/AppContext';
 import {getSharedLabLibrary,saveSharedLabTemplate} from '../../../services/departmentLibraryService';
+import {analyzeLabImage,type ExtractedLabResult} from '../../../services/aiLogic';
+import {AIDataWarning} from '../AIDataWarning';
 interface Props{patient:Patient} type TestDef={name:string;unit:string;min?:number;max?:number;referenceRange?:string};type PatientLabs=Patient&{customLabTests?:string[];customLabTestDefinitions?:TestDef[]};
 const defs=(a:Array<[string,string,number?,number?]>):TestDef[]=>a.map(([name,unit,min,max])=>({name,unit,min,max}));
 const TESTS:Record<string,TestDef[]>={
@@ -30,7 +32,7 @@ export const LabsSection:React.FC<Props>=({patient})=>{
  const customDefs=Array.isArray(p.customLabTestDefinitions)?p.customLabTestDefinitions:[];
  const customNames=Array.from(new Set([...(p.customLabTests||[]),...customDefs.map(x=>x.name)]));
  const panelNames=['CBC',...Object.keys(TESTS).filter(x=>x!=='CBC'),'Custom Lab'];
- const[sharedCustomDefs,setSharedCustomDefs]=useState<TestDef[]>([]);useEffect(()=>{void getSharedLabLibrary().then(rows=>setSharedCustomDefs(rows));},[]);const[filter,setFilter]=useState('All');const[panel,setPanel]=useState('CBC');const[values,setValues]=useState<Record<string,string>>({});const[showEntry,setShowEntry]=useState(false);const[showCustom,setShowCustom]=useState(false);const[customRows,setCustomRows]=useState<TestDef[]>([{name:'',unit:'',referenceRange:''}]);const[historyOpen,setHistoryOpen]=useState<Record<string,boolean>>({});const[expandedPanels,setExpandedPanels]=useState<Record<string,boolean>>({});
+ const[sharedCustomDefs,setSharedCustomDefs]=useState<TestDef[]>([]); const aiInputRef=useRef<HTMLInputElement|null>(null); const[aiBusy,setAiBusy]=useState(false); const[aiDraft,setAiDraft]=useState<ExtractedLabResult[]>([]); const[aiPanel,setAiPanel]=useState(''); const[aiNotes,setAiNotes]=useState<string[]>([]);useEffect(()=>{void getSharedLabLibrary().then(rows=>setSharedCustomDefs(rows));},[]);const[filter,setFilter]=useState('All');const[panel,setPanel]=useState('CBC');const[values,setValues]=useState<Record<string,string>>({});const[showEntry,setShowEntry]=useState(false);const[showCustom,setShowCustom]=useState(false);const[customRows,setCustomRows]=useState<TestDef[]>([{name:'',unit:'',referenceRange:''}]);const[historyOpen,setHistoryOpen]=useState<Record<string,boolean>>({});const[expandedPanels,setExpandedPanels]=useState<Record<string,boolean>>({});
  const allCustomDefs=useMemo(()=>{const map=new Map<string,TestDef>();[...customDefs,...sharedCustomDefs].forEach(x=>map.set(normalize(x.name),x));return [...map.values()];},[customDefs,sharedCustomDefs]);
  const definitions=useMemo(()=>panel==='Custom Lab'?allCustomDefs:TESTS[panel]||[],[panel,allCustomDefs]);
  const groupedPanels=useMemo(()=>{
