@@ -273,7 +273,8 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
               {audioBlob && <button type="button" onClick={clearRecording} disabled={saving || recordingBusy} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:opacity-40">Clear</button>}
             </div>
           </div>
-          {audioUrl && <audio controls src={audioUrl} className="w-full mt-3" />}\n          {audioBlob && <button type="button" onClick={() => void transcribeWithAI()} disabled={aiBusy || saving || recording} className="mt-3 px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-50">{aiBusy?<Loader2 className="w-4 h-4 animate-spin"/>:<Sparkles className="w-4 h-4"/>}{aiBusy?"Transcribing…":"Convert to Medical English"}</button>}
+          {audioUrl && <audio controls src={audioUrl} className="w-full mt-3" />}
+          {audioBlob && <button type="button" onClick={() => void transcribeWithAI()} disabled={aiBusy || saving || recording} className="mt-3 px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-50">{aiBusy?<Loader2 className="w-4 h-4 animate-spin"/>:<Sparkles className="w-4 h-4"/>}{aiBusy?"Transcribing…":"Convert to Medical English"}</button>}
         </div>
 
         {aiDraft && <div className="mt-3 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-3"><div className="text-[10px] font-bold text-violet-600 dark:text-violet-300 mb-1">AI draft — review/edit before saving</div><textarea value={aiDraft} onChange={e=>setAiDraft(e.target.value)} disabled={saving || recording} className="w-full min-h-[130px] rounded-xl bg-white dark:bg-slate-900 px-3 py-2 text-sm border border-violet-500/20"/></div>}
