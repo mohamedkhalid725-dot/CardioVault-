@@ -2,7 +2,7 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [main, department-system-v1, build-972-clean, task1-email-auth]
+    branches: [main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai]
   pull_request:
     branches: [main, department-system-v1]
   workflow_dispatch:
@@ -16,6 +16,8 @@ env:
   HAS_CARDIOVAULT_DEBUG_KEYSTORE: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_BASE64 }}
   HAS_CARDIOVAULT_RELEASE_KEYSTORE: ${{ secrets.CARDIOVAULT_RELEASE_KEYSTORE_BASE64 }}
   HAS_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+  VITE_AI_TEST_DATA_ONLY: 'true'
+  VITE_AI_APPCHECK_DEBUG: 'true'
 
 jobs:
   validate:
