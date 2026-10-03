@@ -27,9 +27,9 @@ export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,show
   const handleEmailAuth=async(e:React.FormEvent)=>{
     e.preventDefault();
     const cleanEmail=email.trim().toLowerCase();
-    if(!cleanEmail||!password){showToast('Enter your email and password.','error');return;}
-    if(password.length<6){showToast('Password must be at least 6 characters.','error');return;}
-    if(mode==='create'&&password!==confirmPassword){showToast('Password confirmation does not match.','error');return;}
+    if(!cleanEmail||!password){const message='Enter your email and password.';setEmailError(message);showToast(message,'error');return;}
+    if(password.length<6){const message='Password must be at least 6 characters.';setEmailError(message);showToast(message,'error');return;}
+    if(mode==='create'&&password!==confirmPassword){const message='Password confirmation does not match.';setEmailError(message);showToast(message,'error');return;}
     setBusy(true);
     try{
       console.info('[CardioVault] Email auth handler running:',mode,cleanEmail);
