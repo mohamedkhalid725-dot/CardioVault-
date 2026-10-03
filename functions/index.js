@@ -126,7 +126,7 @@ exports.analyzeClinicalPatient = onRequest(
     secrets: [geminiApiKey],
     timeoutSeconds: 120,
     memory: '512MiB',
-    cors: true,
+    cors: false,
   },
   async (req, res) => {
     cors(req, res);
