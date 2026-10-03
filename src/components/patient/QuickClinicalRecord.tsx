@@ -28,6 +28,15 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const [duration, setDuration] = useState(0);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiDraft, setAiDraft] = useState('');
+  const [voiceError, setVoiceError] = useState('');
+  const shownVoiceErrorsRef = useRef<Set<string>>(new Set());
+
+  const reportVoiceError = (error: any, fallback: string) => {
+    const message = String(error?.message || error?.code || fallback);
+    if (shownVoiceErrorsRef.current.has(message)) return;
+    shownVoiceErrorsRef.current.add(message);
+    setVoiceError(message);
+  };
 
   const webRecorderRef = useRef<MediaRecorder | null>(null);
   const webChunksRef = useRef<Blob[]>([]);
@@ -98,7 +107,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
       showToast('Voice recording started.', 'info');
     } catch (error: any) {
       console.error('Voice recording start failed:', error);
-      showToast(String(error?.message || error?.code || 'Unable to start voice recording.'), 'error');
+      reportVoiceError(error, 'Unable to start voice recording.');
       stopTimer();
     } finally {
       setRecordingBusy(false);
@@ -129,7 +138,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
     } catch (error: any) {
       console.error('Voice recording stop failed:', error);
       setRecording(false);
-      showToast(String(error?.message || error?.code || 'Unable to stop voice recording.'), 'error');
+      reportVoiceError(error, 'Unable to stop voice recording.');
     } finally {
       setRecordingBusy(false);
     }
@@ -143,7 +152,19 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
     setDuration(0);
   };
 
-  const transcribeWithAI = async () => { if (!audioBlob || aiBusy) return; setAiBusy(true); try { const result = await transcribeMedicalVoice(audioBlob); setAiDraft(result.medicalEnglish || result.transcription || ''); showToast('AI transcription is ready for review. Nothing was saved automatically.','success'); } catch (error:any) { showToast(String(error?.message || 'AI voice transcription failed.'),'error'); } finally { setAiBusy(false); } };
+  const transcribeWithAI = async () => {
+    if (!audioBlob || aiBusy) return;
+    setAiBusy(true);
+    try {
+      const result = await transcribeMedicalVoice(audioBlob);
+      setAiDraft(result.medicalEnglish || result.transcription || '');
+      showToast('AI transcription is ready for review. Nothing was saved automatically.','success');
+    } catch (error:any) {
+      reportVoiceError(error, 'AI voice transcription failed.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const save = async () => {
     if (saving || recording) return;
@@ -193,7 +214,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
       onClose();
     } catch (error: any) {
       console.error('Quick clinical record save failed:', error);
-      showToast(String(error?.message || 'Clinical record could not be saved.'), 'error');
+      reportVoiceError(error, 'Clinical record could not be saved.');
     } finally {
       setSaving(false);
     }
@@ -220,6 +241,19 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
         </label>
 
         <AIDataWarning compact />
+        {voiceError && (
+          <div role="alert" className="mt-3 rounded-2xl border border-rose-300 bg-rose-50 dark:bg-rose-950/30 dark:border-rose-800 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-extrabold text-rose-700 dark:text-rose-300">Voice / AI error</div>
+                <div className="mt-1 text-xs leading-5 text-rose-700 dark:text-rose-200 break-words">{voiceError}</div>
+              </div>
+              <button type="button" onClick={() => setVoiceError('')} className="shrink-0 p-1 rounded-lg text-rose-600 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40" aria-label="Dismiss error">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
         <div className="mt-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
           <div className="flex items-center justify-between gap-2">
             <div>
