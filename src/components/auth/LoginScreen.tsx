@@ -5,17 +5,13 @@ import {useApp}from'../../context/AppContext';
 import {Capacitor}from'@capacitor/core';
 import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {webEmailSignIn,webEmailCreate}from'../../services/webFirebase';
-import {isMasterAccount,ensureOwnerWorkspace,setStoredWorkspaceAccess} from '../../services/workspaceAccess';
+import {setStoredWorkspaceAccess} from '../../services/workspaceAccess';
 import {AuthorizationService} from '../../services/authorizationService';
 
 async function waitForNativeGoogleUser():Promise<any|null>{for(let attempt=0;attempt<12;attempt+=1){try{const pending=await FirebaseAuthentication.getPendingAuthResult();if(pending?.user?.email)return pending.user;}catch{}try{const current=await FirebaseAuthentication.getCurrentUser();if(current?.user?.email)return current.user;}catch{}await new Promise(resolve=>window.setTimeout(resolve,350));}return null;}
 
 export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,showToast}=useApp();const[mode,setMode]=useState<'options'|'email'|'create'>('options');const[email,setEmail]=useState('');const[password,setPassword]=useState('');const[confirmPassword,setConfirmPassword]=useState('');const[busy,setBusy]=useState(false);
- const finishFirebaseAccount=async(user:any,successMessage:string)=>{if(!user?.email||!user?.uid)throw new Error('Firebase returned no user account.');localStorage.setItem('cardiovault_google_uid',user.uid);setStoredWorkspaceAccess(null);const profile=AuthorizationService.resolveUserForFirebaseAuth(user);loginWithEmail(user.email);showToast(successMessage,'success');try{if(await isMasterAccount()){await ensureOwnerWorkspace();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}}catch(error){console.warn('Master workspace bootstrap after sign-in failed:',error);}
-   // Non-master accounts must pass UnitAccessGate before any workspace/cloud data is restored.
-   // Do not dispatch workspace access here: an existing membership must not bypass the
-   // first-login Unit Access Code + clinical profile flow.
- };
+ const finishFirebaseAccount=async(user:any,successMessage:string)=>{if(!user?.email||!user?.uid)throw new Error('Firebase returned no user account.');setStoredWorkspaceAccess(null);await loginWithEmail(user.email,user);showToast(successMessage,'success');};
   const handleGoogleLogin=async()=>{
     setBusy(true);
     try{
