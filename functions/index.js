@@ -17,8 +17,17 @@ function json(res, status, body) {
   res.status(status).set('Content-Type', 'application/json; charset=utf-8').send(JSON.stringify(body));
 }
 
-function cors(res) {
-  res.set('Access-Control-Allow-Origin', '*');
+function cors(req, res) {
+  const origin = String(req.get('origin') || '');
+  const allowedOrigins = new Set([
+    'https://mohamedkhalid725-dot.github.io',
+    'http://localhost:5173',
+    'http://localhost:4173',
+    'https://localhost',
+    'http://localhost',
+  ]);
+  if (allowedOrigins.has(origin)) res.set('Access-Control-Allow-Origin', origin);
+  res.set('Vary', 'Origin');
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
 }
@@ -120,7 +129,7 @@ exports.analyzeClinicalPatient = onRequest(
     cors: true,
   },
   async (req, res) => {
-    cors(res);
+    cors(req, res);
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { error: 'POST required.' });
     if (requestSize(req) > MAX_BODY_BYTES) return json(res, 413, { error: 'Patient record is too large for AI analysis.' });
