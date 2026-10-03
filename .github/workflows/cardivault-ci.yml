@@ -329,6 +329,17 @@ jobs:
           # must not make the release shrinker fail.
           -dontwarn com.facebook.**
           PROGUARD
+      - name: Assert release APK App Check debug mode is disabled
+        env:
+          VITE_AI_APPCHECK_DEBUG: 'false'
+        run: |
+          set -euo pipefail
+          if [ "$VITE_AI_APPCHECK_DEBUG" = "true" ]; then
+            echo "SECURITY CHECK FAILED: App Check debug mode is enabled for the release APK build."
+            exit 1
+          fi
+          echo "Release APK App Check debug mode: disabled."
+
       - name: Build hardened release bundle and APK
         working-directory: android
         env:
@@ -380,7 +391,7 @@ jobs:
           VITE_CARDIOVAULT_PREVIEW: 'true'
         run: npm run build
       - name: Deploy CardioVault Web App to Firebase Hosting preview channel
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip') }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix') }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VITE_AI_APPCHECK_DEBUG: 'true'
