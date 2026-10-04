@@ -408,7 +408,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Build preview web bundle with App Check debug provider (legacy branches)
-        if: ${{ github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-appcheck-enterprise-web' }}
+        if: ${{ github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-web' }}
         env:
           VITE_AI_APPCHECK_DEBUG: 'true'
           VITE_CARDIOVAULT_PREVIEW: 'true'
@@ -422,7 +422,7 @@ jobs:
           VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ secrets.FIREBASE_STAGING_APPCHECK_RECAPTCHA_SITE_KEY }}
         run: npm run build
       - name: Deploy CardioVault Web App to Firebase Hosting preview channel
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix') }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-staging') }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VITE_AI_APPCHECK_DEBUG: ${{ github.ref == 'refs/heads/task2-appcheck-enterprise-staging' && 'false' || 'true' }}
