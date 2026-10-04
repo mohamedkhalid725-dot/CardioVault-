@@ -2,6 +2,7 @@ import React,{useEffect,useState}from'react';
 import {Check,ClipboardList,Edit3,Save,X}from'lucide-react';
 import {useApp}from'../../context/AppContext';
 import {Patient}from'../../types/clinical';
+import { VoiceDictationButton } from './VoiceDictationButton';
 
 interface Props{patient:Patient;readOnly?:boolean;onClose:()=>void;}
 type Draft={situation:string;background:string;assessment:string;recommendation:string};
