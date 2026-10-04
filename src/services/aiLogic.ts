@@ -347,7 +347,7 @@ export async function analyzeLabImage(file: Blob): Promise<{ panel: string; resu
   return parseJson(generated.text, generated.model);
 }
 
-export async function transcribeMedicalVoice(audio: Blob): Promise<{ transcription: string; medicalEnglish: string; notes: string[] }> {
+export async function transcribeMedicalVoice(audio: Blob): Promise<{ transcription: string; medicalEnglish: string; notes: string[]; model: string }> {
   const mimeType = audio.type || 'audio/webm';
   const supported = ['audio/aac','audio/flac','audio/mp3','audio/m4a','audio/mpeg','audio/mpga','audio/mp4','audio/opus','audio/pcm','audio/wav','audio/webm'];
   if (!supported.some((x) => mimeType.toLowerCase().startsWith(x))) throw new Error('Unsupported audio format: ' + mimeType);
