@@ -190,6 +190,7 @@ export async function webLoadCurrentUserFromCloud(){
 export async function webSyncCurrentUserNow(){
   const user=webCurrentUser(); if(!user?.uid)return false;
   try{
+    setSyncPending(true);
     const access=await accessForUser(user.uid);
     if(!access){
       localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
