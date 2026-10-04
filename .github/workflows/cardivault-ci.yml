@@ -2,7 +2,7 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai, task2-appcheck-preview-skip, task2-appcheck-debug-provider-fix, task2-appcheck-enterprise-web, task2-appcheck-enterprise-staging, task2-voice-hardened-staging]
+    branches: [task2-voice-hardened-staging, main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai, task2-appcheck-preview-skip, task2-appcheck-debug-provider-fix, task2-appcheck-enterprise-web, task2-appcheck-enterprise-staging]
   pull_request:
     branches: [main, department-system-v1]
   workflow_dispatch:
