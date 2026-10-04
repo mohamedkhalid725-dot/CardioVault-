@@ -27,9 +27,16 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const [audioUrl, setAudioUrl] = useState('');
   const [duration, setDuration] = useState(0);
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiCooldownSeconds, setAiCooldownSeconds] = useState(0);
   const [aiDraft, setAiDraft] = useState('');
   const [voiceError, setVoiceError] = useState<{ message: string; technical: AITechnicalDetails } | null>(null);
   const shownVoiceErrorsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (aiCooldownSeconds <= 0) return;
+    const timer = window.setInterval(() => setAiCooldownSeconds((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [aiCooldownSeconds]);
 
   const reportVoiceError = (error: any, fallback: string) => {
     const technical: AITechnicalDetails = error?.details || {
@@ -167,6 +174,8 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
       setAiDraft(result.medicalEnglish || result.transcription || '');
       showToast('AI transcription is ready for review. Nothing was saved automatically.','success');
     } catch (error:any) {
+      const retryAfter = Number(error?.details?.retryAfterSeconds || 0);
+      if (error?.details?.httpStatus === 429 && retryAfter > 0) setAiCooldownSeconds(retryAfter);
       reportVoiceError(error, 'AI voice transcription failed.');
     } finally {
       setAiBusy(false);
@@ -290,7 +299,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
             </div>
           </div>
           {audioUrl && <audio controls src={audioUrl} className="w-full mt-3" />}
-          {audioBlob && <button type="button" onClick={() => void transcribeWithAI()} disabled={aiBusy || saving || recording} className="mt-3 px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-50">{aiBusy?<Loader2 className="w-4 h-4 animate-spin"/>:<Sparkles className="w-4 h-4"/>}{aiBusy?"Transcribing…":"Convert to Medical English"}</button>}
+          {audioBlob && <button type="button" onClick={() => void transcribeWithAI()} disabled={aiBusy || saving || recording || aiCooldownSeconds > 0} className="mt-3 px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-50">{aiBusy?<Loader2 className="w-4 h-4 animate-spin"/>:<Sparkles className="w-4 h-4"/>}{aiBusy?"Transcribing…":aiCooldownSeconds>0?`AI limit reached, try again in ~${aiCooldownSeconds} seconds`:"Convert to Medical English"}</button>}
         </div>
 
         {aiDraft && <div className="mt-3 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-3"><div className="text-[10px] font-bold text-violet-600 dark:text-violet-300 mb-1">AI draft — review/edit before saving</div><textarea value={aiDraft} onChange={e=>setAiDraft(e.target.value)} disabled={saving || recording} className="w-full min-h-[130px] rounded-xl bg-white dark:bg-slate-900 px-3 py-2 text-sm border border-violet-500/20"/></div>}
