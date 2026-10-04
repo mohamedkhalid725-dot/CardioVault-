@@ -5,7 +5,7 @@ import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { uploadClinicalMedia } from '../../services/mediaStorage';
 import { Patient, ProgressNote } from '../../types/clinical';
 import { useApp } from '../../context/AppContext';
-import { transcribeMedicalVoice } from '../../services/aiLogic';
+import { AITechnicalDetails, transcribeMedicalVoice } from '../../services/aiLogic';
 import { AIDataWarning } from './AIDataWarning';
 
 interface Props { patient: Patient; onClose: () => void; }
@@ -28,14 +28,21 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const [duration, setDuration] = useState(0);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiDraft, setAiDraft] = useState('');
-  const [voiceError, setVoiceError] = useState('');
+  const [voiceError, setVoiceError] = useState<{ message: string; technical: AITechnicalDetails } | null>(null);
   const shownVoiceErrorsRef = useRef<Set<string>>(new Set());
 
   const reportVoiceError = (error: any, fallback: string) => {
-    const message = String(error?.message || error?.code || fallback);
-    if (shownVoiceErrorsRef.current.has(message)) return;
-    shownVoiceErrorsRef.current.add(message);
-    setVoiceError(message);
+    const technical: AITechnicalDetails = error?.details || {
+      category: 'unknown',
+      code: 'CLIENT_ERROR',
+      httpStatus: null,
+      model: '—',
+    };
+    const message = String(error?.message || fallback);
+    const key = technical.code + ':' + technical.category + ':' + technical.httpStatus + ':' + technical.model;
+    if (shownVoiceErrorsRef.current.has(key)) return;
+    shownVoiceErrorsRef.current.add(key);
+    setVoiceError({ message, technical });
   };
 
   const webRecorderRef = useRef<MediaRecorder | null>(null);
@@ -244,11 +251,20 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
         {voiceError && (
           <div role="alert" className="mt-3 rounded-2xl border border-rose-300 bg-rose-50 dark:bg-rose-950/30 dark:border-rose-800 p-3">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs font-extrabold text-rose-700 dark:text-rose-300">Voice / AI error</div>
-                <div className="mt-1 text-xs leading-5 text-rose-700 dark:text-rose-200 break-words">{voiceError}</div>
+                <div className="mt-1 text-xs leading-5 text-rose-700 dark:text-rose-200 break-words">{voiceError.message}</div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[11px] font-bold text-rose-700 dark:text-rose-300">Technical details</summary>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-rose-800 dark:text-rose-200">
+                    <div><span className="font-bold">Category</span><div>{voiceError.technical.category}</div></div>
+                    <div><span className="font-bold">Code</span><div>{voiceError.technical.code}</div></div>
+                    <div><span className="font-bold">HTTP status</span><div>{voiceError.technical.httpStatus ?? '—'}</div></div>
+                    <div><span className="font-bold">Model</span><div className="break-all">{voiceError.technical.model}</div></div>
+                  </div>
+                </details>
               </div>
-              <button type="button" onClick={() => setVoiceError('')} className="shrink-0 p-1 rounded-lg text-rose-600 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40" aria-label="Dismiss error">
+              <button type="button" onClick={() => setVoiceError(null)} className="shrink-0 p-1 rounded-lg text-rose-600 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40" aria-label="Dismiss error">
                 <X className="w-4 h-4" />
               </button>
             </div>
