@@ -414,7 +414,7 @@ jobs:
           VITE_CARDIOVAULT_PREVIEW: 'true'
         run: npm run build
       - name: Build staging Enterprise preview web bundle
-        if: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging') }}
+        if: ${{ github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging' }}
         env:
           VITE_AI_APPCHECK_DEBUG: 'false'
           VITE_CARDIOVAULT_PREVIEW: 'true'
@@ -422,13 +422,13 @@ jobs:
           VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ secrets.FIREBASE_STAGING_APPCHECK_RECAPTCHA_SITE_KEY }}
         run: npm run build
       - name: Deploy CardioVault Web App to Firebase Hosting preview channel
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging') }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging') }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          VITE_AI_APPCHECK_DEBUG: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging') && 'false' || 'true' }}
+          VITE_AI_APPCHECK_DEBUG: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging') && 'false' || 'true' }}
           VITE_CARDIOVAULT_PREVIEW: 'true'
-          VITE_FIREBASE_APP_ID: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging') && secrets.FIREBASE_STAGING_APP_ID || '' }}
-          VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging') && secrets.FIREBASE_STAGING_APPCHECK_RECAPTCHA_SITE_KEY || env.VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY }}
+          VITE_FIREBASE_APP_ID: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging') && secrets.FIREBASE_STAGING_APP_ID || '' }}
+          VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging') && secrets.FIREBASE_STAGING_APPCHECK_RECAPTCHA_SITE_KEY || env.VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY }}
         run: |
           set -euo pipefail
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
