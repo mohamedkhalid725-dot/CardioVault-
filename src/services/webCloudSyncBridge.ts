@@ -9,8 +9,12 @@ const SCHEMA_VERSION=12;
 const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
 const LAST_ERROR_KEY='cardiovault_last_cloud_sync_error';
 const LAST_ERROR_DETAIL_KEY='cardiovault_last_cloud_sync_error_detail';
+const SYNC_PENDING_KEY='cardiovault_cloud_sync_pending';
+const SYNC_EVENT='cardiovault-cloud-sync-state';
 const path=(workspace:string,collection:string)=>`workspaces/${workspace}/${collection}`;
 const safe=(v:any):any=>JSON.parse(JSON.stringify(v??null));
+const setSyncPending=(pending:boolean)=>{try{if(pending)localStorage.setItem(SYNC_PENDING_KEY,'1');else localStorage.removeItem(SYNC_PENDING_KEY);}catch{};try{window.dispatchEvent(new CustomEvent(SYNC_EVENT,{detail:{pending}}));}catch{}};
+const isSyncPending=()=>localStorage.getItem(SYNC_PENDING_KEY)==='1';
 const withTimeout=<T,>(promise:Promise<T>,timeoutMs=15000):Promise<T>=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Cloud sync operation timed out.')),timeoutMs);promise.then(v=>{clearTimeout(timer);resolve(v);},e=>{clearTimeout(timer);reject(e);});});
 
 
@@ -147,6 +151,7 @@ async function migrateAllLegacyMembersIntoWorkspace(workspaceId:string):Promise<
 export async function webLoadCurrentUserFromCloud(){
   const user=webCurrentUser(); if(!user?.uid)return null;
   try{
+    setSyncPending(true);
     const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role==='owner'){try{await migrateAllLegacyMembersIntoWorkspace(access.workspaceId);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member workspace migration failed:',error);}}else if(access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
     let units:any[]=[],beds:any[]=[],patients:any[]=[];
     if(access.role==='owner'){
@@ -174,7 +179,7 @@ export async function webLoadCurrentUserFromCloud(){
     localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
     try { StorageService.saveUnits(units); StorageService.saveBeds(beds); StorageService.savePatients(patients); }
     finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
-    localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_DETAIL_KEY);
+    localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString()); localStorage.removeItem(LAST_ERROR_KEY); localStorage.removeItem(LAST_ERROR_DETAIL_KEY); setSyncPending(false);
     return {uid:user.uid,found:!!(units.length||beds.length||patients.length),access};
   }catch(error:any){
     localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
@@ -213,8 +218,8 @@ export async function webSyncCurrentUserNow(){
     if(access.role==='owner')await sync('units',StorageService.getUnits(),false);
     await sync('beds',StorageService.getBeds(),access.role!=='owner');
     await sync('patients',StorageService.getPatients(),access.role!=='owner');
-    localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);return true;
-  }catch(error:any){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));return false;}
+    localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);setSyncPending(false);return true;
+  }catch(error:any){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));setSyncPending(true);return false;}
 }
 
 
@@ -231,6 +236,7 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
     if (!access) return () => {};
 
     const persistCollection = (name:'units'|'beds'|'patients', snap:any) => {
+      if (isSyncPending()) return;
       let values:any[] = snap.docs.map((d:any)=>({...d.data(), id:d.id}));
       if (name==='units') values=stripLegacyDemoData(values, [], []).units;
       if (name==='beds') values=stripLegacyDemoData([], values, []).beds;
@@ -260,9 +266,10 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
     const listenCollection = (name:'units'|'beds'|'patients', unitId?:string) => {
       const ref = webCollection(path(access.workspaceId,name));
       const target = unitId ? query(ref, where('unitId','==',unitId)) : ref;
-      const unsubscribe = onSnapshot(target, snap => persistCollection(name,snap), error => {
+      const unsubscribe = onSnapshot(target, {includeMetadataChanges:true}, snap => persistCollection(name,snap), error => {
         localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
         localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+        setSyncPending(true);
       });
       webRealtimeUnsubscribes.push(unsubscribe);
     };
