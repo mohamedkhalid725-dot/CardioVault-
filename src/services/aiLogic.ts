@@ -2,7 +2,7 @@ import { FirebaseAppCheck } from '@capacitor-firebase/app-check';
 import { Capacitor } from '@capacitor/core';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
-import { getRemoteConfig, fetchAndActivate, getString, setConfigSettings, setDefaults } from 'firebase/remote-config';
+import { getRemoteConfig, fetchAndActivate, getString } from 'firebase/remote-config';
 import { firebaseApp } from './webFirebase';
 import { AI_CLIENT_RATE_LIMIT, AI_CLIENT_RATE_WINDOW_MS, AI_DATA_WARNING_PLACEHOLDER, AI_FALLBACK_MODEL, AI_IMAGE_JPEG_QUALITY, AI_IMAGE_MAX_DIMENSION, AI_MAX_RETRIES, AI_MODEL, AI_REMOTE_CONFIG_FALLBACK_KEY, AI_RETRY_DELAYS_MS, AI_TEST_DATA_ONLY } from '../config/aiConfig';
 
@@ -54,8 +54,8 @@ async function getRemoteFallbackModel(): Promise<string> {
   if (!remoteFallbackPromise) {
     remoteFallbackPromise = (async () => {
       const remoteConfig = getRemoteConfig(firebaseApp);
-      setConfigSettings(remoteConfig, { minimumFetchIntervalMillis: 60 * 60 * 1000, fetchTimeoutMillis: 5000 });
-      setDefaults(remoteConfig, { [AI_REMOTE_CONFIG_FALLBACK_KEY]: AI_FALLBACK_MODEL });
+      remoteConfig.settings = { minimumFetchIntervalMillis: 60 * 60 * 1000, fetchTimeoutMillis: 5000 };
+      remoteConfig.defaultConfig = { [AI_REMOTE_CONFIG_FALLBACK_KEY]: AI_FALLBACK_MODEL };
       try { await fetchAndActivate(remoteConfig); } catch { /* keep the safe in-app default */ }
       const configured = getString(remoteConfig, AI_REMOTE_CONFIG_FALLBACK_KEY).trim();
       return configured === AI_FALLBACK_MODEL ? configured : AI_FALLBACK_MODEL;
@@ -168,12 +168,6 @@ function parseJson<T>(raw: string): T {
   try { return JSON.parse(cleaned) as T; } catch { throw new Error('AI returned an invalid structured response. Please try again.'); }
 }
 
-async function generate(parts: any[]): Promise<string> {
-  await initializeCardioVaultAppCheck();
-  assertClientRateLimit();
-  const result = await getModel().generateContent(parts);
-  return result.response.text();
-}
 
 export interface ExtractedLabResult {
   testName: string;
