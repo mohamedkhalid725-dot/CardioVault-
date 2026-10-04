@@ -371,7 +371,7 @@ export async function transcribeMedicalVoice(audio: Blob): Promise<{ transcripti
   ].join('\n');
   const generated = await generate([{ inlineData: { data, mimeType } }, prompt]);
   const parsed = parseJson<any>(generated.text, generated.model);
-  return normalizeVoiceResult(parsed, generated.model);
+  return { ...normalizeVoiceResult(parsed, generated.model), model: generated.model };
 }
 
 export function aiUsesTestDataOnly(): boolean { return AI_TEST_DATA_ONLY; }
