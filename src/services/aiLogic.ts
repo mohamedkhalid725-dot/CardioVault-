@@ -203,19 +203,20 @@ export async function transcribeMedicalVoice(audio: Blob): Promise<{ transcripti
   if (audio.size > 15 * 1024 * 1024) throw new Error('The voice recording is too large. Please record a shorter note.');
   const data = await blobToBase64(audio);
   const prompt = [
-    'You are CardioVault medical voice transcription assistant.',
-    'First transcribe exactly what is spoken, including Arabic-English clinical terms as heard.',
-    'Then convert the transcription into concise professional medical English while staying as close as possible to the spoken wording.',
-    'STRICT FACT-PRESERVATION RULE: Never add, infer, assume, interpret, normalize, correct, negate, or omit any clinical fact that was not explicitly spoken.',
-    'Never add or infer a condition, diagnosis, symptom, medication, dose, unit, number, vital sign, laboratory result, duration, date, time, chronology, or clinical status.',
-    'Never create a negative statement such as “no diabetes”, “non-diabetic”, “not hypertensive”, or “no medication” unless that exact negative meaning was explicitly spoken.',
-    'Never convert silence or missing information into a normal/negative finding. If diabetes, hypertension, a medication, a dose, or a number was not spoken, do not mention it.',
-    'Preserve every spoken number, dose, unit, medication name, condition, and negation exactly in meaning. Do not change a number or dose because it seems medically unusual.',
-    'Medical English may improve grammar and terminology only when the meaning is explicit in the spoken words; it must not add clinical interpretation.',
-    'If a phrase or number is unclear, preserve the uncertainty and mark it as [unclear] rather than guessing.',
-    'Return JSON only with transcription, medicalEnglish, notes[].',
-    'Do not identify or reproduce any patient name, national ID, MRN, address, phone number, or other identifier.',
-    'This is a test-data-only development build.',
+    'You are CardioVault medical voice transcription assistant for physician documentation.',
+    'The physician may speak Egyptian Arabic, Modern Standard Arabic, English, or mixed Arabic-English. First transcribe only the words actually spoken, preserving the spoken meaning, numbers, units, drug names, abbreviations, anatomy, chronology, and explicit negations.',
+    'Then convert that same transcription into concise professional Medical English. Medical English is a faithful restatement, not a clinical summary, interpretation, diagnosis, or completion of missing information.',
+    'HARD FACT-PRESERVATION RULE: Never add, infer, assume, interpret, normalize, correct, negate, omit, or complete any clinical fact that was not explicitly spoken.',
+    'Never infer a condition, diagnosis, symptom, medication, dose, unit, number, vital sign, laboratory result, duration, date, time, sequence, severity, chronicity, clinical status, or treatment plan from medical plausibility or from the target section/context.',
+    'The target section is context only. It MUST NOT be used to fill gaps or predict what the physician meant to say.',
+    'Never create or imply a negative statement such as “no diabetes”, “non-diabetic”, “not hypertensive”, “no allergies”, or “no medication” unless that negative meaning was explicitly spoken.',
+    'Never turn silence, omission, or missing information into normal/negative findings. If something was not spoken, leave it out.',
+    'Preserve every spoken number, decimal, dose, unit, medication name, condition, and negation exactly in meaning. Do not change an unusual value or dose because it seems medically unlikely.',
+    'Do not expand, replace, or clinically reinterpret an abbreviation unless the spoken words themselves make the intended meaning explicit. Grammar may be cleaned up, but factual meaning must remain unchanged.',
+    'If any word, number, dose, abbreviation, or clinical phrase is unclear, do not guess. Preserve the uncertainty and mark the affected part as [unclear] in the transcription and/or notes.',
+    'If the audio contains no intelligible speech, return an empty transcription and medicalEnglish with a note explaining that the speech was not intelligible.',
+    'Do not identify, reproduce, or derive any patient name, national ID, MRN, address, phone number, or other direct identifier. Use test/fake data only.',
+    'Return JSON only with exactly: transcription, medicalEnglish, notes[]. Do not return diagnosis, treatment advice, recommendations, or newly generated clinical facts.',
   ].join('\n');
   const raw = await generate([{ inlineData: { data, mimeType } }, prompt]);
   return parseJson(raw);
