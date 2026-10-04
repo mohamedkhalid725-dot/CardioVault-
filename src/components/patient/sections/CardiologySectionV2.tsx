@@ -1,5 +1,5 @@
-import React
-import { VoiceDictationButton } from '../VoiceDictationButton';, { useState } from 'react';
+import React,{useState}from'react';
+import { VoiceDictationButton } from '../VoiceDictationButton';
 import { Activity, Heart, Plus, Trash2, Pencil, Zap, TrendingUp, Cpu } from 'lucide-react';
 import { BiomarkerRecord, CardiacDevice, CathRecord, EchoReport, Patient } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
