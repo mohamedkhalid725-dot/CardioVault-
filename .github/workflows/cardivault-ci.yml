@@ -53,7 +53,7 @@ jobs:
           retention-days: 3
 
       - name: Preview web build (legacy branches only)
-        if: ${{ github.ref != 'refs/heads/task2-appcheck-enterprise-staging' && github.ref != 'refs/heads/task2-voice-hardened-staging' }}
+        if: ${{ github.ref != 'refs/heads/task2-appcheck-enterprise-staging' && github.ref != 'refs/heads/task2-voice-hardened-staging' && github.ref != 'refs/heads/phase1-mic-staging' }}
         env:
           VITE_AI_APPCHECK_DEBUG: 'true'
           VITE_CARDIOVAULT_PREVIEW: 'true'
@@ -414,7 +414,7 @@ jobs:
           VITE_CARDIOVAULT_PREVIEW: 'true'
         run: npm run build
       - name: Build staging Enterprise preview web bundle
-        if: ${{ github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging' }}
+        if: ${{ github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.ref == 'refs/heads/phase1-mic-staging' || github.head_ref == 'task2-voice-hardened-staging' }}
         env:
           VITE_AI_APPCHECK_DEBUG: 'false'
           VITE_CARDIOVAULT_PREVIEW: 'true'
@@ -422,7 +422,7 @@ jobs:
           VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ secrets.FIREBASE_STAGING_APPCHECK_RECAPTCHA_SITE_KEY }}
         run: npm run build
       - name: Deploy CardioVault Web App to Firebase Hosting preview channel
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging') }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.ref == 'refs/heads/phase1-mic-staging' || github.head_ref == 'task2-voice-hardened-staging') }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VITE_AI_APPCHECK_DEBUG: ${{ (github.ref == 'refs/heads/task2-appcheck-enterprise-staging' || github.ref == 'refs/heads/task2-voice-hardened-staging' || github.head_ref == 'task2-voice-hardened-staging') && 'false' || 'true' }}
