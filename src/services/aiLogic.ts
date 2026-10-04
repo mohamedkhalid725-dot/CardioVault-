@@ -313,6 +313,7 @@ function normalizeVoiceResult(value: any, model: string): { transcription: strin
       code: 'EMPTY_RESPONSE',
       httpStatus: null,
       model,
+      retryAfterSeconds: null,
     });
   }
   return { transcription, medicalEnglish, notes };
