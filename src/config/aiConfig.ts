@@ -8,10 +8,10 @@ export const AI_TEST_DATA_WARNING = 'Use test data only until paid tier is enabl
 export const AI_DATA_WARNING_PLACEHOLDER = AI_TEST_DATA_WARNING;
 
 // Firebase AI Logic currently documents Gemini 3.6 Flash as a stable model.
-// The documented longer-lived stable fallback is Gemini 3.5 Flash.
+// Staging fallback candidate: Gemini 3.5 Flash-Lite. Suitability is not assumed; it must be tested.
 // Do not put Gemini 2.5 model names into Remote Config.
 export const AI_MODEL = 'gemini-3.6-flash';
-export const AI_FALLBACK_MODEL = 'gemini-3.5-flash';
+export const AI_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 export const AI_REMOTE_CONFIG_FALLBACK_KEY = 'ai_fallback_model';
 
 export const AI_CLIENT_RATE_LIMIT = 10;
