@@ -72,34 +72,96 @@ function getModel(modelName: string = AI_MODEL) {
   });
 }
 
+export interface AITechnicalDetails {
+  category: 'quota' | 'busy' | 'auth_app_check' | 'network' | 'invalid_ai_response' | 'empty_response' | 'safety_filter' | 'unknown';
+  code: string;
+  httpStatus: number | null;
+  model: string;
+}
+
+class SafeAIError extends Error {
+  readonly details: AITechnicalDetails;
+  constructor(message: string, details: AITechnicalDetails) {
+    super(message);
+    this.name = 'SafeAIError';
+    this.details = details;
+  }
+}
+
 function getHttpStatus(error: unknown): number | null {
   const e = error as any;
   const candidates = [e?.status, e?.statusCode, e?.httpStatus, e?.response?.status];
   for (const candidate of candidates) {
     const n = Number(candidate);
-    if (n === 401 || n === 403 || n === 429 || n === 500 || n === 503) return n;
+    if (Number.isInteger(n) && n >= 400 && n <= 599) return n;
   }
   const text = String(e?.message || e?.code || error || '');
-  const match = text.match(/\\b(401|403|429|500|503)\\b/);
+  const match = text.match(/\b(401|403|429|500|502|503|504)\b/);
   return match ? Number(match[1]) : null;
 }
 
-function friendlyAIError(error: unknown): Error {
+function classifyAIError(error: unknown, model: string): AITechnicalDetails {
   const status = getHttpStatus(error);
-  if (status === 401 || status === 403) return new Error('AI access was denied. Please check App Check and sign-in, then try again.');
-  if (status === 429) return new Error('AI is temporarily rate-limited. Please wait a little and try again.');
-  if (status === 500 || status === 503) return new Error('The AI service is temporarily unavailable. Please try again in a moment.');
-  return new Error('AI analysis could not be completed. Please try again.');
+  const text = String((error as any)?.message || (error as any)?.code || error || '').toLowerCase();
+  if (status === 401 || status === 403 || /app.?check|unauthori[sz]ed|permission denied|forbidden/.test(text)) {
+    return { category: 'auth_app_check', code: status ? 'HTTP_' + status : 'AUTH_APPCHECK', httpStatus: status, model };
+  }
+  if (status === 429 || /quota|rate.?limit|resource exhausted/.test(text)) {
+    return { category: 'quota', code: status ? 'HTTP_' + status : 'QUOTA', httpStatus: status, model };
+  }
+  if (status === 500 || status === 502 || status === 503 || status === 504 || /service unavailable|temporarily unavailable|server error/.test(text)) {
+    return { category: 'busy', code: status ? 'HTTP_' + status : 'AI_SERVICE_BUSY', httpStatus: status, model };
+  }
+  if (/safety|blocked|block reason|prohibited|harmful/.test(text)) {
+    return { category: 'safety_filter', code: 'SAFETY_FILTER', httpStatus: status, model };
+  }
+  if (/network|failed to fetch|fetch failed|offline|timeout|timed out|connection/.test(text)) {
+    return { category: 'network', code: 'NETWORK', httpStatus: status, model };
+  }
+  return { category: 'unknown', code: 'AI_ERROR', httpStatus: status, model };
 }
 
-async function generateOnce(parts: any[], modelName: string): Promise<string> {
-  const result = await getModel(modelName).generateContent(parts);
-  return result.response.text();
+function friendlyAIError(error: unknown, model: string): SafeAIError {
+  const details = classifyAIError(error, model);
+  if (details.category === 'auth_app_check') return new SafeAIError('AI access was denied. Please check App Check and sign-in, then try again.', details);
+  if (details.category === 'quota') return new SafeAIError('AI is temporarily rate-limited. Please wait a little and try again.', details);
+  if (details.category === 'busy') return new SafeAIError('The AI service is temporarily unavailable. Please try again in a moment.', details);
+  if (details.category === 'safety_filter') return new SafeAIError('The AI request was blocked by a safety filter. Please try again with test data.', details);
+  if (details.category === 'network') return new SafeAIError('The AI request could not reach the service. Please check the connection and try again.', details);
+  return new SafeAIError('AI analysis could not be completed. Please try again.', details);
 }
 
-async function generate(parts: any[]): Promise<string> {
-  await initializeCardioVaultAppCheck();
-  assertClientRateLimit();
+export interface GeneratedAIResponse {
+  text: string;
+  model: string;
+}
+
+async function generateOnce(parts: any[], modelName: string): Promise<GeneratedAIResponse> {
+  try {
+    const result = await getModel(modelName).generateContent(parts);
+    const text = result.response.text();
+    if (!text.trim()) {
+      throw new SafeAIError('AI returned an empty response. Please try again.', {
+        category: 'empty_response',
+        code: 'EMPTY_RESPONSE',
+        httpStatus: null,
+        model: modelName,
+      });
+    }
+    return { text, model: modelName };
+  } catch (error) {
+    if (error instanceof SafeAIError) throw error;
+    throw friendlyAIError(error, modelName);
+  }
+}
+
+async function generate(parts: any[]): Promise<GeneratedAIResponse> {
+  try {
+    await initializeCardioVaultAppCheck();
+    assertClientRateLimit();
+  } catch (error) {
+    throw friendlyAIError(error, AI_MODEL);
+  }
 
   let lastError: unknown = null;
   for (let retry = 0; retry <= AI_MAX_RETRIES; retry += 1) {
@@ -108,22 +170,19 @@ async function generate(parts: any[]): Promise<string> {
     } catch (error) {
       lastError = error;
       const status = getHttpStatus(error);
-      if (status !== 500 && status !== 503) throw friendlyAIError(error);
+      if (status !== 500 && status !== 503) throw error instanceof SafeAIError ? error : friendlyAIError(error, AI_MODEL);
       if (retry < AI_MAX_RETRIES) {
         await new Promise(resolve => setTimeout(resolve, AI_RETRY_DELAYS_MS[retry]));
       }
     }
   }
 
-  // Firebase's AI Logic guidance recommends Remote Config for changing the
-  // model name without shipping a new app version. The fallback is deliberately
-  // restricted to the documented stable Gemini 3.5 Flash model; Gemini 2.5 is
-  // never accepted here.
   try {
     const fallbackModel = await getRemoteFallbackModel();
     return await generateOnce(parts, fallbackModel);
   } catch (fallbackError) {
-    throw friendlyAIError(lastError || fallbackError);
+    if (fallbackError instanceof SafeAIError) throw fallbackError;
+    throw friendlyAIError(lastError || fallbackError, AI_MODEL);
   }
 }
 
@@ -163,9 +222,59 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-function parseJson<T>(raw: string): T {
-  const cleaned = raw.trim().replace(/^\`\`\`json\s*/i, '').replace(/^\`\`\`\s*/i, '').replace(/\s*\`\`\`$/i, '');
-  try { return JSON.parse(cleaned) as T; } catch { throw new Error('AI returned an invalid structured response. Please try again.'); }
+function extractJsonObject(raw: string): string {
+  const cleaned = raw.trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/i, '').trim();
+  const start = cleaned.indexOf('{');
+  if (start < 0) throw new Error('No JSON object was found in the AI response.');
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < cleaned.length; i += 1) {
+    const ch = cleaned[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return cleaned.slice(start, i + 1);
+    }
+  }
+  throw new Error('The AI JSON object was incomplete.');
+}
+
+function parseJson<T>(raw: string, model: string): T {
+  try {
+    return JSON.parse(extractJsonObject(raw)) as T;
+  } catch {
+    throw new SafeAIError('AI returned an invalid structured response. Please try again.', {
+      category: 'invalid_ai_response',
+      code: 'JSON_PARSE',
+      httpStatus: null,
+      model,
+    });
+  }
+}
+
+function normalizeVoiceResult(value: any, model: string): { transcription: string; medicalEnglish: string; notes: string[] } {
+  const transcription = typeof value?.transcription === 'string' ? value.transcription : '';
+  const medicalEnglish = typeof value?.medicalEnglish === 'string' ? value.medicalEnglish : '';
+  let notes: string[] = [];
+  if (Array.isArray(value?.notes)) notes = value.notes.filter((note: unknown): note is string => typeof note === 'string');
+  else if (typeof value?.notes === 'string' && value.notes.trim()) notes = [value.notes];
+  if (!transcription && !medicalEnglish) {
+    throw new SafeAIError('AI returned an empty response. Please try again.', {
+      category: 'empty_response',
+      code: 'EMPTY_RESPONSE',
+      httpStatus: null,
+      model,
+    });
+  }
+  return { transcription, medicalEnglish, notes };
 }
 
 
@@ -192,8 +301,8 @@ export async function analyzeLabImage(file: Blob): Promise<{ panel: string; resu
     'Do not identify or reproduce any patient name, national ID, MRN, address, phone number, or other identifier from the image.',
     'This is a test-data-only development build. Do not provide diagnosis or treatment advice.',
   ].join('\n');
-  const raw = await generate([{ inlineData: { data, mimeType: preparedFile.type || 'image/jpeg' } }, prompt]);
-  return parseJson(raw);
+  const generated = await generate([{ inlineData: { data, mimeType: preparedFile.type || 'image/jpeg' } }, prompt]);
+  return parseJson(generated.text, generated.model);
 }
 
 export async function transcribeMedicalVoice(audio: Blob): Promise<{ transcription: string; medicalEnglish: string; notes: string[] }> {
@@ -218,8 +327,9 @@ export async function transcribeMedicalVoice(audio: Blob): Promise<{ transcripti
     'Do not identify, reproduce, or derive any patient name, national ID, MRN, address, phone number, or other direct identifier. Use test/fake data only.',
     'Return JSON only with exactly: transcription, medicalEnglish, notes[]. Do not return diagnosis, treatment advice, recommendations, or newly generated clinical facts.',
   ].join('\n');
-  const raw = await generate([{ inlineData: { data, mimeType } }, prompt]);
-  return parseJson(raw);
+  const generated = await generate([{ inlineData: { data, mimeType } }, prompt]);
+  const parsed = parseJson<any>(generated.text, generated.model);
+  return normalizeVoiceResult(parsed, generated.model);
 }
 
 export function aiUsesTestDataOnly(): boolean { return AI_TEST_DATA_ONLY; }
