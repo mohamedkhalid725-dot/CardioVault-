@@ -1,6 +1,6 @@
 import { FirebaseAppCheck } from '@capacitor-firebase/app-check';
 import { Capacitor } from '@capacitor/core';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { firebaseApp } from './webFirebase';
 import { AI_CLIENT_RATE_LIMIT, AI_CLIENT_RATE_WINDOW_MS, AI_DATA_WARNING_PLACEHOLDER, AI_MODEL, AI_TEST_DATA_ONLY } from '../config/aiConfig';
@@ -21,13 +21,13 @@ export async function initializeCardioVaultAppCheck(): Promise<void> {
       }
       const siteKey = String(import.meta.env.VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY || '').trim();
       if (!siteKey) {
-        throw new Error('Firebase App Check web setup is incomplete. Add the reCAPTCHA v3 site key in the Firebase configuration.');
+        throw new Error('Firebase App Check web setup is incomplete. Add the reCAPTCHA Enterprise site key in the Firebase configuration.');
       }
       if (import.meta.env.VITE_AI_APPCHECK_DEBUG === 'true') {
         (globalThis as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
       }
       initializeAppCheck(firebaseApp, {
-        provider: new ReCaptchaV3Provider(siteKey),
+        provider: new ReCaptchaEnterpriseProvider(siteKey),
         isTokenAutoRefreshEnabled: true,
       });
     })().catch((error) => {
