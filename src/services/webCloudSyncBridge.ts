@@ -13,8 +13,8 @@ const SYNC_PENDING_KEY='cardiovault_cloud_sync_pending';
 const SYNC_EVENT='cardiovault-cloud-sync-state';
 const path=(workspace:string,collection:string)=>`workspaces/${workspace}/${collection}`;
 const safe=(v:any):any=>JSON.parse(JSON.stringify(v??null));
-const setSyncPending=(pending:boolean)=>{try{if(pending)localStorage.setItem(SYNC_PENDING_KEY,'1');else localStorage.removeItem(SYNC_PENDING_KEY);}catch{};try{window.dispatchEvent(new CustomEvent(SYNC_EVENT,{detail:{pending}}));}catch{}};
-const isSyncPending=()=>localStorage.getItem(SYNC_PENDING_KEY)==='1';
+const setSyncPending=(pending:boolean)=>{try{if(pending)sessionStorage.setItem(SYNC_PENDING_KEY,'1');else sessionStorage.removeItem(SYNC_PENDING_KEY);}catch{};try{window.dispatchEvent(new CustomEvent(SYNC_EVENT,{detail:{pending}}));}catch{}};
+const isSyncPending=()=>sessionStorage.getItem(SYNC_PENDING_KEY)==='1';
 const withTimeout=<T,>(promise:Promise<T>,timeoutMs=15000):Promise<T>=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Cloud sync operation timed out.')),timeoutMs);promise.then(v=>{clearTimeout(timer);resolve(v);},e=>{clearTimeout(timer);reject(e);});});
 
 
@@ -151,7 +151,6 @@ async function migrateAllLegacyMembersIntoWorkspace(workspaceId:string):Promise<
 export async function webLoadCurrentUserFromCloud(){
   const user=webCurrentUser(); if(!user?.uid)return null;
   try{
-    setSyncPending(true);
     const access=await accessForUser(user.uid); if(!access)return {uid:user.uid,found:false,access:null}; if(access.role==='owner'){try{await migrateAllLegacyMembersIntoWorkspace(access.workspaceId);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member workspace migration failed:',error);}}else if(access.role!=='view_only'){try{await migrateLegacyMemberPatients(user.uid,access);}catch(error){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String((error as any)?.message||error));console.warn('Legacy member patient migration failed:',error);}}
     let units:any[]=[],beds:any[]=[],patients:any[]=[];
     if(access.role==='owner'){
@@ -270,7 +269,6 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
       const unsubscribe = onSnapshot(target, {includeMetadataChanges:true}, snap => persistCollection(name,snap), error => {
         localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
         localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
-        setSyncPending(true);
       });
       webRealtimeUnsubscribes.push(unsubscribe);
     };
