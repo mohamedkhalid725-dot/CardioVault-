@@ -9,6 +9,7 @@ import { AI_CLIENT_RATE_LIMIT, AI_CLIENT_RATE_WINDOW_MS, AI_DATA_WARNING_PLACEHO
 export { AI_DATA_WARNING_PLACEHOLDER };
 
 let appCheckPromise: Promise<void> | null = null;
+let aiRequestInFlight: Promise<GeneratedAIResponse> | null = null;
 const requestTimes: number[] = [];
 export async function initializeCardioVaultAppCheck(): Promise<void> {
   if (!appCheckPromise) {
@@ -77,6 +78,7 @@ export interface AITechnicalDetails {
   code: string;
   httpStatus: number | null;
   model: string;
+  retryAfterSeconds: number | null;
 }
 
 class SafeAIError extends Error {
@@ -100,25 +102,45 @@ function getHttpStatus(error: unknown): number | null {
   return match ? Number(match[1]) : null;
 }
 
+function getRetryAfterSeconds(error: unknown): number | null {
+  const e = error as any;
+  const direct = [
+    e?.retryAfterSeconds,
+    e?.retryAfter,
+    e?.retryDelay,
+    e?.details?.retryDelay,
+    e?.details?.metadata?.quotaResetDelay,
+  ];
+  for (const candidate of direct) {
+    const n = Number.parseFloat(String(candidate).replace(/s$/i, ''));
+    if (Number.isFinite(n) && n >= 0) return Math.ceil(n);
+  }
+  const text = String(e?.message || e?.code || error || '');
+  const match = text.match(/(?:retry(?:\s+after|\s+in)|quota(?:\s+reset)?(?:\s+after)?)[^0-9]{0,20}([0-9]+(?:\.[0-9]+)?)\s*(?:s|sec|secs|seconds)/i);
+  if (match) return Math.ceil(Number(match[1]));
+  return null;
+}
+
 function classifyAIError(error: unknown, model: string): AITechnicalDetails {
   const status = getHttpStatus(error);
+  const retryAfterSeconds = status === 429 ? getRetryAfterSeconds(error) : null;
   const text = String((error as any)?.message || (error as any)?.code || error || '').toLowerCase();
   if (status === 401 || status === 403 || /app.?check|unauthori[sz]ed|permission denied|forbidden/.test(text)) {
-    return { category: 'auth_app_check', code: status ? 'HTTP_' + status : 'AUTH_APPCHECK', httpStatus: status, model };
+    return { category: 'auth_app_check', code: status ? 'HTTP_' + status : 'AUTH_APPCHECK', httpStatus: status, model, retryAfterSeconds };
   }
   if (status === 429 || /quota|rate.?limit|resource exhausted/.test(text)) {
-    return { category: 'quota', code: status ? 'HTTP_' + status : 'QUOTA', httpStatus: status, model };
+    return { category: 'quota', code: status ? 'HTTP_' + status : 'QUOTA', httpStatus: status, model, retryAfterSeconds };
   }
   if (status === 500 || status === 502 || status === 503 || status === 504 || /service unavailable|temporarily unavailable|server error/.test(text)) {
-    return { category: 'busy', code: status ? 'HTTP_' + status : 'AI_SERVICE_BUSY', httpStatus: status, model };
+    return { category: 'busy', code: status ? 'HTTP_' + status : 'AI_SERVICE_BUSY', httpStatus: status, model, retryAfterSeconds };
   }
   if (/safety|blocked|block reason|prohibited|harmful/.test(text)) {
-    return { category: 'safety_filter', code: 'SAFETY_FILTER', httpStatus: status, model };
+    return { category: 'safety_filter', code: 'SAFETY_FILTER', httpStatus: status, model, retryAfterSeconds };
   }
   if (/network|failed to fetch|fetch failed|offline|timeout|timed out|connection/.test(text)) {
-    return { category: 'network', code: 'NETWORK', httpStatus: status, model };
+    return { category: 'network', code: 'NETWORK', httpStatus: status, model, retryAfterSeconds };
   }
-  return { category: 'unknown', code: 'AI_ERROR', httpStatus: status, model };
+  return { category: 'unknown', code: 'AI_ERROR', httpStatus: status, model, retryAfterSeconds };
 }
 
 function friendlyAIError(error: unknown, model: string): SafeAIError {
@@ -146,6 +168,7 @@ async function generateOnce(parts: any[], modelName: string): Promise<GeneratedA
         code: 'EMPTY_RESPONSE',
         httpStatus: null,
         model: modelName,
+        retryAfterSeconds: null,
       });
     }
     return { text, model: modelName };
@@ -155,7 +178,7 @@ async function generateOnce(parts: any[], modelName: string): Promise<GeneratedA
   }
 }
 
-async function generate(parts: any[]): Promise<GeneratedAIResponse> {
+async function generateInternal(parts: any[]): Promise<GeneratedAIResponse> {
   try {
     await initializeCardioVaultAppCheck();
     assertClientRateLimit();
@@ -163,26 +186,43 @@ async function generate(parts: any[]): Promise<GeneratedAIResponse> {
     throw friendlyAIError(error, AI_MODEL);
   }
 
-  let lastError: unknown = null;
-  for (let retry = 0; retry <= AI_MAX_RETRIES; retry += 1) {
+  try {
+    return await generateOnce(parts, AI_MODEL);
+  } catch (error) {
+    const primaryError = error instanceof SafeAIError ? error : friendlyAIError(error, AI_MODEL);
+    if (primaryError.details.httpStatus !== 429) throw primaryError;
+
+    // Google documents rate limits as model-specific within the same project.
+    // Make exactly one fallback attempt on a different model; never loop on 429.
+    const fallbackModel = await getRemoteFallbackModel();
+    if (fallbackModel === AI_MODEL) throw primaryError;
+
     try {
-      return await generateOnce(parts, AI_MODEL);
-    } catch (error) {
-      lastError = error;
-      const status = getHttpStatus(error);
-      if (status !== 500 && status !== 503) throw error instanceof SafeAIError ? error : friendlyAIError(error, AI_MODEL);
-      if (retry < AI_MAX_RETRIES) {
-        await new Promise(resolve => setTimeout(resolve, AI_RETRY_DELAYS_MS[retry]));
-      }
+      return await generateOnce(parts, fallbackModel);
+    } catch (fallbackError) {
+      if (fallbackError instanceof SafeAIError) throw fallbackError;
+      throw friendlyAIError(fallbackError, fallbackModel);
     }
   }
+}
 
+async function generate(parts: any[]): Promise<GeneratedAIResponse> {
+  if (aiRequestInFlight) {
+    throw new SafeAIError('Another AI request is already in progress. Please wait for it to finish.', {
+      category: 'busy',
+      code: 'AI_REQUEST_IN_FLIGHT',
+      httpStatus: null,
+      model: AI_MODEL,
+      retryAfterSeconds: null,
+    });
+  }
+
+  const flight = generateInternal(parts);
+  aiRequestInFlight = flight;
   try {
-    const fallbackModel = await getRemoteFallbackModel();
-    return await generateOnce(parts, fallbackModel);
-  } catch (fallbackError) {
-    if (fallbackError instanceof SafeAIError) throw fallbackError;
-    throw friendlyAIError(lastError || fallbackError, AI_MODEL);
+    return await flight;
+  } finally {
+    if (aiRequestInFlight === flight) aiRequestInFlight = null;
   }
 }
 
@@ -256,6 +296,7 @@ function parseJson<T>(raw: string, model: string): T {
       code: 'JSON_PARSE',
       httpStatus: null,
       model,
+      retryAfterSeconds: null,
     });
   }
 }
