@@ -27,7 +27,7 @@ export async function initializeCardioVaultAppCheck(): Promise<void> {
         (globalThis as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
       }
       initializeAppCheck(firebaseApp, {
-        provider: new ReCaptchaV3Provider(siteKey),
+        provider: new ReCaptchaEnterpriseProvider(siteKey),
         isTokenAutoRefreshEnabled: true,
       });
     })().catch((error) => {
