@@ -2,7 +2,7 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai, task2-appcheck-preview-skip, task2-appcheck-debug-provider-fix]
+    branches: [main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai, task2-appcheck-preview-skip, task2-appcheck-debug-provider-fix, task2-appcheck-enterprise-web]
   pull_request:
     branches: [main, department-system-v1]
   workflow_dispatch:
@@ -385,7 +385,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Build preview web bundle with App Check debug provider
-        if: ${{ github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' }}
+        if: ${{ github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-web' }}
         env:
           VITE_AI_APPCHECK_DEBUG: 'true'
           VITE_CARDIOVAULT_PREVIEW: 'true'
