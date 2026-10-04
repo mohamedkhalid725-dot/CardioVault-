@@ -52,13 +52,13 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
    setRecording(false);setBusy(true);const result=await transcribeMedicalVoice(blob);setDraft(result.medicalEnglish||result.transcription||'');setTranscription(result.transcription||'');setFallback(result.model!==AI_MODEL);setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');
   }catch(e:any){
    const retry=Number(e?.details?.retryAfterSeconds||0);if(e?.details?.httpStatus===429&&retry>0)setCooldown(retry);
-   const msg=e?.details?.httpStatus===429&&retry>0?\`AI limit reached, try again in ~\${retry} seconds\`:String(e?.message||'AI voice transcription failed.');
+   const msg=e?.details?.httpStatus===429&&retry>0?'AI limit reached, try again in ~'+retry+' seconds':String(e?.message||'AI voice transcription failed.');
    setError(msg);showToast(msg,'error');
   }finally{setRecording(false);setBusy(false);release(id);}
  };
  const apply=()=>{const clean=draft.trim();if(!clean)return;const base=value.trimEnd();const combined=base?base+'\\n'+clean:clean;onApply(combined);setOpen(false);setDraft('');setTranscription('');showToast('AI draft inserted. Review the field and save it yourself.','success');};
  return <span className="inline-flex items-center">
-  <button type="button" onClick={()=>recording?void stop():void start()} disabled={disabled||busy||cooldown>0} title={cooldown>0?\`AI limit reached, try again in ~\${cooldown} seconds\`:\`Voice dictation for \${fieldLabel}\`} className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed">
+  <button type="button" onClick={()=>recording?void stop():void start()} disabled={disabled||busy||cooldown>0} title={cooldown>0?'AI limit reached, try again in ~'+cooldown+' seconds':'Voice dictation for '+fieldLabel} className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed">
    {busy?<Loader2 className="w-4 h-4 animate-spin"/>:recording?<Square className="w-4 h-4"/>:<Mic className="w-4 h-4"/>}
   </button>
   {cooldown>0&&<span className="ml-2 text-[10px] font-bold text-amber-600 dark:text-amber-300">AI limit reached, try again in ~{cooldown} seconds</span>}
