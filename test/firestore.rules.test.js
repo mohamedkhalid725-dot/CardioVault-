@@ -366,12 +366,12 @@ test("13. collection-group queries cannot leak media or chunk data across units"
   await assertFails(getDocs(query(collectionGroup(dbA, "media"))));
   await assertFails(getDocs(query(collectionGroup(dbA, "chunks"))));
 
-  // Explicit Unit A constraints are also checked: rules must not allow a query
-  // whose result set could include a Unit B document.
-  await assertSucceeds(
+  // These collections are not granted collection-group access by the rules.
+  // Verify that even Unit-A-constrained collection-group queries remain denied.
+  await assertFails(
     getDocs(query(collectionGroup(dbA, "media"), where("unitId", "==", UNIT_A))),
   );
-  await assertSucceeds(
+  await assertFails(
     getDocs(query(collectionGroup(dbA, "chunks"), where("unitId", "==", UNIT_A))),
   );
 });
