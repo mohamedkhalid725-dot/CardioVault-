@@ -6,6 +6,7 @@ import {
 } from "@firebase/rules-unit-testing";
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -276,6 +277,103 @@ test("8. a non-clinical_editor role cannot write", async () => {
   );
   await assertFails(updateDoc(doc(db, patientPath(PATIENT_A)), { label: "ILLEGAL" }));
   await assertFails(deleteDoc(doc(db, patientPath(PATIENT_A))));
+});
+
+
+test("10. A can read/write patient-associated media and chunks in Unit A", async () => {
+  const db = dbFor("userA");
+  const mediaA = doc(db, path("media", "mediaA"));
+  const chunkA = doc(db, path("media", "mediaA", "chunks", "chunkA"));
+
+  await assertSucceeds(
+    setDoc(mediaA, { id: "mediaA", unitId: UNIT_A, patientId: PATIENT_A, type: "ecg" }),
+  );
+  await assertSucceeds(getDoc(mediaA));
+  await assertSucceeds(updateDoc(mediaA, { label: "updated" }));
+
+  await assertSucceeds(
+    setDoc(chunkA, { id: "chunkA", unitId: UNIT_A, mediaId: "mediaA", payload: "fake" }),
+  );
+  await assertSucceeds(getDoc(chunkA));
+  await assertSucceeds(updateDoc(chunkA, { payload: "fake-updated" }));
+  await assertSucceeds(deleteDoc(chunkA));
+  await assertSucceeds(deleteDoc(mediaA));
+});
+
+test("11. A cannot access Unit B patient-associated media or chunks", async () => {
+  const db = dbFor("userA");
+  const mediaB = doc(db, path("media", "mediaB"));
+  const chunkB = doc(db, path("media", "mediaB", "chunks", "chunkB"));
+
+  await assertFails(getDoc(mediaB));
+  await assertFails(getDocs(collection(db, path("media"))));
+  await assertFails(updateDoc(mediaB, { label: "ILLEGAL" }));
+  await assertFails(deleteDoc(mediaB));
+
+  await assertFails(getDoc(chunkB));
+  await assertFails(getDocs(collection(db, path("media", "mediaB", "chunks"))));
+  await assertFails(updateDoc(chunkB, { payload: "ILLEGAL" }));
+  await assertFails(deleteDoc(chunkB));
+});
+
+test("12. D and unauthenticated user are denied patient-associated media and chunks", async () => {
+  const contexts = [
+    dbFor("userD"),
+    testEnv.unauthenticatedContext().firestore(),
+  ];
+
+  for (const db of contexts) {
+    await assertFails(getDoc(doc(db, path("media", "mediaA"))));
+    await assertFails(getDocs(collection(db, path("media"))));
+    await assertFails(
+      setDoc(doc(db, path("media", "blocked")), {
+        id: "blocked",
+        unitId: UNIT_A,
+        patientId: PATIENT_A,
+      }),
+    );
+    await assertFails(getDoc(doc(db, path("media", "mediaA", "chunks", "chunkA"))));
+    await assertFails(getDocs(collection(db, path("media", "mediaA", "chunks"))));
+    await assertFails(
+      setDoc(doc(db, path("media", "mediaA", "chunks", "blocked")), {
+        id: "blocked",
+        unitId: UNIT_A,
+        mediaId: "mediaA",
+      }),
+    );
+  }
+});
+
+test("13. collection-group queries cannot leak media or chunk data across units", async () => {
+  const dbA = dbFor("userA");
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const seedDb = context.firestore();
+    await setDoc(doc(seedDb, path("media", "mediaB")), {
+      id: "mediaB",
+      unitId: UNIT_B,
+      patientId: PATIENT_B,
+      type: "ecg",
+    });
+    await setDoc(doc(seedDb, path("media", "mediaB", "chunks", "chunkB")), {
+      id: "chunkB",
+      unitId: UNIT_B,
+      mediaId: "mediaB",
+      payload: "fake-b",
+    });
+  });
+
+  await assertFails(getDocs(query(collectionGroup(dbA, "media"))));
+  await assertFails(getDocs(query(collectionGroup(dbA, "chunks"))));
+
+  // Explicit Unit A constraints are also checked: rules must not allow a query
+  // whose result set could include a Unit B document.
+  await assertSucceeds(
+    getDocs(query(collectionGroup(dbA, "media"), where("unitId", "==", UNIT_A))),
+  );
+  await assertSucceeds(
+    getDocs(query(collectionGroup(dbA, "chunks"), where("unitId", "==", UNIT_A))),
+  );
 });
 
 test("9. any path not explicitly allowed is denied", async () => {
