@@ -15,7 +15,8 @@
     "cap:sync": "npx cap sync",
     "cap:sync:ios": "npx cap sync ios",
     "android:debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
-    "ios:prepare": "npm run build && npx cap sync ios"
+    "ios:prepare": "npm run build && npx cap sync ios",
+    "test:firestore-rules": "npx firebase-tools@15.30.2 emulators:exec --only firestore \"node --test test/firestore.rules.test.js\""
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "7.5.0",
@@ -54,7 +55,8 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "@types/react": "^19.1.13",
-    "@types/react-dom": "^19.1.9"
+    "@types/react-dom": "^19.1.9",
+    "@firebase/rules-unit-testing": "5.0.2"
   },
   "engines": {
     "node": "24.x"
