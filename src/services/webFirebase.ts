@@ -34,7 +34,7 @@ import {
 } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCegfOjWEsNwrz96L6UFlbXsODzVs1jFpQ',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDo3vyGKW_Uf9qOWiiAe68euTaOA92xrmw',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'ccu-notebook.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'ccu-notebook',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'ccu-notebook.firebasestorage.app',

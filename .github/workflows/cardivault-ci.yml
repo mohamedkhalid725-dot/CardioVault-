@@ -2,7 +2,7 @@ name: CardioVault CI + Android APK
 
 on:
   push:
-    branches: [phase1-mic-staging, task2-voice-hardened-staging, main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai, task2-appcheck-preview-skip, task2-appcheck-debug-provider-fix, task2-appcheck-enterprise-web, task2-appcheck-enterprise-staging]
+    branches: [phase2-security-review, phase1-mic-staging, task2-voice-hardened-staging, main, department-system-v1, build-972-clean, task1-email-auth, task2-firebase-ai, task2-appcheck-preview-skip, task2-appcheck-debug-provider-fix, task2-appcheck-enterprise-web, task2-appcheck-enterprise-staging]
   pull_request:
     branches: [main, department-system-v1]
   workflow_dispatch:
@@ -31,6 +31,14 @@ jobs:
           node-version: '24'
       - name: Install dependencies
         run: npm install
+      - name: Setup Java 21 for Firestore emulator
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Firestore rules unit tests
+        run: npm run test:firestore-rules
+
       - name: TypeScript check
         run: npm run lint
       - name: Capture TypeScript diagnostics
@@ -104,7 +112,7 @@ jobs:
                 "oauth_client": [],
                 "api_key": [
                   {
-                    "current_key": "AIzaSyCegfOjWEsNwrz96L6UFlbXsODzVs1jFpQ"
+                    "current_key": "AIzaSyCwoEwTLG3yfY7gnd2LDk2sFm6oFKBqX7c"
                   }
                 ],
                 "services": {}
@@ -162,9 +170,9 @@ jobs:
                   break
           PY
       - name: Deploy Firestore rules
-        # Use the Admin SDK directly so rules deployment does not depend on the CLI
-        # Service Usage preflight permission that blocked the Pages workflow.
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        # Phase 2b is rules-test-only: never deploy Firestore rules from this branch.
+        # Other branches retain the existing deployment behavior.
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref_name != 'phase2-security-review' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
