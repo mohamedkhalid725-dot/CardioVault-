@@ -31,6 +31,14 @@ jobs:
           node-version: '24'
       - name: Install dependencies
         run: npm install
+      - name: Setup Java 21 for Firestore emulator
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Firestore rules unit tests
+        run: npm run test:firestore-rules
+
       - name: TypeScript check
         run: npm run lint
       - name: Capture TypeScript diagnostics
@@ -162,9 +170,9 @@ jobs:
                   break
           PY
       - name: Deploy Firestore rules
-        # Use the Admin SDK directly so rules deployment does not depend on the CLI
-        # Service Usage preflight permission that blocked the Pages workflow.
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        # Phase 2b is rules-test-only: never deploy Firestore rules from this branch.
+        # Other branches retain the existing deployment behavior.
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref_name != 'phase2-security-review' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
