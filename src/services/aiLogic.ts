@@ -4,6 +4,7 @@ import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-ch
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { getRemoteConfig, fetchAndActivate, getString } from 'firebase/remote-config';
 import { firebaseApp } from './webFirebase';
+import { buildPatientSummaryInput, type PatientSummarySource } from './patientSummaryInput';
 import { AI_CLIENT_RATE_LIMIT, AI_CLIENT_RATE_WINDOW_MS, AI_DATA_WARNING_PLACEHOLDER, AI_FALLBACK_MODEL, AI_IMAGE_JPEG_QUALITY, AI_IMAGE_MAX_DIMENSION, AI_MAX_RETRIES, AI_MODEL, AI_REMOTE_CONFIG_FALLBACK_KEY, AI_RETRY_DELAYS_MS, AI_TEST_DATA_ONLY } from '../config/aiConfig';
 
 export { AI_DATA_WARNING_PLACEHOLDER };
@@ -225,6 +226,9 @@ async function generate(parts: any[]): Promise<GeneratedAIResponse> {
     if (aiRequestInFlight === flight) aiRequestInFlight = null;
   }
 }
+
+export interface GeneratedPatientSummary { summary:string; keyPoints:string[]; model:string; }
+export async function generatePatientSummary(patient:PatientSummarySource):Promise<GeneratedPatientSummary>{ const input=buildPatientSummaryInput(patient); const prompt=[ "You are CardioVault's clinical summary assistant.", 'Generate a concise, factual clinical summary for physician review using ONLY the JSON input below.', 'The input is intentionally limited to: age, diabetic status, hypertensive status, chief complaint, brief history, and examination.', "Never ask for, infer, reconstruct, or output the patient's name, MRN, phone number, national ID, address, or any other direct identifier.", 'Treat "Not documented" as unknown. Do not convert missing information into a negative or normal finding.', 'Do not invent findings, diagnoses, medications, test results, severity, chronology, or treatment recommendations.', 'Do not provide treatment advice or management recommendations.', 'Preserve explicit clinical facts and negations exactly in meaning.', 'Return JSON only with exactly these keys: summary, keyPoints.', 'summary must be a concise paragraph suitable for a patient-file Summary card.', 'keyPoints must be an array of concise factual points supported directly by the input; use an empty array when there are no additional points.', '', 'INPUT:', JSON.stringify(input,null,2) ].join('\n'); const generated=await generate([prompt]); const parsed=parseJson<{summary?:unknown;keyPoints?:unknown}>(generated.text,generated.model); const summary=typeof parsed.summary==='string'?parsed.summary.trim():''; const keyPoints=Array.isArray(parsed.keyPoints)?parsed.keyPoints.filter((point):point is string=>typeof point==='string'&&point.trim().length>0).map(point=>point.trim()):[]; if(!summary) throw new Error('AI returned an empty clinical summary. Please try again.'); return {summary,keyPoints,model:generated.model}; }
 
 async function compressLabImage(file: Blob): Promise<Blob> {
   if (!file.type.startsWith('image/')) return file;
