@@ -26,7 +26,9 @@ export interface ProcedureRecord { id:string; date:string; time:string; procedur
 export interface CalculatorResult { id:string; calculatorId:string; name:string; timestamp:string; score:number|string; riskLevel:'Low'|'Intermediate'|'High'|'Very High'|'Normal'|'Critical'; interpretation:string; summary:string; }
 export interface ProgressNote { id:string; date:string; time:string; author:string; type?:string; subjective?:string; objective?:string; assessment?:string; plan:string; audioUrl?:string; audioStoragePath?:string; audioDurationSeconds?:number; clinicalStatus?:string; events?:string; examination?:string; investigations?:string; treatment?:string; response?:string; problems?:string; updatedAt?:string; }
 export interface PastAdmission { id:string; admissionDate:string; dischargeDate:string; unitName:string; dischargeReason:'Discharged Home'|'Transferred'|'Deceased'|'Other'; dischargeSummary:string; primaryDiagnosis:string; }
-export interface AuditEvent { id:string; timestamp:string; action:string; fields:string[]; actor?:string; }
+export interface AuditEvent { id:string; timestamp:string; action:string; fields:string[]; actor?:string; actorUid?:string; actorName?:string; }
+export interface PatientAISummary { summary:string; keyPoints:string[]; generatedAt:string; savedAt:string; savedByUid:string; savedByName?:string; inputFingerprint:string; model:string; }
+
 
 export type ClinicalRole =
   | 'pending'
@@ -334,6 +336,7 @@ export interface Patient {
   calculatorResults: CalculatorResult[];
   progressNotes: ProgressNote[];
   auditTrail?: AuditEvent[];
+  aiSummary?: PatientAISummary;
   // Extended clinical workflow collections
   problems?: ClinicalProblem[];
   tasks?: ClinicalTask[];

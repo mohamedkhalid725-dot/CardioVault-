@@ -39,6 +39,9 @@ jobs:
       - name: Firestore rules unit tests
         run: npm run test:firestore-rules
 
+      - name: Patient summary input unit tests
+        run: npm run test:summary-input
+
       - name: TypeScript check
         run: npm run lint
       - name: Capture TypeScript diagnostics
