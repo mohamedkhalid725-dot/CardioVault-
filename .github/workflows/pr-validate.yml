@@ -1,0 +1,36 @@
+name: PR Validate
+
+on:
+  pull_request:
+    branches:
+      - phase1-mic-staging
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: TypeScript, summary tests, and web build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Summary input tests
+        run: npm run test:summary-input
+
+      - name: Web build
+        run: npm run build
