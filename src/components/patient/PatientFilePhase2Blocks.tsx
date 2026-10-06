@@ -27,6 +27,7 @@ const SECTION_ROWS: PatientSectionId[] = [
   'icu',
   'progress',
   'calculators',
+  'clinical-tools',
 ];
 
 export const PatientFilePhase2Blocks: React.FC<Props> = ({

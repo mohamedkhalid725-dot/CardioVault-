@@ -107,3 +107,14 @@ test('section status tolerates missing objects and casing in lab flags', () => {
   assert.equal(status.count, 1);
   assert.equal(status.lastUpdated, '2026-10-06T12:00:00Z');
 });
+
+test('Clinical Tools & Workflow is a Phase 2 section with read-only empty status when no tool data is recorded', () => {
+  const status = getSectionStatus({
+    auditTrail: [],
+  } as any, 'clinical-tools');
+
+  assert.equal(status.id, 'clinical-tools');
+  assert.equal(status.hasData, false);
+  assert.equal(status.count, 0);
+  assert.equal(status.lastUpdated, null);
+});
