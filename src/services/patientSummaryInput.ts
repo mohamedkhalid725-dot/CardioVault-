@@ -1,3 +1,5 @@
+import { hasMeaningfulExaminationContent } from './examinationContent';
+
 export interface PatientSummarySource {
   age?: unknown;
   sex?: unknown;
@@ -53,10 +55,10 @@ function hasRecordedPrimitive(value: unknown): boolean {
   return false;
 }
 
-function filterRecordedValue(value: unknown): unknown {
+function filterRecordedValue(value: unknown, preserveNumericZero = false): unknown {
   if (Array.isArray(value)) {
     const filtered = value
-      .map(filterRecordedValue)
+      .map((item) => filterRecordedValue(item, preserveNumericZero))
       .filter((item) => item !== undefined);
 
     return filtered.length ? filtered : undefined;
@@ -68,7 +70,25 @@ function filterRecordedValue(value: unknown): unknown {
     for (const [key, child] of Object.entries(
       value as Record<string, unknown>,
     )) {
-      const filtered = filterRecordedValue(child);
+      if (preserveNumericZero && key === 'customFields' && Array.isArray(child)) {
+        const filteredFields = child
+          .map((field) => {
+            if (!field || typeof field !== 'object') return undefined;
+
+            const fieldValue = (field as Record<string, unknown>).value;
+            if (!hasMeaningfulExaminationContent(fieldValue)) return undefined;
+
+            return filterRecordedValue(field, preserveNumericZero);
+          })
+          .filter((field): field is Record<string, unknown> => Boolean(field));
+
+        if (filteredFields.length) {
+          output[key] = filteredFields;
+        }
+        continue;
+      }
+
+      const filtered = filterRecordedValue(child, preserveNumericZero);
 
       if (filtered !== undefined) {
         output[key] = filtered;
@@ -78,11 +98,15 @@ function filterRecordedValue(value: unknown): unknown {
     return Object.keys(output).length ? output : undefined;
   }
 
+  if (preserveNumericZero) {
+    return hasMeaningfulExaminationContent(value) ? value : undefined;
+  }
+
   return hasRecordedPrimitive(value) ? value : undefined;
 }
 
 export function serializeExamination(examination: unknown): string {
-  const filtered = filterRecordedValue(examination);
+  const filtered = filterRecordedValue(examination, true);
 
   return filtered === undefined ? 'Not documented' : JSON.stringify(filtered);
 }
@@ -153,7 +177,7 @@ function buildReadableExaminationLines(
 }
 
 export function serializeReadableExamination(examination: unknown): string {
-  const filtered = filterRecordedValue(examination);
+  const filtered = filterRecordedValue(examination, true);
 
   if (filtered === undefined) return 'Not documented';
 
