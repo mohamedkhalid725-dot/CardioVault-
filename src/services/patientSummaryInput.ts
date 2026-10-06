@@ -1,3 +1,5 @@
+import { hasMeaningfulExaminationContent } from './examinationContent';
+
 export interface PatientSummarySource {
   age?: unknown;
   sex?: unknown;
@@ -68,6 +70,24 @@ function filterRecordedValue(value: unknown, preserveNumericZero = false): unkno
     for (const [key, child] of Object.entries(
       value as Record<string, unknown>,
     )) {
+      if (preserveNumericZero && key === 'customFields' && Array.isArray(child)) {
+        const filteredFields = child
+          .map((field) => {
+            if (!field || typeof field !== 'object') return undefined;
+
+            const fieldValue = (field as Record<string, unknown>).value;
+            if (!hasMeaningfulExaminationContent(fieldValue)) return undefined;
+
+            return filterRecordedValue(field, preserveNumericZero);
+          })
+          .filter((field): field is Record<string, unknown> => Boolean(field));
+
+        if (filteredFields.length) {
+          output[key] = filteredFields;
+        }
+        continue;
+      }
+
       const filtered = filterRecordedValue(child, preserveNumericZero);
 
       if (filtered !== undefined) {
@@ -78,7 +98,10 @@ function filterRecordedValue(value: unknown, preserveNumericZero = false): unkno
     return Object.keys(output).length ? output : undefined;
   }
 
-  if (preserveNumericZero && typeof value === 'number' && Number.isFinite(value)) return value;
+  if (preserveNumericZero) {
+    return hasMeaningfulExaminationContent(value) ? value : undefined;
+  }
+
   return hasRecordedPrimitive(value) ? value : undefined;
 }
 

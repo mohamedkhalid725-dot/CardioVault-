@@ -6,6 +6,7 @@ import {
   serializeExamination,
   serializeReadableExamination,
 } from '../src/services/patientSummaryInput.ts';
+import { getSectionStatus } from '../src/services/patientFilePhase2.ts';
 
 const defaultExamination = {
   general: {
@@ -208,4 +209,66 @@ test('examination numeric zero is retained as meaningful content', () => {
     examination: { neurological: { motorPower: 0 } },
   });
   assert.match(input.examination, /motorPower.*0/);
+});
+
+
+test('summary examination presence stays in parity with examination section status', () => {
+  const cases = [
+    {
+      name: 'all empty',
+      examination: defaultExamination,
+      expected: false,
+    },
+    {
+      name: 'only false values',
+      examination: { neurological: { motorPower: false, tremor: false } },
+      expected: false,
+    },
+    {
+      name: 'label-only strings',
+      examination: {
+        general: { temperature: '• Temperature:', perfusion: 'Cap refill:' },
+      },
+      expected: false,
+    },
+    {
+      name: 'empty parentheses',
+      examination: { neurological: { motor: '()' } },
+      expected: false,
+    },
+    {
+      name: 'numeric zero',
+      examination: { neurological: { motorPower: 0 } },
+      expected: true,
+    },
+    {
+      name: 'real text',
+      examination: { cardiovascular: { murmurs: 'ESM at apex' } },
+      expected: true,
+    },
+    {
+      name: 'custom fields with empty values',
+      examination: {
+        customFields: [
+          { label: 'Capillary refill', value: '' },
+          { label: 'Peripheral temperature', value: false },
+        ],
+      },
+      expected: false,
+    },
+  ];
+
+  for (const testCase of cases) {
+    const summaryHasData =
+      buildPatientSummaryInput({ examination: testCase.examination }).examination !==
+      'Not documented';
+    const sectionStatus = getSectionStatus(
+      { examination: testCase.examination } as Parameters<typeof getSectionStatus>[0],
+      'examination',
+    );
+
+    assert.equal(summaryHasData, testCase.expected, testCase.name);
+    assert.equal(sectionStatus.hasData, testCase.expected, testCase.name);
+    assert.equal(summaryHasData, sectionStatus.hasData, testCase.name);
+  }
 });
