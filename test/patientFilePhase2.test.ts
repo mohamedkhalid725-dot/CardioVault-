@@ -96,6 +96,33 @@ test('patients without currentAdmissionStartedAt still show abnormal labs withou
   assert.equal(items[0].labTimestamp, undefined);
 });
 
+test('Needs attention shows the most recent abnormal lab and the total abnormal count', () => {
+  const items = buildNeedsAttention({
+    clinicalSummary: { chiefComplaint: 'Documented' },
+    labResults: [
+      { id: 'first', testName: 'Hb', value: 8, unit: 'g/dL', flag: 'Low', timestamp: '2026-10-06T09:00:00Z' },
+      { id: 'newest', testName: 'K', value: 6.2, unit: 'mmol/L', flag: 'High', timestamp: '2026-10-06T12:00:00Z' },
+      { id: 'middle', testName: 'Na', value: 128, unit: 'mmol/L', flag: 'Low', timestamp: '2026-10-06T10:00:00Z' },
+    ],
+  } as any);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].labName, 'K');
+  assert.equal(items[0].labValue, '6.2');
+  assert.equal(items[0].count, 3);
+});
+
+test('Needs attention keeps the first abnormal lab when none have timestamps', () => {
+  const items = buildNeedsAttention({
+    clinicalSummary: { chiefComplaint: 'Documented' },
+    labResults: [
+      { id: 'first', testName: 'Hb', value: 8, unit: 'g/dL', flag: 'Low' },
+      { id: 'second', testName: 'K', value: 6, unit: 'mmol/L', flag: 'High' },
+    ],
+  } as any);
+  assert.equal(items[0].labName, 'Hb');
+  assert.equal(items[0].count, 2);
+});
+
 test('Needs attention uses only explicit missing/flagged data', () => {
   const items = buildNeedsAttention({
     clinicalSummary: { chiefComplaint: '  ' },

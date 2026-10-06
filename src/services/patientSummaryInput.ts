@@ -1,4 +1,3 @@
-import { hasMeaningfulExaminationContent } from './examinationContent';
 export interface PatientSummarySource {
   age?: unknown;
   sex?: unknown;

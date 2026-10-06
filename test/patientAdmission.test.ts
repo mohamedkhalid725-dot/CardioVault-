@@ -18,8 +18,11 @@ test('patients without currentAdmissionStartedAt are not filtered', () => {
   assert.equal(isAtOrAfterCurrentAdmission('not-a-timestamp', undefined), true);
   assert.equal(isAtOrAfterCurrentAdmission(undefined, undefined), true);
 });
-test('readmission preserves pastAdmissions and clinical data', () => {
-  const next = prepareReadmittedPatient(admitted, 'unit-2', 'bed-4');
+test('readmission preserves pastAdmissions and clinical data and updates admission date/time locally', () => {
+  const admissionStartedAt = new Date(2026, 9, 7, 12, 30, 0, 0);
+  const next = prepareReadmittedPatient(admitted, 'unit-2', 'bed-4', admissionStartedAt);
+  assert.equal(next.admissionDate, '2026-10-07');
+  assert.equal(next.admissionTime, '12:30');
   assert.equal(next.pastAdmissions[0].admissionDate, '2026-09-01');
   assert.deepEqual(next.vitalsHistory, admitted.vitalsHistory);
   assert.deepEqual(next.labResults, admitted.labResults);

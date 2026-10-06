@@ -16,12 +16,14 @@ export const isAtOrAfterCurrentAdmission = (recordTimestamp: string | undefined,
   const admissionMs = Date.parse(currentAdmissionStartedAt);
   return Number.isFinite(recordMs) && Number.isFinite(admissionMs) && recordMs >= admissionMs;
 };
-export const prepareReadmittedPatient = (patient: Patient, unitId: string, bedId: string): Patient => ({
+export const prepareReadmittedPatient = (patient: Patient, unitId: string, bedId: string, admissionStartedAt: Date): Patient => ({
   ...patient,
   isArchived: false,
   archiveReason: undefined,
   archiveDate: undefined,
   unitId,
   bedId,
+  admissionDate: `${admissionStartedAt.getFullYear()}-${pad(admissionStartedAt.getMonth() + 1)}-${pad(admissionStartedAt.getDate())}`,
+  admissionTime: `${pad(admissionStartedAt.getHours())}:${pad(admissionStartedAt.getMinutes())}`,
   pastAdmissions: [...(patient.pastAdmissions || [])],
 });

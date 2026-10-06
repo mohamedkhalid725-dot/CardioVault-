@@ -141,7 +141,12 @@ export function buildNeedsAttention(patient: Patient): NeedsAttentionItem[] {
   });
 
   if (abnormalLabs.length) {
-    const lab = abnormalLabs[0];
+    const lab = abnormalLabs.reduce((selected, candidate) => {
+      const selectedMs = selected.timestamp ? Date.parse(selected.timestamp) : NaN;
+      const candidateMs = candidate.timestamp ? Date.parse(candidate.timestamp) : NaN;
+      if (Number.isFinite(candidateMs) && (!Number.isFinite(selectedMs) || candidateMs > selectedMs)) return candidate;
+      return selected;
+    }, abnormalLabs[0]);
     items.push({
       id: 'abnormal-lab',
       reason: 'This lab was already flagged as abnormal in the record.',
