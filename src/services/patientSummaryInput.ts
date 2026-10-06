@@ -1,3 +1,4 @@
+import { hasMeaningfulExaminationContent } from './examinationContent';
 export interface PatientSummarySource {
   age?: unknown;
   sex?: unknown;
@@ -53,10 +54,10 @@ function hasRecordedPrimitive(value: unknown): boolean {
   return false;
 }
 
-function filterRecordedValue(value: unknown): unknown {
+function filterRecordedValue(value: unknown, preserveNumericZero = false): unknown {
   if (Array.isArray(value)) {
     const filtered = value
-      .map(filterRecordedValue)
+      .map((item) => filterRecordedValue(item, preserveNumericZero))
       .filter((item) => item !== undefined);
 
     return filtered.length ? filtered : undefined;
@@ -68,7 +69,7 @@ function filterRecordedValue(value: unknown): unknown {
     for (const [key, child] of Object.entries(
       value as Record<string, unknown>,
     )) {
-      const filtered = filterRecordedValue(child);
+      const filtered = filterRecordedValue(child, preserveNumericZero);
 
       if (filtered !== undefined) {
         output[key] = filtered;
@@ -78,11 +79,12 @@ function filterRecordedValue(value: unknown): unknown {
     return Object.keys(output).length ? output : undefined;
   }
 
+  if (preserveNumericZero && typeof value === 'number' && Number.isFinite(value)) return value;
   return hasRecordedPrimitive(value) ? value : undefined;
 }
 
 export function serializeExamination(examination: unknown): string {
-  const filtered = filterRecordedValue(examination);
+  const filtered = filterRecordedValue(examination, true);
 
   return filtered === undefined ? 'Not documented' : JSON.stringify(filtered);
 }
@@ -153,7 +155,7 @@ function buildReadableExaminationLines(
 }
 
 export function serializeReadableExamination(examination: unknown): string {
-  const filtered = filterRecordedValue(examination);
+  const filtered = filterRecordedValue(examination, true);
 
   if (filtered === undefined) return 'Not documented';
 

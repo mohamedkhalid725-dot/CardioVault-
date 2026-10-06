@@ -1,4 +1,6 @@
 import type { Patient, PatientSectionId, VitalRecord } from '../types/clinical';
+import { hasMeaningfulExaminationContent } from './examinationContent';
+import { isAtOrAfterCurrentAdmission } from './patientAdmission';
 
 export interface NowVitalItem {
   key: 'hr' | 'bp' | 'rr' | 'spo2' | 'temp';
@@ -10,6 +12,12 @@ export interface NowVitalItem {
 export interface NeedsAttentionItem {
   id: 'chief-complaint' | 'abnormal-lab';
   reason: string;
+  labName?: string;
+  labValue?: string;
+  labUnit?: string;
+  labFlag?: string;
+  labTimestamp?: string;
+  count?: number;
 }
 
 export interface SectionStatus {
@@ -57,6 +65,7 @@ const timestampMs = (value: unknown): number | null => {
 
 export function getLatestVitalRecord(
   vitalsHistory: VitalRecord[] | undefined,
+  currentAdmissionStartedAt?: string,
 ): VitalRecord | null {
   if (!Array.isArray(vitalsHistory) || vitalsHistory.length === 0) return null;
 
@@ -66,6 +75,7 @@ export function getLatestVitalRecord(
   for (const record of vitalsHistory) {
     const currentMs = timestampMs(record?.timestamp);
     if (currentMs === null) continue;
+    if (currentAdmissionStartedAt && !isAtOrAfterCurrentAdmission(record?.timestamp, currentAdmissionStartedAt)) continue;
     if (currentMs >= latestMs) {
       latest = record;
       latestMs = currentMs;
@@ -77,8 +87,9 @@ export function getLatestVitalRecord(
 
 export function buildNowVitals(
   vitalsHistory: VitalRecord[] | undefined,
+  currentAdmissionStartedAt?: string,
 ): NowVitalItem[] {
-  const latest = getLatestVitalRecord(vitalsHistory);
+  const latest = getLatestVitalRecord(vitalsHistory, currentAdmissionStartedAt);
   if (!latest) return [];
 
   const timestamp = String(latest.timestamp || 'Not documented');
@@ -118,17 +129,28 @@ export function buildNeedsAttention(patient: Patient): NeedsAttentionItem[] {
     });
   }
 
-  const abnormalLab = (patient.labResults || []).find((lab) => {
+  const abnormalLabs = (patient.labResults || []).filter((lab) => {
     const status = String(lab.status || '').trim().toLowerCase();
     const flag = String(lab.flag || '').trim().toLowerCase();
-    return ['low', 'high', 'critical', 'abnormal'].includes(status)
+    const abnormal = ['low', 'high', 'critical', 'abnormal'].includes(status)
       || ['low', 'high', 'critical', 'abnormal'].includes(flag);
+    if (!abnormal) return false;
+    if (!patient.currentAdmissionStartedAt) return true;
+    if (!lab.timestamp) return true;
+    return isAtOrAfterCurrentAdmission(lab.timestamp, patient.currentAdmissionStartedAt);
   });
 
-  if (abnormalLab) {
+  if (abnormalLabs.length) {
+    const lab = abnormalLabs[0];
     items.push({
       id: 'abnormal-lab',
       reason: 'This lab was already flagged as abnormal in the record.',
+      labName: String(lab.name || lab.testName || 'Laboratory test'),
+      labValue: String(lab.value ?? 'Not documented'),
+      labUnit: String(lab.unit || ''),
+      labFlag: String(lab.flag || lab.status || '').trim() || 'Abnormal',
+      labTimestamp: lab.timestamp || undefined,
+      count: abnormalLabs.length,
     });
   }
 
@@ -174,10 +196,7 @@ const arrayCount = (value: unknown): number =>
 const hasExaminationData = (patient: Patient): boolean => {
   const examination = patient.examination;
   if (!examination) return false;
-  const serialized = JSON.stringify(examination)
-    .replace(/[{}\[\]":,]/g, '')
-    .trim();
-  return serialized.length > 0;
+  return hasMeaningfulExaminationContent(examination);
 };
 
 const hasCardiologyData = (patient: Patient): boolean => {
@@ -185,7 +204,8 @@ const hasCardiologyData = (patient: Patient): boolean => {
   if (!cardiology) return false;
   return Boolean(
     cardiology.rhythm
-      || cardiology.echo?.ef
+      || (typeof cardiology.echo?.ef === 'number' && cardiology.echo.ef !== 0)
+      || (typeof cardiology.echo?.pasp === 'number' && cardiology.echo.pasp !== 0)
       || cardiology.biomarkerRecords?.length
       || cardiology.cathRecords?.length
       || cardiology.echoBriefSummary,
@@ -291,6 +311,12 @@ const latestAuditTimestamp = (
   return latestFromValues(timestamps);
 };
 
+export function formatPhase2Timestamp(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : null;
+}
+
 export function getSectionStatus(
   patient: Patient,
   id: PatientSectionId,
@@ -305,6 +331,6 @@ export function getSectionStatus(
     id,
     hasData: sectionHasData(patient, id),
     count,
-    lastUpdated,
+    lastUpdated: formatPhase2Timestamp(lastUpdated),
   };
 }

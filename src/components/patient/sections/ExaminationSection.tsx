@@ -14,62 +14,19 @@ import {
 import { Patient, PhysicalExam } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
 import { VoiceDictationButton } from '../VoiceDictationButton';
+import { meaningfulExaminationText } from '../../../services/examinationContent';
 
 interface ExaminationSectionProps {
   patient: Patient;
 }
 
 const defaultExamData = {
-  general: {
-    appearance: 'Alert, oriented, no acute distress.',
-    vitalSignsSummary: 'Hemodynamically stable.',
-    hydration: 'Euvolemic, moist mucous membranes.',
-    pallor: false,
-    cyanosis: false,
-    jaundice: false,
-    edema: 'Trace pedal edema.',
-    mentalStatus: 'Alert and oriented x4.',
-  },
-  cardiovascular: {
-    jvp: 'Normal (< 4 cm above sternal angle).',
-    heartSounds: 'S1, S2 audible, regular rate and rhythm.',
-    murmurs: 'No systolic or diastolic murmurs, rubs, or gallops.',
-    peripheralPulses: '2+ symmetric in radial, dorsalis pedis, posterior tibial.',
-    edema: 'Trace 1+ bilateral ankle edema.',
-    perfusion: 'Warm, capillary refill < 2 seconds.',
-    apexBeat: '5th intercostal space, midclavicular line.',
-  },
-  respiratory: {
-    chestExam: 'Symmetric chest expansion.',
-    airEntry: 'Bilateral vesicular breath sounds.',
-    addedSounds: 'Clear to auscultation bilaterally, no wheezes or crackles.',
-    workOfBreathing: 'Unlabored, no accessory muscle use.',
-  },
-  abdomen: {
-    inspection: 'Flat, soft, non-distended.',
-    palpation: 'Soft, non-tender to light and deep palpation.',
-    tenderness: 'None noted.',
-    organomegaly: 'No hepatosplenomegaly palpable.',
-    ascites: 'Absent.',
-    bowelSounds: 'Normoactive in all 4 quadrants.',
-  },
-  neurological: {
-    consciousness: 'Alert, awake, responds appropriately.',
-    gcs: 'E4 V5 M6 (15/15)',
-    pupils: '3mm equal, round, reactive to light and accommodation.',
-    motor: '5/5 power throughout all 4 limbs.',
-    sensory: 'Intact to light touch and pinprick bilaterally.',
-    reflexes: '2+ symmetric patellar, biceps, and Achilles reflexes.',
-    cranialNerves: 'Cranial nerves II-XII grossly intact.',
-    motorPower: '5/5 in all extremities.',
-    plantarResponse: 'Flexor / Downward bilaterally.',
-  },
-  extremities: {
-    pulses: 'Intact 2+ bilaterally.',
-    edema: 'Trace pedal edema.',
-    temp: 'Warm to touch distally.',
-    perfusion: 'Capillary refill 1.8s.',
-  },
+  general: { appearance: '', vitalSignsSummary: '', hydration: '', pallor: false, cyanosis: false, jaundice: false, edema: '', mentalStatus: '' },
+  cardiovascular: { jvp: '', heartSounds: '', murmurs: '', peripheralPulses: '', edema: '', perfusion: '', apexBeat: '' },
+  respiratory: { chestExam: '', airEntry: '', addedSounds: '', workOfBreathing: '' },
+  abdomen: { inspection: '', palpation: '', tenderness: '', organomegaly: '', ascites: '', bowelSounds: '' },
+  neurological: { consciousness: '', gcs: '', pupils: '', motor: '', sensory: '', reflexes: '', cranialNerves: '', motorPower: '', plantarResponse: '' },
+  extremities: { pulses: '', edema: '', temp: '', perfusion: '' },
   customFields: [] as Array<{ label: string; value: string }>,
 };
 
@@ -321,7 +278,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.peripheralPulses} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,peripheralPulses:draft}})} fieldLabel="peripheralPulses" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.peripheralPulses} • Cap refill: {exam.cardiovascular.perfusion}
+                  {[meaningfulExaminationText(exam.cardiovascular.peripheralPulses), meaningfulExaminationText(exam.cardiovascular.perfusion) ? `Cap refill: ${meaningfulExaminationText(exam.cardiovascular.perfusion)}` : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
             </div>
@@ -624,8 +581,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 </div>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.general.pallor ? 'Pallor present' : 'No pallor'} •{' '}
-                  {exam.general.cyanosis ? 'Cyanosis present' : 'No cyanosis'}
+                  {[exam.general.pallor ? 'Pallor present' : '', exam.general.cyanosis ? 'Cyanosis present' : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
             </div>
@@ -705,7 +661,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.organomegaly} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,organomegaly:draft}})} fieldLabel="organomegaly" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.abdomen.organomegaly} • Ascites: {exam.abdomen.ascites}
+                  {[meaningfulExaminationText(exam.abdomen.organomegaly), meaningfulExaminationText(exam.abdomen.ascites) ? `Ascites: ${meaningfulExaminationText(exam.abdomen.ascites)}` : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
             </div>
@@ -785,7 +741,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.extremities.edema} onApply={(draft)=>setExam({...exam,extremities:{...exam.extremities,edema:draft}})} fieldLabel="edema" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.extremities.edema} • Temperature: {exam.extremities.temp}
+                  {[meaningfulExaminationText(exam.extremities.edema), meaningfulExaminationText(exam.extremities.temp) ? `Temperature: ${meaningfulExaminationText(exam.extremities.temp)}` : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
             </div>

@@ -201,3 +201,11 @@ test('missing admission date and time remain separate', () => {
   assert.equal(summary.admissionDate, 'Not documented');
   assert.equal(summary.admissionTime, 'Not documented');
 });
+
+
+test('examination numeric zero is retained as meaningful content', () => {
+  const input = buildPatientSummaryInput({
+    examination: { neurological: { motorPower: 0 } },
+  });
+  assert.match(input.examination, /motorPower.*0/);
+});

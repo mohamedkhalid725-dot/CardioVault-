@@ -1,3 +1,4 @@
+import { formatAbgTimestamp, sortAbgRecords } from '../../../services/abgHistory';
 import React, { useEffect, useState } from 'react';
 import { Wind, Plus, Activity, Gauge, Edit2, Loader2 } from 'lucide-react';
 import { Patient, ABGRecord, RespiratorySupportType, VentilatorRecord } from '../../../types/clinical';
@@ -12,7 +13,7 @@ const OXYGEN_DEVICES = ['Nasal Cannula', 'Simple Face Mask', 'Venturi Mask', 'NR
 export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
   const { updatePatient, showToast } = useApp();
   const vent = patient.ventilator;
-  const abgs = vent.abgHistory || [];
+  const abgs = sortAbgRecords(vent.abgHistory || []);
   const history = vent.history || [];
   const latestABG = abgs[0];
 
@@ -154,9 +155,9 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
       const abgAnalysis = MedicalCalculators.calculateABG(newPh, newPaco2, newHco3, newPao2, fio2);
       const newRecord: ABGRecord = {
         id: `abg-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date().toISOString(),
         ph: newPh, paco2: newPaco2, pao2: newPao2, hco3: newHco3, be: newBe, lactate: newLactate,
-        fio2, pfRatio: abgAnalysis.pfRatio, interpretation: abgAnalysis.primaryDisorder, anionGap: 12,
+        fio2, pfRatio: abgAnalysis.pfRatio,
       };
       updatePatient(patient.id, { ventilator: { ...vent, abgHistory: [newRecord, ...abgs] } });
       setShowAddABGModal(false);
@@ -253,15 +254,15 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
 
           <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div><h3 className="text-sm font-bold">Current Respiratory Support</h3><p className="text-xs text-slate-400 mt-1">{supportLabel}</p></div>
-              <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/30">{supportType === 'Mechanical Ventilation' ? mode : supportType}</span>
+              <div><h3 className="text-sm font-bold">Current Respiratory Support</h3><p className="text-xs text-slate-400 mt-1">{history.length ? supportLabel : 'Not documented'}</p></div>
+              {history.length>0&&<span className="text-xs font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/30">{supportType === 'Mechanical Ventilation' ? mode : supportType}</span>}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60"><span className="text-[10px] text-slate-400 block">FiO₂</span><b>{vent.fio2}%</b></div>
+            {history.length===0 ? <div className="mt-4 rounded-xl bg-slate-50 dark:bg-slate-900/40 p-4 text-sm font-bold text-slate-500 dark:text-slate-400">Not documented</div> : <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60"><span className="text-[10px] text-slate-400 block">FiO₂</span><b>{vent.fio2 || '—'}%</b></div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60"><span className="text-[10px] text-slate-400 block">PEEP</span><b>{vent.peep || '—'}</b></div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60"><span className="text-[10px] text-slate-400 block">Tidal Volume</span><b>{vent.tidalVolume || '—'}</b></div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60"><span className="text-[10px] text-slate-400 block">RR</span><b>{vent.respiratoryRate || vent.rr || '—'}</b></div>
-            </div>
+            </div>}
           </div>
 
           <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
@@ -278,8 +279,8 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
 
       {activeTab === 'abg' && (
         <div className="space-y-4">
-          {latestABG && <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"><div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800"><span className="text-xs font-bold">Latest ABG Diagnostic Impression ({latestABG.timestamp})</span><span className="text-xs font-bold px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-500 border border-cyan-500/30">P/F Ratio: {latestABG.pfRatio}</span></div><p className="text-sm font-semibold text-cyan-600 dark:text-cyan-400 mt-2">{latestABG.interpretation}</p></div>}
-          <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm"><div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-700 dark:text-slate-300"><thead className="bg-slate-50 dark:bg-slate-900/70 text-slate-400 uppercase text-[10px] tracking-wider"><tr>{['Time','pH','PaCO₂','PaO₂','HCO₃⁻','BE','Lactate','FiO₂','P/F Ratio'].map((h)=><th key={h} className="py-2.5 px-3">{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{abgs.map((a)=><tr key={a.id}><td className="py-2.5 px-3 font-mono">{a.timestamp}</td><td className="py-2.5 px-3 font-bold">{a.ph}</td><td className="py-2.5 px-3">{a.paco2}</td><td className="py-2.5 px-3">{a.pao2}</td><td className="py-2.5 px-3">{a.hco3}</td><td className="py-2.5 px-3">{a.be}</td><td className="py-2.5 px-3">{a.lactate}</td><td className="py-2.5 px-3">{a.fio2}%</td><td className="py-2.5 px-3 font-bold">{a.pfRatio}</td></tr>)}</tbody></table></div></div>
+          {latestABG && <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"><div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800"><span className="text-xs font-bold">Latest ABG ({formatAbgTimestamp(latestABG.timestamp)})</span><span className="text-xs font-bold px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-500 border border-cyan-500/30">P/F Ratio: {latestABG.pfRatio}</span></div></div>}
+          <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm"><div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-700 dark:text-slate-300"><thead className="bg-slate-50 dark:bg-slate-900/70 text-slate-400 uppercase text-[10px] tracking-wider"><tr>{['Time','pH','PaCO₂','PaO₂','HCO₃⁻','BE','Lactate','FiO₂','P/F Ratio'].map((h)=><th key={h} className="py-2.5 px-3">{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{abgs.map((a)=><tr key={a.id}><td className="py-2.5 px-3 font-mono">{formatAbgTimestamp(a.timestamp)}</td><td className="py-2.5 px-3 font-bold">{a.ph}</td><td className="py-2.5 px-3">{a.paco2}</td><td className="py-2.5 px-3">{a.pao2}</td><td className="py-2.5 px-3">{a.hco3}</td><td className="py-2.5 px-3">{a.be}</td><td className="py-2.5 px-3">{a.lactate}</td><td className="py-2.5 px-3">{a.fio2}%</td><td className="py-2.5 px-3 font-bold">{a.pfRatio}</td></tr>)}</tbody></table></div></div>
         </div>
       )}
 

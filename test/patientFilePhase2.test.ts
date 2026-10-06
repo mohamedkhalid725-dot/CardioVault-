@@ -5,6 +5,7 @@ import {
   buildNowVitals,
   getLatestVitalRecord,
   getSectionStatus,
+  formatPhase2Timestamp,
 } from '../src/services/patientFilePhase2.ts';
 
 const vital = (overrides: Record<string, unknown> = {}) => ({
@@ -34,6 +35,14 @@ test('Now always exposes only HR, BP, RR, SpO2 and Temp', () => {
   assert.equal(result.length, 5);
 });
 
+test('readmitted Now ignores pre-admission vitals, while patients without an explicit start are not filtered', () => {
+  const oldVital = vital({ timestamp: '2026-10-06T09:00:00Z', hr: 70 });
+  const currentVital = vital({ timestamp: '2026-10-06T11:00:00Z', hr: 90 });
+  assert.equal(buildNowVitals([oldVital, currentVital], '2026-10-06T10:00:00Z')[0].value, '90');
+  assert.deepEqual(buildNowVitals([oldVital], '2026-10-06T10:00:00Z'), []);
+  assert.equal(buildNowVitals([oldVital])[0].value, '70');
+});
+
 test('latest vitals are selected by timestamp, not array position', () => {
   const older = vital({ id: 'old', timestamp: '2026-10-06T09:00:00Z', hr: 70 });
   const newer = vital({ id: 'new', timestamp: '2026-10-06T11:00:00Z', hr: 90 });
@@ -52,6 +61,41 @@ test('partial vitals show Not documented instead of zero', () => {
   assert.equal(result.find((item) => item.key === 'temp')?.value, 'Not documented');
 });
 
+test('Needs attention filters old abnormal labs only when currentAdmissionStartedAt exists', () => {
+  const items = buildNeedsAttention({
+    currentAdmissionStartedAt: '2026-10-06T10:00:00Z',
+    clinicalSummary: { chiefComplaint: 'Documented' },
+    labResults: [
+      { id: 'old', testName: 'Hb', value: 8, unit: 'g/dL', flag: 'Low', timestamp: '2026-10-06T09:00:00Z' },
+      { id: 'new', testName: 'K', value: 6, unit: 'mmol/L', flag: 'High', timestamp: '2026-10-06T11:00:00Z' },
+    ],
+  } as any);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].labName, 'K');
+  assert.equal(items[0].labValue, '6');
+  assert.equal(items[0].labFlag, 'High');
+});
+
+test('re-admitted abnormal labs without timestamps remain visible as date not recorded', () => {
+  const items = buildNeedsAttention({
+    currentAdmissionStartedAt: '2026-10-06T10:00:00Z',
+    clinicalSummary: { chiefComplaint: 'Documented' },
+    labResults: [{ id: 'l1', testName: 'Hb', value: 8, unit: 'g/dL', flag: 'Low' }],
+  } as any);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].labName, 'Hb');
+  assert.equal(items[0].labTimestamp, undefined);
+});
+
+test('patients without currentAdmissionStartedAt still show abnormal labs without timestamps', () => {
+  const items = buildNeedsAttention({
+    clinicalSummary: { chiefComplaint: 'Documented' },
+    labResults: [{ id: 'l1', testName: 'Hb', value: 9, unit: 'g/dL', flag: 'High' }],
+  } as any);
+  assert.equal(items[0].id, 'abnormal-lab');
+  assert.equal(items[0].labTimestamp, undefined);
+});
+
 test('Needs attention uses only explicit missing/flagged data', () => {
   const items = buildNeedsAttention({
     clinicalSummary: { chiefComplaint: '  ' },
@@ -61,7 +105,16 @@ test('Needs attention uses only explicit missing/flagged data', () => {
   } as any);
   assert.deepEqual(items, [
     { id: 'chief-complaint', reason: 'Chief complaint is not documented.' },
-    { id: 'abnormal-lab', reason: 'This lab was already flagged as abnormal in the record.' },
+    {
+      id: 'abnormal-lab',
+      reason: 'This lab was already flagged as abnormal in the record.',
+      labName: 'Hb',
+      labValue: '9',
+      labUnit: 'g/dL',
+      labFlag: 'High',
+      labTimestamp: undefined,
+      count: 1,
+    },
   ]);
 });
 
@@ -73,6 +126,24 @@ test('Needs attention does not treat false/empty defaults as undocumented allerg
     labResults: [],
   } as any);
   assert.deepEqual(items, []);
+});
+
+test('examination defaults are not counted as section data', () => {
+  const status = getSectionStatus({
+    examination: {
+      general: { pallor: false, cyanosis: false, appearance: '• Temperature:', hydration: '' },
+      cardiovascular: { heartSounds: '()', murmurs: '', jvp: '' },
+    },
+  } as any, 'examination');
+  assert.equal(status.hasData, false);
+  assert.equal(status.count, 0);
+  assert.equal(status.lastUpdated, null);
+});
+
+test('formatPhase2Timestamp uses a readable local date/time', () => {
+  const formatted = formatPhase2Timestamp('2026-10-06T11:00:00Z');
+  assert.ok(formatted);
+  assert.match(formatted!, /2026|Oct|10/);
 });
 
 test('section status handles empty sections and different timestamps', () => {
@@ -93,7 +164,7 @@ test('section status handles empty sections and different timestamps', () => {
   } as any, 'vitals');
   assert.equal(status.hasData, true);
   assert.equal(status.count, 2);
-  assert.equal(status.lastUpdated, '2026-10-06T11:00:00Z');
+  assert.equal(status.lastUpdated, formatPhase2Timestamp('2026-10-06T11:00:00Z'));
 });
 
 test('section status tolerates missing objects and casing in lab flags', () => {

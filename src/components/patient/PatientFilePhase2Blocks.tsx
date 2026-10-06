@@ -6,6 +6,7 @@ import {
   buildNeedsAttention,
   buildNowVitals,
   getSectionStatus,
+  formatPhase2Timestamp,
 } from '../../services/patientFilePhase2';
 
 interface Props {
@@ -34,7 +35,7 @@ export const PatientFilePhase2Blocks: React.FC<Props> = ({
   patient,
   onSelectSection,
 }) => {
-  const nowVitals = buildNowVitals(patient.vitalsHistory);
+  const nowVitals = buildNowVitals(patient.vitalsHistory, patient.currentAdmissionStartedAt);
   const attentionItems = buildNeedsAttention(patient);
 
   return (
@@ -55,7 +56,7 @@ export const PatientFilePhase2Blocks: React.FC<Props> = ({
                 <div key={item.key} className="min-w-0 rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2.5">
                   <div className="text-[10px] uppercase tracking-wide font-black text-slate-400">{item.label}</div>
                   <div className="mt-1 text-sm font-extrabold truncate">{item.value}</div>
-                  <div className="mt-1 text-[9px] text-slate-400 truncate" title={item.timestamp}>Recorded: {item.timestamp}</div>
+                  <div className="mt-1 text-[9px] text-slate-400 truncate" title={item.timestamp}>Recorded: {formatPhase2Timestamp(item.timestamp) || 'Date not recorded'}</div>
                 </div>
               ))}
             </div>
@@ -73,12 +74,28 @@ export const PatientFilePhase2Blocks: React.FC<Props> = ({
             </div>
           </div>
           <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {attentionItems.map((item) => (
-              <div key={item.id} className="px-4 py-3 flex items-start gap-2.5">
-                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                <div className="text-sm font-semibold">{item.reason}</div>
-              </div>
-            ))}
+            {attentionItems.map((item) => {
+              const content = (
+                <>
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                  <div className="min-w-0 text-sm font-semibold">
+                    <div>{item.reason}</div>
+                    {item.id === 'abnormal-lab' && (
+                      <div className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        {item.labName}: {item.labValue}{item.labUnit ? ` ${item.labUnit}` : ''} • {item.labFlag}
+                        {' • '}{item.labTimestamp ? (formatPhase2Timestamp(item.labTimestamp) || 'Date not recorded') : 'Date not recorded'}
+                        {item.count && item.count > 1 ? ` • ${item.count} abnormal labs` : ''}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+              return item.id === 'abnormal-lab' ? (
+                <button key={item.id} type="button" onClick={() => onSelectSection('labs')} className="w-full text-left px-4 py-3 flex items-start gap-2.5 hover:bg-amber-500/5">{content}</button>
+              ) : (
+                <div key={item.id} className="px-4 py-3 flex items-start gap-2.5">{content}</div>
+              );
+            })}
           </div>
         </section>
       )}
