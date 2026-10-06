@@ -203,7 +203,7 @@ test('section status tolerates missing objects and casing in lab flags', () => {
   } as any, 'labs');
   assert.equal(status.hasData, true);
   assert.equal(status.count, 1);
-  assert.equal(status.lastUpdated, '2026-10-06T12:00:00Z');
+  assert.equal(status.lastUpdated, formatPhase2Timestamp('2026-10-06T12:00:00Z'));
 });
 
 test('Clinical Tools & Workflow is a Phase 2 section with read-only empty status when no tool data is recorded', () => {
