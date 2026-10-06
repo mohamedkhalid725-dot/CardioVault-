@@ -1,4 +1,4 @@
-import { hasMeaningfulExaminationContent } from './examinationContent';
+import { hasMeaningfulExaminationContent } from './examinationContent.ts';
 
 export interface PatientSummarySource {
   age?: unknown;

@@ -1,6 +1,6 @@
 import type { Patient, PatientSectionId, VitalRecord } from '../types/clinical';
-import { hasMeaningfulExaminationContent } from './examinationContent';
-import { isAtOrAfterCurrentAdmission } from './patientAdmission';
+import { hasMeaningfulExaminationContent } from './examinationContent.ts';
+import { isAtOrAfterCurrentAdmission } from './patientAdmission.ts';
 
 export interface NowVitalItem {
   key: 'hr' | 'bp' | 'rr' | 'spo2' | 'temp';
