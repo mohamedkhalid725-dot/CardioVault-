@@ -92,11 +92,13 @@ function textOrNotDocumented(value: unknown): string {
 }
 
 function humanizeExaminationKey(key: string): string {
-  return key
+  const sentence = key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[_-]+/g, ' ')
-    .replace(/^./, (char) => char.toUpperCase())
-    .trim();
+    .trim()
+    .toLowerCase();
+
+  return sentence ? sentence.charAt(0).toUpperCase() + sentence.slice(1) : '';
 }
 
 function readableExaminationValue(value: unknown): string {
