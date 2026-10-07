@@ -272,3 +272,20 @@ test('summary examination presence stays in parity with examination section stat
     assert.equal(summaryHasData, sectionStatus.hasData, testCase.name);
   }
 });
+
+
+test('missing allergies are Not documented; explicit NKDA remains NKDA', () => {
+  assert.equal(buildPatientReadableSummary({}).allergies, 'Not documented');
+  assert.equal(buildPatientReadableSummary({ allergies: ['NKDA'] }).allergies, 'NKDA');
+});
+
+test('history chips are included in readable summary when recorded', () => {
+  const summary = buildPatientReadableSummary({
+    riskFactors: ['Smoking'],
+    comorbidities: ['Obesity'],
+    otherConditions: ['Asthma'],
+  });
+  assert.deepEqual(summary.riskFactors, ['Smoking']);
+  assert.deepEqual(summary.comorbidities, ['Obesity']);
+  assert.deepEqual(summary.otherConditions, ['Asthma']);
+});

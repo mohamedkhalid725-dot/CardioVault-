@@ -17,6 +17,9 @@ export interface PatientSummarySource {
     diabetes?: unknown;
     hypertension?: unknown;
   };
+  riskFactors?: unknown;
+  comorbidities?: unknown;
+  otherConditions?: unknown;
   examination?: unknown;
 }
 
@@ -45,6 +48,9 @@ export interface PatientReadableSummary {
   examination: string;
   diabetes: boolean;
   hypertension: boolean;
+  riskFactors: string[];
+  comorbidities: string[];
+  otherConditions: string[];
 }
 
 function hasRecordedPrimitive(value: unknown): boolean {
@@ -216,7 +222,7 @@ export function buildPatientReadableSummary(
           .map((item) => String(item).trim())
           .filter(Boolean)
           .join(', ')
-      : 'NKDA';
+      : 'Not documented';
 
   return {
     age: textOrNotDocumented(patient.age),
@@ -234,5 +240,8 @@ export function buildPatientReadableSummary(
     examination: serializeReadableExamination(patient.examination),
     diabetes: patient.cardiovascularHistory?.diabetes === true,
     hypertension: patient.cardiovascularHistory?.hypertension === true,
+    riskFactors: Array.isArray(patient.riskFactors) ? patient.riskFactors.map(String).filter(Boolean) : [],
+    comorbidities: Array.isArray(patient.comorbidities) ? patient.comorbidities.map(String).filter(Boolean) : [],
+    otherConditions: Array.isArray(patient.otherConditions) ? patient.otherConditions.map(String).filter(Boolean) : [],
   };
 }
