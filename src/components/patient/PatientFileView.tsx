@@ -53,7 +53,7 @@ case'orders':return <OrdersConsultationsSection patient={currentPatient}/>;case'
 <div className="flex flex-wrap gap-2">
 {!readOnly&&!isPreviousViewer&&<button onClick={()=>setShowQuickRecord(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500 text-white text-xs font-bold"><ClipboardPlus className="w-3.5 h-3.5"/>Quick Record</button>}
 <button onClick={()=>setShowTimeline(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 text-xs font-bold"><Clock3 className="w-3.5 h-3.5 text-cyan-500"/>Timeline</button>
-{!isPreviousViewer&&<button onClick={()=>setShowHandover(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 text-xs font-bold"><ClipboardList className="w-3.5 h-3.5 text-cyan-500"/>Handover</button>
+{!isPreviousViewer&&<button onClick={()=>setShowHandover(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 text-xs font-bold"><ClipboardList className="w-3.5 h-3.5 text-cyan-500"/>Handover</button>}
 
 </div>
 <div className="grid grid-cols-3 gap-2">
