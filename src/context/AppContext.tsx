@@ -17,7 +17,7 @@ export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
 interface ToastInfo{id:string;message:string;type:'success'|'info'|'warning'|'error';}
 interface PatientAuditContext { uid?: string; displayName?: string; action?: string; }
-interface AppContextType{
+export interface AppContextType{
   theme:'dark'|'light';
   setTheme:(theme:'dark'|'light')=>void;
   toggleTheme:()=>void;
