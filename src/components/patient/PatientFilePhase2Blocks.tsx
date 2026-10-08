@@ -12,6 +12,7 @@ import {
 interface Props {
   patient: Patient;
   onSelectSection: (id: PatientSectionId) => void;
+  hideClinicalTools?: boolean;
 }
 
 const SECTION_ROWS: PatientSectionId[] = [
@@ -34,6 +35,7 @@ const SECTION_ROWS: PatientSectionId[] = [
 export const PatientFilePhase2Blocks: React.FC<Props> = ({
   patient,
   onSelectSection,
+  hideClinicalTools = false,
 }) => {
   const nowVitals = buildNowVitals(patient.vitalsHistory, patient.currentAdmissionStartedAt);
   const attentionItems = buildNeedsAttention(patient);
@@ -106,7 +108,7 @@ export const PatientFilePhase2Blocks: React.FC<Props> = ({
           <div className="text-xs text-slate-400 mt-0.5">Read-only status; tap a row to open the existing section.</div>
         </div>
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] overflow-hidden">
-          {SECTION_ROWS.map((id) => {
+          {SECTION_ROWS.filter((id) => !(hideClinicalTools && id === 'clinical-tools')).map((id) => {
             const meta = PATIENT_SECTIONS.find((section) => section.id === id);
             if (!meta) return null;
             const status = getSectionStatus(patient, id);

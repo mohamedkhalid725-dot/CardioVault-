@@ -70,7 +70,7 @@ interface AppContextType{
   favoritePatientIds:string[];
   toggleFavoritePatient:(id:string)=>void;
 }
-const AppContext=createContext<AppContextType|undefined>(undefined);
+export const AppContext=createContext<AppContextType|undefined>(undefined);
 
 // Native Firebase can take a short moment to restore the persisted session after the
 // Android activity/WebView starts. Do not treat that short window as a real sign-out.

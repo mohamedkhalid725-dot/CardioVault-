@@ -2,9 +2,9 @@ import React,{useEffect,useRef,useState}from'react';
 import{ArrowLeft,Edit,ArrowRightLeft,LogOut,ChevronDown}from'lucide-react';
 import{useApp}from'../../context/AppContext';
 import{Patient,PatientStatus}from'../../types/clinical';
-interface PatientFileHeaderProps{patient:Patient;onEditClick?:()=>void;readOnly?:boolean;}
+interface PatientFileHeaderProps{patient:Patient;onEditClick?:()=>void;readOnly?:boolean;onBackClick?:()=>void;}
 
-export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEditClick,readOnly=false})=>{
+export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEditClick,readOnly=false,onBackClick})=>{
  const{setCurrentView,getUnitById,beds,units,transferPatient,dischargePatient,updatePatient}=useApp();
  const[showTransferModal,setShowTransferModal]=useState(false),[showDischargeModal,setShowDischargeModal]=useState(false),[compact,setCompact]=useState(false);
  const[targetUnitId,setTargetUnitId]=useState(patient.unitId),[targetBedId,setTargetBedId]=useState(''),[dischargeReason,setDischargeReason]=useState('Discharged Home'),[dischargeSummary,setDischargeSummary]=useState('');
@@ -20,7 +20,7 @@ export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEdit
    <div className="max-w-7xl mx-auto w-full px-3 sm:px-6">
     <div className="relative h-[4.05rem]">
      <div className={`absolute inset-x-0 top-0 flex items-center gap-2.5 min-h-[4.05rem] ${compact?'opacity-100 translate-y-0':'opacity-100'}`}>
-      <button onClick={()=>setCurrentView(readOnly?'archive':'census')} className="rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 p-2 shrink-0 transition-colors"><ArrowLeft className="w-5 h-5"/></button>
+      <button onClick={()=>onBackClick?onBackClick():setCurrentView(readOnly?'archive':'census')} className="rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 p-2 shrink-0 transition-colors"><ArrowLeft className="w-5 h-5"/></button>
       <div className="relative shrink-0">
        {patient.photoUrl?<img src={patient.photoUrl} alt="" referrerPolicy="no-referrer" className={`rounded-xl object-cover ring-2 ring-cyan-500/40 shadow-sm  ${compact?'w-9 h-9':'w-12 h-12 rounded-2xl'}`}/>:<div className={`bg-gradient-to-tr from-cyan-600 to-sky-400 text-white font-bold flex items-center justify-center shadow-sm  ${compact?'w-9 h-9 rounded-xl text-sm':'w-12 h-12 rounded-2xl text-lg'}`}>{patient.fullName.charAt(0)}</div>}
        {patient.status==='Critical'&&<span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 border-2 border-white dark:border-[#111C2E] rounded-full"/>}
