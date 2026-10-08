@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { patientKeyClassification } from '../src/services/patientSummaryInput.ts';
 import {
+  buildAdditionalConditions,
   buildPatientReadableSummary,
   buildPatientSummaryInput,
   serializeExamination,
@@ -280,3 +282,4 @@ test('missing allergies are Not documented; explicit NKDA remains NKDA', () => {
 });
 
 test('additional conditions use one field and include legacy cardiovascular booleans',()=>{const summary=buildPatientReadableSummary({cardiovascularHistory:{hypertension:true,diabetes:true,dyslipidemia:true,cad:true,previousMI:true,heartFailure:true,arrhythmias:true,valvularDisease:true,previousPCI:true,previousCABG:true,previousStroke:true,pvd:true,smoking:true,alcohol:true},additionalConditions:['Diabetes','no','Asthma','asthma']});assert.deepEqual(summary.additionalConditions,['Hypertension','Diabetes','Dyslipidemia','CAD','Previous MI','Heart failure','Arrhythmias','Valvular disease','Previous PCI','Previous CABG','Previous stroke/TIA','PVD','Smoking','Alcohol','Asthma']);});
+test('patient key classification exposes the snapshot denylist and includes additionalConditions',()=>{assert.equal(patientKeyClassification.id,'excluded-from-snapshot'); assert.equal(patientKeyClassification.pastAdmissions,'excluded-from-snapshot'); assert.equal(patientKeyClassification.aiSummary,'excluded-from-snapshot'); assert.equal(patientKeyClassification.additionalConditions,'snapshotted');});

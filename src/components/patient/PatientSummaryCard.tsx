@@ -37,7 +37,7 @@ export const PatientSummaryCard: React.FC<PatientSummaryCardProps> = ({
           </div>
           <div className="text-xs font-bold" dir="auto"><span className="text-[10px] uppercase tracking-wide text-slate-400 font-bold" dir="auto">Primary diagnosis</span><div className="mt-0.5" dir="auto">{summary.primaryDiagnosis}</div></div>
           <div className="text-xs font-bold" dir="auto"><span className="text-[10px] uppercase tracking-wide text-slate-400 font-bold" dir="auto">Admission</span><div className="mt-0.5" dir="auto">{admission}</div></div>
-          {(summary.riskFactors.length || summary.comorbidities.length || summary.otherConditions.length) > 0 && <div className="flex flex-wrap gap-2" dir="auto">{[...summary.riskFactors,...summary.comorbidities,...summary.otherConditions].map(item=><span key={item} className="rounded-full border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-[11px] font-extrabold" dir="auto">{item}</span>)}</div>}
+          {summary.additionalConditions.length > 0 && <div className="flex flex-wrap gap-2" dir="auto">{summary.additionalConditions.map(item=><span key={item} className="rounded-full border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-[11px] font-extrabold" dir="auto">{item}</span>)}</div>}
           {(summary.diabetes || summary.hypertension) && (
             <div className="flex flex-wrap gap-2" dir="auto">
               {summary.diabetes && <span className="rounded-full border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-[11px] font-extrabold" dir="auto">Diabetes: Yes</span>}

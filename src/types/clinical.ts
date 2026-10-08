@@ -317,6 +317,7 @@ export interface Patient {
   archiveReason?: string;
   archiveDate?: string;
   currentAdmissionStartedAt?: string;
+  additionalConditions?: string[];
   dischargeSummary?: string;
   pastAdmissions: PastAdmission[];
   clinicalSummary: ClinicalSummary;
