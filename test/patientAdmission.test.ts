@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isAtOrAfterCurrentAdmission, prepareReadmittedPatient, toLocalIsoTimestamp } from '../src/services/patientAdmission.ts';
+import { isAtOrAfterCurrentAdmission, prepareReadmittedPatient, toLocalIsoTimestamp, formatLocalAdmissionDate, formatLocalAdmissionTime } from '../src/services/patientAdmission.ts';
 
 const admitted = {
   id: 'p1', admissionDate: '2026-10-06', admissionTime: '10:00',
@@ -40,3 +40,5 @@ test('exact lightweight entry is replaced',()=>{const p={...admitted,archiveDate
 test('legacy archived patient with no lightweight entry gets a new snapshot',()=>{const p={...admitted,archiveDate:'2026-10-05',archiveReason:'Deceased',pastAdmissions:[]};const n=resetForNewAdmission(p,'u2','b2','CCU','2026-10-07','12:30','2026-10-07T12:30:00+03:00');assert.equal(n.pastAdmissions.length,1);assert.ok(n.pastAdmissions[0].episodeSnapshot);});
 test('top-level coverage has no unclassified current Patient key',()=>{const keys=Object.keys(admitted);const classified=new Set(['id','mrn','fullName','age','sex','weight','height','unitId','bedId','status','admissionDate','admissionTime','primaryDiagnosis','secondaryDiagnoses','allergies','codeStatus','pastAdmissions','clinicalSummary','cardiovascularHistory','vitalsHistory','fluidRecords','examination','ecgRecords','cardiology','medications','ventilator','imaging','labs','procedures','calculatorResults','progressNotes','auditTrail','aiSummary']);assert.deepEqual(keys.filter(k=>!classified.has(k)),[]);});
 test('one 700 KiB document limit is used',()=>assert.equal(MAX_PATIENT_DOCUMENT_BYTES,700*1024));
+
+test('local admission date and time agree with the local timestamp at 00:30',()=>{const started=new Date(2026,9,8,0,30,0,0);const timestamp=toLocalIsoTimestamp(started);assert.equal(formatLocalAdmissionDate(started),timestamp.slice(0,10));assert.equal(formatLocalAdmissionTime(started),timestamp.slice(11,16));});

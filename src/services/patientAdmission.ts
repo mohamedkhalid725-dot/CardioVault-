@@ -1,6 +1,8 @@
 import type { Patient } from '../types/clinical';
 
 const pad = (value: number): string => String(value).padStart(2, '0');
+export const formatLocalAdmissionDate = (date: Date): string => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+export const formatLocalAdmissionTime = (date: Date): string => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 export const toLocalIsoTimestamp = (date: Date): string => {
   const offsetMinutes = -date.getTimezoneOffset();
   const sign = offsetMinutes >= 0 ? '+' : '-';
@@ -23,7 +25,7 @@ export const prepareReadmittedPatient = (patient: Patient, unitId: string, bedId
   archiveDate: undefined,
   unitId,
   bedId,
-  admissionDate: `${admissionStartedAt.getFullYear()}-${pad(admissionStartedAt.getMonth() + 1)}-${pad(admissionStartedAt.getDate())}`,
-  admissionTime: `${pad(admissionStartedAt.getHours())}:${pad(admissionStartedAt.getMinutes())}`,
+  admissionDate: formatLocalAdmissionDate(admissionStartedAt),
+  admissionTime: formatLocalAdmissionTime(admissionStartedAt),
   pastAdmissions: [...(patient.pastAdmissions || [])],
 });
