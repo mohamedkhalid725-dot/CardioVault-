@@ -17,9 +17,7 @@ export interface PatientSummarySource {
     diabetes?: unknown;
     hypertension?: unknown;
   };
-  riskFactors?: unknown;
-  comorbidities?: unknown;
-  otherConditions?: unknown;
+  additionalConditions?: unknown;
   examination?: unknown;
 }
 
@@ -48,9 +46,7 @@ export interface PatientReadableSummary {
   examination: string;
   diabetes: boolean;
   hypertension: boolean;
-  riskFactors: string[];
-  comorbidities: string[];
-  otherConditions: string[];
+  additionalConditions: string[];
 }
 
 function hasRecordedPrimitive(value: unknown): boolean {

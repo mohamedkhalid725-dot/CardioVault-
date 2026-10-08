@@ -432,6 +432,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             ['Weight', patient.weight ? `${patient.weight} kg` : ''],
             ['Height', patient.height ? `${patient.height} cm` : ''],
             ['Code Status', patient.codeStatus],
+            ['Conditions', (patient as any).additionalConditions],
           ]);
         }
 

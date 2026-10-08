@@ -279,13 +279,4 @@ test('missing allergies are Not documented; explicit NKDA remains NKDA', () => {
   assert.equal(buildPatientReadableSummary({ allergies: ['NKDA'] }).allergies, 'NKDA');
 });
 
-test('history chips are included in readable summary when recorded', () => {
-  const summary = buildPatientReadableSummary({
-    riskFactors: ['Smoking'],
-    comorbidities: ['Obesity'],
-    otherConditions: ['Asthma'],
-  });
-  assert.deepEqual(summary.riskFactors, ['Smoking']);
-  assert.deepEqual(summary.comorbidities, ['Obesity']);
-  assert.deepEqual(summary.otherConditions, ['Asthma']);
-});
+test('additional conditions use one field and include legacy cardiovascular booleans',()=>{const summary=buildPatientReadableSummary({cardiovascularHistory:{hypertension:true,diabetes:true,dyslipidemia:true,cad:true,previousMI:true,heartFailure:true,arrhythmias:true,valvularDisease:true,previousPCI:true,previousCABG:true,previousStroke:true,pvd:true,smoking:true,alcohol:true},additionalConditions:['Diabetes','no','Asthma','asthma']});assert.deepEqual(summary.additionalConditions,['Hypertension','Diabetes','Dyslipidemia','CAD','Previous MI','Heart failure','Arrhythmias','Valvular disease','Previous PCI','Previous CABG','Previous stroke/TIA','PVD','Smoking','Alcohol','Asthma']);});
