@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { StorageService, stripLegacyDemoData } from './storage';
+import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
 import { WorkspaceAccessState, MASTER_WORKSPACE_ID, ensureOwnerWorkspace, isMasterAccount } from './workspaceAccess';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { webCurrentUser } from './webFirebase';
@@ -134,16 +135,16 @@ async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessStat
     const bedNumber=String(raw.bedNumber||'').trim();if(!bedNumber)continue;const key=targetUnit+'::'+bedNumber.toLowerCase();let canonical=canonicalBeds.get(key);
     if(!canonical){const canonicalId='bed-'+targetUnit+'-'+bedNumber.replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase();canonical={id:canonicalId,data:{id:canonicalId,unitId:targetUnit,bedNumber,status:'Empty',schemaVersion:SCHEMA_VERSION}};canonicalBeds.set(key,canonical);}
     legacyBedMap.set(item.id,canonical.id);const legacyPatientId=String(raw.patientId||'');const existingPatientId=String(canonical.data?.patientId||'');
-    if(legacyPatientId&&(!existingPatientId||existingPatientId===legacyPatientId)||!existingPatientId){const bed={...canonical.data,...raw,id:canonical.id,unitId:targetUnit,bedNumber,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION,status:raw.status||canonical.data?.status||'Stable'};await withRetry(()=>FirebaseFirestore.setDocument({reference:workspacePath(access.workspaceId,'beds')+'/'+canonical.id,data:bed,merge:true}));canonical.data=bed;}
+    if(legacyPatientId&&(!existingPatientId||existingPatientId===legacyPatientId)||!existingPatientId){const bed={...canonical.data,...raw,id:canonical.id,unitId:targetUnit,bedNumber,migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION,status:normalizeBedStatus(raw.status||canonical.data?.status||'Not documented')};await withRetry(()=>FirebaseFirestore.setDocument({reference:workspacePath(access.workspaceId,'beds')+'/'+canonical.id,data:bed,merge:true}));canonical.data=bed;}
   }
   let migrated=0;
   for(const item of legacyPatients){
     const raw=firestoreSafe({...item.data,id:item.id})||{};const sourceUnit=String(raw.unitId||'');const targetUnit=sourceUnit&&unitIds.has(sourceUnit)?sourceUnit:String(access.unitId||'');if(!targetUnit)continue;
     let targetBedId='';const legacyBedId=String(raw.bedId||'');if(legacyBedId)targetBedId=legacyBedMap.get(legacyBedId)||'';
     if(!targetBedId&&legacyBedId){const lb=legacyBeds.find(b=>String(b.id)===legacyBedId);const bn=String(lb?.data?.bedNumber||'').trim();if(bn)targetBedId=canonicalBeds.get(targetUnit+'::'+bn.toLowerCase())?.id||'';}
-    const existing=await FirebaseFirestore.getDocument({reference:workspacePath(access.workspaceId,'patients')+'/'+item.id});const existingData=readSnapshotData(existing?.snapshot);const patient={...raw,id:item.id,unitId:targetUnit,bedId:targetBedId||String(raw.bedId||''),migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
+    const existing=await FirebaseFirestore.getDocument({reference:workspacePath(access.workspaceId,'patients')+'/'+item.id});const existingData=readSnapshotData(existing?.snapshot);const patient={...raw,id:item.id,unitId:targetUnit,bedId:targetBedId||String(raw.bedId||''),status:normalizePatientStatus(raw.status),migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION};
     if(existingData&&Object.keys(existingData).length){const existingUnit=String(existingData.unitId||'');if(existingUnit&&existingUnit!==targetUnit)continue;await withRetry(()=>FirebaseFirestore.setDocument({reference:workspacePath(access.workspaceId,'patients')+'/'+item.id,data:{unitId:targetUnit,...(targetBedId?{bedId:targetBedId}:{}),migratedFromLegacyUserId:uid,migratedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},merge:true}));}else{await withRetry(()=>FirebaseFirestore.setDocument({reference:workspacePath(access.workspaceId,'patients')+'/'+item.id,data:patient,merge:false}));migrated++;}
-    if(targetBedId){const bedRef=workspacePath(access.workspaceId,'beds')+'/'+targetBedId;const bedSnap=await FirebaseFirestore.getDocument({reference:bedRef});const bedData=readSnapshotData(bedSnap?.snapshot);const occupiedBy=String(bedData?.patientId||'');if(!occupiedBy||occupiedBy===item.id)await withRetry(()=>FirebaseFirestore.setDocument({reference:bedRef,data:{patientId:item.id,status:raw.status||bedData?.status||'Stable',unitId:targetUnit,bedNumber:bedData?.bedNumber||raw.bedNumber||'',schemaVersion:SCHEMA_VERSION},merge:true}));}
+    if(targetBedId){const bedRef=workspacePath(access.workspaceId,'beds')+'/'+targetBedId;const bedSnap=await FirebaseFirestore.getDocument({reference:bedRef});const bedData=readSnapshotData(bedSnap?.snapshot);const occupiedBy=String(bedData?.patientId||'');if(!occupiedBy||occupiedBy===item.id)await withRetry(()=>FirebaseFirestore.setDocument({reference:bedRef,data:{patientId:item.id,status:normalizeBedStatus(raw.status||bedData?.status||'Not documented'),unitId:targetUnit,bedNumber:bedData?.bedNumber||raw.bedNumber||'',schemaVersion:SCHEMA_VERSION},merge:true}));}
   }
   return migrated;
 }

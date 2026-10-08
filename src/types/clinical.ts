@@ -1,6 +1,9 @@
-export type PatientStatus = 'Stable' | 'Unstable' | 'Critical' | 'Empty';
+export type PatientStatus = 'Stable' | 'Unstable' | 'Critical' | 'Not documented';
+export type BedStatus = PatientStatus | 'Empty';
+export const normalizePatientStatus=(value:unknown):PatientStatus=>{switch(value){case 'Stable':case 'Unstable':case 'Critical':case 'Not documented':return value;default:return 'Not documented';}};
+export const normalizeBedStatus=(value:unknown):BedStatus=>value==='Empty'?'Empty':normalizePatientStatus(value);
 
-export interface Bed { id:string; unitId:string; bedNumber:string; status:PatientStatus; patientId?:string; }
+export interface Bed { id:string; unitId:string; bedNumber:string; status:BedStatus; patientId?:string; }
 export interface Unit { id:string; name:string; type:string; totalBeds:number; }
 export interface ClinicalSummary { chiefComplaint:string; hpi:string; pmh:string[]; psh:string[]; drugHistory:string; allergies:string[]; familyHistory:string; socialHistory:string; }
 export interface HandoverData { situation:string; background:string; assessment:string; recommendation:string; updatedAt?:string; }
@@ -25,7 +28,7 @@ export interface LabPanel { date:string; hb:number;wbc:number;platelets:number;h
 export interface ProcedureRecord { id:string; date:string; time:string; procedure?:string; name?:string; surgeryName?:string; indication?:string; technique?:string; operator?:string; findings?:string; complications?:string; outcome?:string; postProcedurePlan?:string; site?:string; details?:string; notes?:string; }
 export interface CalculatorResult { id:string; calculatorId:string; name:string; timestamp:string; score:number|string; riskLevel:'Low'|'Intermediate'|'High'|'Very High'|'Normal'|'Critical'; interpretation:string; summary:string; }
 export interface ProgressNote { id:string; date:string; time:string; author:string; type?:string; subjective?:string; objective?:string; assessment?:string; plan:string; audioUrl?:string; audioStoragePath?:string; audioDurationSeconds?:number; clinicalStatus?:string; events?:string; examination?:string; investigations?:string; treatment?:string; response?:string; problems?:string; updatedAt?:string; }
-export interface PastAdmission { id:string; admissionDate:string; dischargeDate:string; unitName:string; dischargeReason:'Discharged Home'|'Transferred'|'Deceased'|'Other'; dischargeSummary:string; primaryDiagnosis:string; }
+export interface PastAdmission { id:string; admissionDate:string; dischargeDate:string; unitName:string; dischargeReason:'Discharged Home'|'Transferred'|'Deceased'|'Other'; dischargeSummary:string; primaryDiagnosis:string; episodeSnapshot?:AdmissionEpisodeSnapshot; }
 export interface AuditEvent { id:string; timestamp:string; action:string; fields:string[]; actor?:string; actorUid?:string; actorName?:string; }
 export interface PatientAISummary { summary:string; keyPoints:string[]; generatedAt:string; savedAt:string; savedByUid:string; savedByName?:string; inputFingerprint:string; model:string; }
 
@@ -350,6 +353,7 @@ export interface Patient {
   attendedClinician?: string;
   attendedNurse?: string;
 }
+export type AdmissionEpisodeSnapshot=Omit<Patient,'id'|'mrn'|'fullName'|'name'|'age'|'sex'|'gender'|'weight'|'height'|'photoUrl'|'pastAdmissions'|'auditTrail'|'aiSummary'> & {episodeId:string;unitName:string;dischargeDate?:string;dischargeReason?:PastAdmission['dischargeReason'];dischargeSummary?:string};
 export type PatientSectionId='overview'|'history'|'ecg'|'vitals'|'examination'|'cardiology'|'medication'|'icu'|'imaging'|'labs'|'procedure'|'orders'|'calculators'|'progress'|'clinical-tools'|'pdf';
 export interface PatientSectionMeta { id:PatientSectionId; order:number; label:string; iconName:string; description:string; }
 export type PhysicalExam=ExaminationData; export type CardiologyModule=CardiologyData; export type EchoReport=CardiologyData['echo']; export type CathReport=CardiologyData['coronary']; export type VentilatorSettings=VentilatorData; export type ClinicalProcedure=ProcedureRecord; export type VitalSigns=VitalRecord;
