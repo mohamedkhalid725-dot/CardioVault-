@@ -1,5 +1,5 @@
 import React,{createContext,useContext,useEffect,useRef,useState}from'react';
-import {Bed,Patient,PatientSectionId,PastAdmission,Unit,AuditEvent,UserProfile}from'../types/clinical';
+import {Bed,Patient,PatientSectionId,Unit,AuditEvent,UserProfile}from'../types/clinical';
 import {StorageService}from'../services/storage';
 import {AuthorizationService, PRESET_USERS, ACCESS_DENIED_MESSAGE}from'../services/authorizationService';
 import {DepartmentService}from'../services/departmentService';

@@ -312,7 +312,7 @@ export interface Patient {
   diagnosis?: string;
   secondaryDiagnoses: string[];
   allergies: string[];
-  codeStatus: 'Full Code' | 'DNR' | 'DNI' | 'Comfort Measures Only';
+  codeStatus: 'Full Code' | 'DNR' | 'DNI' | 'Comfort Measures Only' | 'Not documented';
   isArchived?: boolean;
   archiveReason?: string;
   archiveDate?: string;
