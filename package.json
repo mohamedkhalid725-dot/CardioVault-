@@ -17,7 +17,7 @@
     "android:debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
     "ios:prepare": "npm run build && npx cap sync ios",
     "test:firestore-rules": "npx firebase-tools@15.30.2 emulators:exec --only firestore \"node --test test/firestore.rules.test.js\"",
-    "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/abgHistory.test.ts"
+    "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/abgHistory.test.ts test/previousAdmissionViewer.test.ts"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "7.5.0",
