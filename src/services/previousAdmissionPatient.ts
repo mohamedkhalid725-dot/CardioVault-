@@ -3,6 +3,14 @@ import type {Patient,PastAdmission} from '../types/clinical';
 import {createEmptyPatientShape,pickIdentityFields} from './admissionEpisode.ts';
 
 export const READ_ONLY_PREVIOUS_MESSAGE='Previous admission is read-only. Editing and clinical actions are disabled.';
+export const PREVIOUS_ADMISSION_OPEN_KEY='cardiovault_open_previous_admission';
+export const consumeOpenPreviousAdmissionId=(patient:Patient,storage:{getItem:(key:string)=>string|null;removeItem:(key:string)=>void}):string|null=>{
+ let id:string|null=null;
+ try{id=storage.getItem(PREVIOUS_ADMISSION_OPEN_KEY);}catch{id=null;}
+ if(!id)return null;
+ try{storage.removeItem(PREVIOUS_ADMISSION_OPEN_KEY);}catch{}
+ return (patient.pastAdmissions||[]).some(a=>a&&a.id===id)?id:null;
+};
 
 export const buildPreviousAdmissionPatient=(patient:Patient,admission:PastAdmission):Patient=>{
  const snapshotData=admission.episodeSnapshot?(({episodeId:_,unitName:__,dischargeDate:___,dischargeReason:____,dischargeSummary:_____,...rest})=>rest)(admission.episodeSnapshot):{};
