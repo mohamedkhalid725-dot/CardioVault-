@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { FileText, Plus, Pencil, Trash2, X, Mic } from 'lucide-react';
 import { Patient, ProgressNote } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { useIsPreviousViewer } from '../PreviousAdmissionViewer';
 import { ClinicalAudioPlayer } from '../ClinicalAudioPlayer';
 import { VoiceDictationButton } from '../VoiceDictationButton';
 
@@ -11,6 +12,7 @@ const now = () => ({ date: new Date().toISOString().split('T')[0], time: new Dat
 
 export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
   const { updatePatient, showToast, auth } = useApp();
+  const isPreviousViewer = useIsPreviousViewer();
   const notes = Array.isArray(patient.progressNotes) ? patient.progressNotes : [];
   const [selectedId, setSelectedId] = useState<string | null>(notes[0]?.id || null);
   const [editing, setEditing] = useState<ProgressNote | null>(null);
@@ -25,6 +27,7 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
   const latestVital = patient.vitalsHistory?.[0];
 
   const openNew = () => {
+    if (isPreviousViewer) return;
     const t = now();
     setEditing({
       id: '', date: t.date, time: t.time, author: auth.userName || 'Physician', type: 'SOAP Note',
@@ -35,6 +38,7 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
   };
 
   const save = () => {
+    if (isPreviousViewer) return;
     if (!editing) return;
     if (!editing.author.trim() || !editing.plan.trim()) {
       showToast('Author and plan are required.', 'error');
@@ -50,6 +54,7 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
   };
 
   const remove = (id: string) => {
+    if (isPreviousViewer) return;
     if (!window.confirm('Delete this progress note permanently?')) return;
     const next = notes.filter((n) => n.id !== id);
     updatePatient(patient.id, { progressNotes: next });
@@ -58,7 +63,7 @@ export const ProgressNoteSection: React.FC<Props> = ({ patient }) => {
   };
 
   return <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-150">
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><FileText className="w-5 h-5 text-cyan-500" /> Progress Notes</h2><p className="text-xs text-slate-500 dark:text-slate-400">Independent dated clinical notes with persistent history.</p></div><button onClick={openNew} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-4 h-4" /> New Progress Note</button></div>
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><FileText className="w-5 h-5 text-cyan-500" /> Progress Notes</h2><p className="text-xs text-slate-500 dark:text-slate-400">Independent dated clinical notes with persistent history.</p></div><button disabled={isPreviousViewer} onClick={openNew} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold"><Plus className="w-4 h-4" /> New Progress Note</button></div>
 
     {notes.length === 0 ? <div className="p-10 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E]"><FileText className="w-8 h-8 mx-auto text-slate-400 mb-3" /><p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No Progress Notes recorded yet.</p><p className="text-xs text-slate-400 mt-1">Create the first clinical note for this patient.</p></div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
       <div className="space-y-2">{notes.map((n) => <button key={n.id} onClick={() => setSelectedId(n.id)} className={`w-full text-left p-3.5 rounded-2xl border transition-colors ${selectedId === n.id ? 'bg-cyan-500/10 border-cyan-500/40' : 'bg-white dark:bg-[#111C2E] border-slate-200 dark:border-slate-800'}`}><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-900 dark:text-white">{n.type || 'Clinical Note'}</span><span className="text-[10px] text-slate-400">{n.date} {n.time}</span></div><div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">{n.author || 'Physician'}</div></button>)}</div>

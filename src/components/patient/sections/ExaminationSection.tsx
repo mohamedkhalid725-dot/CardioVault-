@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { Patient, PhysicalExam } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { useIsPreviousViewer } from '../PreviousAdmissionViewer';
 import { VoiceDictationButton } from '../VoiceDictationButton';
-import { meaningfulExaminationText } from '../../../services/examinationContent';
+import { meaningfulExaminationText, examFieldText, applyNormalExamText } from '../../../services/examinationContent';
 
 interface ExaminationSectionProps {
   patient: Patient;
@@ -32,6 +33,7 @@ const defaultExamData = {
 
 export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient }) => {
   const { updatePatient, showToast } = useApp();
+  const isPreviousViewer = useIsPreviousViewer();
   const [activeTab, setActiveTab] = useState<'cv' | 'neuro' | 'resp' | 'general' | 'abdomen' | 'extremities'>('cv');
   const [isEditing, setIsEditing] = useState(false);
 
@@ -48,11 +50,26 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
   });
 
   const handleSave = () => {
+    if (isPreviousViewer) return;
     updatePatient(patient.id, {
       examination: exam as any,
     });
     setIsEditing(false);
     showToast('Physical Examination saved successfully', 'success');
+  };
+  const setAllNormal = () => {
+    if (isPreviousViewer) return;
+    setExam((prev) => ({
+      ...prev,
+      general: applyNormalExamText(prev.general),
+      cardiovascular: applyNormalExamText(prev.cardiovascular),
+      respiratory: applyNormalExamText(prev.respiratory),
+      abdomen: applyNormalExamText(prev.abdomen),
+      neurological: applyNormalExamText(prev.neurological),
+      extremities: applyNormalExamText(prev.extremities),
+      customFields: prev.customFields,
+    }));
+    showToast('All examination fields set to normal. Review and save.', 'info');
   };
 
   return (
@@ -68,6 +85,17 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
           </p>
         </div>
 
+        {!isPreviousViewer && (
+        <div className="flex items-center gap-2">
+        {isEditing && (
+        <button
+          type="button"
+          onClick={setAllNormal}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700"
+        >
+          Set all normal
+        </button>
+        )}
         <button
           onClick={() => {
             if (isEditing) handleSave();
@@ -89,6 +117,8 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
             </>
           )}
         </button>
+        </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -186,7 +216,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.heartSounds} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,heartSounds:draft}})} fieldLabel="heartSounds" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.heartSounds}
+                  {examFieldText(exam.cardiovascular.heartSounds)}
                 </p>
               )}
             </div>
@@ -209,7 +239,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.murmurs} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,murmurs:draft}})} fieldLabel="murmurs" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.murmurs}
+                  {examFieldText(exam.cardiovascular.murmurs)}
                 </p>
               )}
             </div>
@@ -232,7 +262,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.apexBeat} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,apexBeat:draft}})} fieldLabel="apexBeat" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.apexBeat}
+                  {examFieldText(exam.cardiovascular.apexBeat)}
                 </p>
               )}
             </div>
@@ -255,7 +285,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.jvp} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,jvp:draft}})} fieldLabel="jvp" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.cardiovascular.jvp}
+                  {examFieldText(exam.cardiovascular.jvp)}
                 </p>
               )}
             </div>
@@ -312,7 +342,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.consciousness} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,consciousness:draft}})} fieldLabel="consciousness" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.neurological.consciousness} ({exam.neurological.gcs})
+                  {[meaningfulExaminationText(exam.neurological.consciousness), meaningfulExaminationText(exam.neurological.gcs)].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
             </div>
@@ -335,7 +365,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.pupils} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,pupils:draft}})} fieldLabel="pupils" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.neurological.pupils}
+                  {examFieldText(exam.neurological.pupils)}
                 </p>
               )}
             </div>
@@ -358,7 +388,32 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.motor} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,motor:draft}})} fieldLabel="motor" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.neurological.motor}
+                  {examFieldText(exam.neurological.motor)}
+                </p>
+              )}
+            </div>
+
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                Motor Power Grade (0-5)
+              </span>
+              {isEditing ? (
+                <><input
+                  type="text"
+                  inputMode="decimal"
+                  value={exam.neurological.motorPower}
+                  onChange={(e) =>
+                    setExam({
+                      ...exam,
+                      neurological: { ...exam.neurological, motorPower: e.target.value },
+                    })
+                  }
+                  placeholder="0-5, grade 0 is meaningful"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
+                /></>
+              ) : (
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                  {examFieldText(exam.neurological.motorPower)}
                 </p>
               )}
             </div>
@@ -381,7 +436,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.reflexes} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,reflexes:draft}})} fieldLabel="reflexes" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.neurological.reflexes}
+                  {examFieldText(exam.neurological.reflexes)}
                 </p>
               )}
             </div>
@@ -415,7 +470,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.chestExam} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,chestExam:draft}})} fieldLabel="chestExam" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.respiratory.chestExam}
+                  {examFieldText(exam.respiratory.chestExam)}
                 </p>
               )}
             </div>
@@ -438,7 +493,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.airEntry} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,airEntry:draft}})} fieldLabel="airEntry" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.respiratory.airEntry}
+                  {examFieldText(exam.respiratory.airEntry)}
                 </p>
               )}
             </div>
@@ -461,7 +516,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.addedSounds} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,addedSounds:draft}})} fieldLabel="addedSounds" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.respiratory.addedSounds}
+                  {examFieldText(exam.respiratory.addedSounds)}
                 </p>
               )}
             </div>
@@ -484,7 +539,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.workOfBreathing} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,workOfBreathing:draft}})} fieldLabel="workOfBreathing" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.respiratory.workOfBreathing}
+                  {examFieldText(exam.respiratory.workOfBreathing)}
                 </p>
               )}
             </div>
@@ -518,7 +573,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.general.appearance} onApply={(draft)=>setExam({...exam,general:{...exam.general,appearance:draft}})} fieldLabel="appearance" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.general.appearance}
+                  {examFieldText(exam.general.appearance)}
                 </p>
               )}
             </div>
@@ -541,7 +596,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.general.hydration} onApply={(draft)=>setExam({...exam,general:{...exam.general,hydration:draft}})} fieldLabel="hydration" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.general.hydration}
+                  {examFieldText(exam.general.hydration)}
                 </p>
               )}
             </div>
@@ -615,7 +670,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.palpation} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,palpation:draft}})} fieldLabel="palpation" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.abdomen.palpation}
+                  {examFieldText(exam.abdomen.palpation)}
                 </p>
               )}
             </div>
@@ -638,7 +693,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.tenderness} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,tenderness:draft}})} fieldLabel="tenderness" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.abdomen.tenderness}
+                  {examFieldText(exam.abdomen.tenderness)}
                 </p>
               )}
             </div>
@@ -684,7 +739,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.bowelSounds} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,bowelSounds:draft}})} fieldLabel="bowelSounds" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.abdomen.bowelSounds}
+                  {examFieldText(exam.abdomen.bowelSounds)}
                 </p>
               )}
             </div>
@@ -718,7 +773,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                 /><div className="mt-1"><VoiceDictationButton value={exam.extremities.pulses} onApply={(draft)=>setExam({...exam,extremities:{...exam.extremities,pulses:draft}})} fieldLabel="pulses" /></div></>
               ) : (
                 <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  {exam.extremities.pulses}
+                  {examFieldText(exam.extremities.pulses)}
                 </p>
               )}
             </div>

@@ -16,6 +16,7 @@ import {
   ProgressNote,
 } from '../types/clinical';
 import { INITIAL_DEPARTMENT_UNITS, INITIAL_DEPARTMENT_BEDS, DepartmentService } from './departmentService';
+import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
 
 const STORAGE_KEYS = {
   UNITS: 'cardiovault_units_v2',
@@ -656,7 +657,7 @@ export const StorageService = {
   },
 
   saveBeds(beds: Bed[]): void {
-    runtimeBeds = Array.isArray(beds) ? beds : [];
+    runtimeBeds = Array.isArray(beds) ? beds.map(b => ({ ...b, status: normalizeBedStatus(b.status) })) : [];
   },
 
   getPatients(): Patient[] {
@@ -664,7 +665,7 @@ export const StorageService = {
   },
 
   savePatients(patients: Patient[]): void {
-    runtimePatients = Array.isArray(patients) ? patients : [];
+    runtimePatients = Array.isArray(patients) ? patients.map(p => ({ ...p, status: normalizePatientStatus(p.status) })) : [];
   },
 
   getTheme(): 'dark' | 'light' {
@@ -724,7 +725,7 @@ export const StorageService = {
   importDatabaseBackup(jsonString: string): boolean {
     try {
       const data = JSON.parse(jsonString);
-      if (data.units && data.beds && data.patients) {
+      if (Array.isArray(data.units) && Array.isArray(data.beds) && Array.isArray(data.patients)) {
         // Imported clinical data is runtime-only until the Cloud Sync Bridge
         // persists it to the authenticated Firebase Workspace.
         this.saveUnits(data.units);

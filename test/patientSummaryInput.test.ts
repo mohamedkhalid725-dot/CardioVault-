@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { patientKeyClassification } from '../src/services/patientSummaryInput.ts';
 import {
+  buildAdditionalConditions,
   buildPatientReadableSummary,
   buildPatientSummaryInput,
   serializeExamination,
   serializeReadableExamination,
 } from '../src/services/patientSummaryInput.ts';
+import { HISTORY_CONDITION_CHIPS, buildSelectedConditions, dedupeConditionLabels, isPredefinedConditionLabel, latestHistoryUpdate, syncLegacyConditionFlags } from '../src/services/historyConditions.ts';
 import { getSectionStatus } from '../src/services/patientFilePhase2.ts';
 
 const defaultExamination = {
@@ -272,3 +275,19 @@ test('summary examination presence stays in parity with examination section stat
     assert.equal(summaryHasData, sectionStatus.hasData, testCase.name);
   }
 });
+
+
+test('missing allergies are Not documented; explicit NKDA remains NKDA', () => {
+  assert.equal(buildPatientReadableSummary({}).allergies, 'Not documented');
+  assert.equal(buildPatientReadableSummary({ allergies: ['NKDA'] }).allergies, 'NKDA');
+});
+
+test('additional conditions use one field and include legacy cardiovascular booleans',()=>{const summary=buildPatientReadableSummary({cardiovascularHistory:{hypertension:true,diabetes:true,dyslipidemia:true,cad:true,previousMI:true,heartFailure:true,arrhythmias:true,valvularDisease:true,previousPCI:true,previousCABG:true,previousStroke:true,pvd:true,smoking:true,alcohol:true},additionalConditions:['Diabetes','no','Asthma','asthma']});assert.deepEqual(summary.additionalConditions,['Hypertension','Diabetes','Dyslipidemia','CAD','Previous MI','Heart failure','Arrhythmias','Valvular disease','Previous PCI','Previous CABG','Previous stroke/TIA','PVD','Smoking','Alcohol','Asthma']);});
+test('patient key classification exposes the snapshot denylist and includes additionalConditions',()=>{assert.equal(patientKeyClassification.id,'excluded-from-snapshot'); assert.equal(patientKeyClassification.pastAdmissions,'excluded-from-snapshot'); assert.equal(patientKeyClassification.aiSummary,'excluded-from-snapshot'); assert.equal(patientKeyClassification.additionalConditions,'snapshotted');});
+
+test('history chips start empty when nothing is documented',()=>{assert.deepEqual(buildSelectedConditions({hypertension:false,diabetes:false} as any,undefined),[]);assert.deepEqual(buildSelectedConditions(undefined,[]),[]);});
+test('history chips unite legacy flags and custom conditions without preselection',()=>{assert.deepEqual(buildSelectedConditions({hypertension:true,diabetes:false} as any,['CKD','ckd','Epilepsy']),['Hypertension','CKD','Epilepsy']);});
+test('history save syncs the fourteen legacy flags from chip labels',()=>{const patch=syncLegacyConditionFlags(['hypertension','DIABETES','Obesity']);assert.equal(patch.hypertension,true);assert.equal(patch.diabetes,true);assert.equal(patch.smoking,false);assert.equal(patch.alcohol,false);assert.equal(Object.keys(patch).length,14);});
+test('history dedupe drops No/None and case-insensitive duplicates',()=>{assert.deepEqual(dedupeConditionLabels(['CKD','ckd','No','None','',' Epilepsy ']),['CKD','Epilepsy']);assert.equal(isPredefinedConditionLabel('ckd'),true);assert.equal(isPredefinedConditionLabel('Something rare'),false);});
+test('history chip labels match the summary unification labels',()=>{const patch=syncLegacyConditionFlags(HISTORY_CONDITION_CHIPS.filter(c=>c.legacyKey).map(c=>c.label));const cv={hypertension:false,diabetes:false} as any;for(const [k,v] of Object.entries(patch))cv[k]=v;assert.deepEqual(buildAdditionalConditions({cardiovascularHistory:cv,additionalConditions:[]} as any).sort(),HISTORY_CONDITION_CHIPS.filter(c=>c.legacyKey).map(c=>c.label).sort());});
+test('HPI last-updated reads the latest history audit event',()=>{assert.equal(latestHistoryUpdate([{timestamp:'2026-10-01T10:00:00Z',fields:['vitalsHistory']},{timestamp:'2026-10-02T10:00:00Z',fields:['clinicalSummary']}]),'2026-10-02T10:00:00Z');assert.equal(latestHistoryUpdate([{timestamp:'2026-10-01T10:00:00Z',fields:['medications']}]),null);assert.equal(latestHistoryUpdate(undefined),null);});

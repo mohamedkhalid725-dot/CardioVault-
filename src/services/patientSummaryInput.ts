@@ -1,3 +1,4 @@
+import type { CardiovascularHistory, Patient } from '../types/clinical.ts';
 import { hasMeaningfulExaminationContent } from './examinationContent.ts';
 
 export interface PatientSummarySource {
@@ -13,10 +14,8 @@ export interface PatientSummarySource {
     chiefComplaint?: unknown;
     hpi?: unknown;
   };
-  cardiovascularHistory?: {
-    diabetes?: unknown;
-    hypertension?: unknown;
-  };
+  cardiovascularHistory?: Partial<Record<keyof CardiovascularHistory, unknown>>;
+  additionalConditions?: unknown;
   examination?: unknown;
 }
 
@@ -45,6 +44,28 @@ export interface PatientReadableSummary {
   examination: string;
   diabetes: boolean;
   hypertension: boolean;
+  additionalConditions: string[];
+}
+
+const SNAPSHOT_EXCLUDED_PATIENT_KEYS = new Set<keyof Patient>(['id','mrn','fullName','name','age','sex','gender','weight','height','photoUrl','pastAdmissions','auditTrail','aiSummary']);
+export const patientKeyClassification: Record<keyof Patient, 'snapshotted' | 'excluded-from-snapshot'> = {
+  id:'excluded-from-snapshot', mrn:'excluded-from-snapshot', fullName:'excluded-from-snapshot', name:'excluded-from-snapshot', age:'excluded-from-snapshot', sex:'excluded-from-snapshot', gender:'excluded-from-snapshot', weight:'excluded-from-snapshot', height:'excluded-from-snapshot', photoUrl:'excluded-from-snapshot',
+  unitId:'snapshotted', bedId:'snapshotted', bedNumber:'snapshotted', departmentId:'snapshotted', status:'snapshotted', admissionDate:'snapshotted', admissionTime:'snapshotted', primaryDiagnosis:'snapshotted', diagnosis:'snapshotted', secondaryDiagnoses:'snapshotted', allergies:'snapshotted', codeStatus:'snapshotted', isArchived:'snapshotted', archiveReason:'snapshotted', archiveDate:'snapshotted', currentAdmissionStartedAt:'snapshotted', dischargeSummary:'snapshotted', pastAdmissions:'excluded-from-snapshot', clinicalSummary:'snapshotted', cardiovascularHistory:'snapshotted', handover:'snapshotted', vitalsHistory:'snapshotted', fluidRecords:'snapshotted', hemodynamicHistory:'snapshotted', fluidIntakeHistory:'snapshotted', urineOutputHistory:'snapshotted', examination:'snapshotted', ecgRecords:'snapshotted', cardiology:'snapshotted', medications:'snapshotted', infusions:'snapshotted', ventilator:'snapshotted', imaging:'snapshotted', labs:'snapshotted', labResults:'snapshotted', procedures:'snapshotted', calculatorResults:'snapshotted', progressNotes:'snapshotted', auditTrail:'excluded-from-snapshot', aiSummary:'excluded-from-snapshot', problems:'snapshotted', tasks:'snapshotted', investigations:'snapshotted', medicationAdministrations:'snapshotted', consultations:'snapshotted', shiftHandovers:'snapshotted', corrections:'snapshotted', timelineEvents:'snapshotted', attendedClinician:'snapshotted', attendedNurse:'snapshotted', additionalConditions:'snapshotted'
+};
+void SNAPSHOT_EXCLUDED_PATIENT_KEYS;
+
+function dedupeConditions(values: string[]): string[] {
+  const seen = new Set<string>();
+  return values.map(v => v.trim()).filter(Boolean).filter(v => { const key=v.toLowerCase(); if (key==='no'||key==='none'||seen.has(key)) return false; seen.add(key); return true; });
+}
+const CONDITION_LABELS: ReadonlyArray<{key: keyof CardiovascularHistory; label: string}> = [
+  {key:'hypertension',label:'Hypertension'},{key:'diabetes',label:'Diabetes'},{key:'dyslipidemia',label:'Dyslipidemia'},{key:'cad',label:'CAD'},{key:'previousMI',label:'Previous MI'},{key:'heartFailure',label:'Heart failure'},{key:'arrhythmias',label:'Arrhythmias'},{key:'valvularDisease',label:'Valvular disease'},{key:'previousPCI',label:'Previous PCI'},{key:'previousCABG',label:'Previous CABG'},{key:'previousStroke',label:'Previous stroke/TIA'},{key:'pvd',label:'PVD'},{key:'smoking',label:'Smoking'},{key:'alcohol',label:'Alcohol'}
+];
+export function buildAdditionalConditions(patient: PatientReadableSummarySource): string[] {
+  const cardiovascular = patient.cardiovascularHistory || {};
+  const recorded = CONDITION_LABELS.filter(item => cardiovascular[item.key] === true).map(item => item.label);
+  const custom = Array.isArray(patient.additionalConditions) ? patient.additionalConditions.map(String) : [];
+  return dedupeConditions([...recorded, ...custom]);
 }
 
 function hasRecordedPrimitive(value: unknown): boolean {
@@ -216,7 +237,7 @@ export function buildPatientReadableSummary(
           .map((item) => String(item).trim())
           .filter(Boolean)
           .join(', ')
-      : 'NKDA';
+      : 'Not documented';
 
   return {
     age: textOrNotDocumented(patient.age),
@@ -234,5 +255,6 @@ export function buildPatientReadableSummary(
     examination: serializeReadableExamination(patient.examination),
     diabetes: patient.cardiovascularHistory?.diabetes === true,
     hypertension: patient.cardiovascularHistory?.hypertension === true,
+    additionalConditions: buildAdditionalConditions(patient),
   };
 }

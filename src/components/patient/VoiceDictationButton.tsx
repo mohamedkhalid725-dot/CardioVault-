@@ -5,6 +5,7 @@ import{VoiceRecorder}from'capacitor-voice-recorder';
 import{AI_MODEL,AI_TEST_DATA_ONLY}from'../../config/aiConfig';
 import{transcribeMedicalVoice}from'../../services/aiLogic';
 import{useApp}from'../../context/AppContext';
+import{useIsPreviousViewer}from'./PreviousAdmissionViewer';
 
 interface Props{
  value:string;
@@ -22,6 +23,8 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
  const nativeRecordingRef=useRef(false);const webRecorderRef=useRef<MediaRecorder|null>(null);const chunksRef=useRef<Blob[]>([]);const streamRef=useRef<MediaStream|null>(null);
  useEffect(()=>{if(cooldown<=0)return;const t=window.setInterval(()=>setCooldown(v=>Math.max(0,v-1)),1000);return()=>window.clearInterval(t);},[cooldown]);
  useEffect(()=>()=>{webRecorderRef.current?.stream.getTracks().forEach(t=>t.stop());streamRef.current?.getTracks().forEach(t=>t.stop());release(id);},[id]);
+ const isPreviousViewer=useIsPreviousViewer();
+ if(isPreviousViewer)return null;
  const start=async()=>{
   if(disabled||busy||recording||cooldown>0)return;
   if(!claim(id)){showToast('Another voice recording or AI request is already in progress. Please wait for it to finish.','error');return;}
