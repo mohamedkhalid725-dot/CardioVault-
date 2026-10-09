@@ -1,6 +1,6 @@
 import type {AppContextType} from '../context/AppContext';
 import type {Patient,PastAdmission} from '../types/clinical';
-import {createEmptyPatientShape,pickIdentityFields} from './admissionEpisode';
+import {createEmptyPatientShape,pickIdentityFields} from './admissionEpisode.ts';
 
 export const READ_ONLY_PREVIOUS_MESSAGE='Previous admission is read-only. Editing and clinical actions are disabled.';
 
