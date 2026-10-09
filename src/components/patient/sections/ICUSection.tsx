@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Wind, Plus, Activity, Gauge, Edit2, Loader2 } from 'lucide-react';
 import { Patient, ABGRecord, RespiratorySupportType, VentilatorRecord } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { useIsPreviousViewer } from '../PreviousAdmissionViewer';
 import { MedicalCalculators } from '../../../services/calculators';
 
 interface ICUSectionProps { patient: Patient; }
@@ -12,6 +13,7 @@ const OXYGEN_DEVICES = ['Nasal Cannula', 'Simple Face Mask', 'Venturi Mask', 'NR
 
 export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
   const { updatePatient, showToast } = useApp();
+  const isPreviousViewer = useIsPreviousViewer();
   const vent = patient.ventilator;
   const abgs = sortAbgRecords(vent.abgHistory || []);
   const history = vent.history || [];
@@ -66,11 +68,13 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
   }, [patient.id, vent.supportType, vent.oxygenDevice, vent.oxygenFlow, vent.mode, vent.tidalVolume, vent.respiratoryRate, vent.rr, vent.peep, vent.fio2, vent.peakPressure, vent.plateauPressure, vent.pressureSupport, vent.inspiratoryPressure, vent.ieRatio]);
 
   const beginNewVentRecord = () => {
+    if (isPreviousViewer) return;
     setEditingRecordId(null);
     setIsEditingVent(true);
   };
 
   const editVentRecord = (record: VentilatorRecord) => {
+    if (isPreviousViewer) return;
     setEditingRecordId(record.id);
     setSupportType(record.supportType);
     setOxygenDevice(record.oxygenDevice || 'Nasal Cannula');
@@ -90,7 +94,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
   };
 
   const handleSaveVent = () => {
-    if (savingVent) return;
+    if (savingVent || isPreviousViewer) return;
     setSavingVent(true);
     try {
       const timestamp = new Date().toISOString();
@@ -149,7 +153,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
 
   const handleAddABG = (e: React.FormEvent) => {
     e.preventDefault();
-    if (savingABG) return;
+    if (savingABG || isPreviousViewer) return;
     setSavingABG(true);
     try {
       const abgAnalysis = MedicalCalculators.calculateABG(newPh, newPaco2, newHco3, newPao2, fio2);
@@ -180,11 +184,11 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
         </div>
         <div className="flex items-center gap-2">
           {activeTab === 'vent' ? (
-            <button onClick={() => isEditingVent ? handleSaveVent() : beginNewVentRecord()} disabled={savingVent} className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-xs flex items-center gap-1.5">
+            <button onClick={() => isEditingVent ? handleSaveVent() : beginNewVentRecord()} disabled={savingVent || isPreviousViewer} className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-xs flex items-center gap-1.5">
               {savingVent && <Loader2 className="w-4 h-4 animate-spin" />}{isEditingVent ? (editingRecordId ? 'Update Record' : 'Save Record') : 'Add Record'}
             </button>
           ) : (
-            <button onClick={() => setShowAddABGModal(true)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"><Plus className="w-4 h-4" /> Log New ABG</button>
+            <button disabled={isPreviousViewer} onClick={() => setShowAddABGModal(true)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"><Plus className="w-4 h-4" /> Log New ABG</button>
           )}
         </div>
       </div>
@@ -270,7 +274,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
             {history.length ? <div className="space-y-2">{history.map((record) => (
               <div key={record.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
                 <div className="min-w-0"><div className="text-xs font-bold text-slate-900 dark:text-white">{record.supportType}{record.mode ? ` • ${record.mode}` : ''}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(record.timestamp).toLocaleString()} {record.oxygenDevice ? `• ${record.oxygenDevice} ${record.oxygenFlow || ''} L/min` : ''}</div></div>
-                <button type="button" onClick={() => editVentRecord(record)} className="shrink-0 p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-cyan-600" title="Edit record"><Edit2 className="w-4 h-4" /></button>
+                <button type="button" disabled={isPreviousViewer} onClick={() => editVentRecord(record)} className="shrink-0 p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-cyan-600" title="Edit record"><Edit2 className="w-4 h-4" /></button>
               </div>
             ))}</div> : <div className="text-xs text-slate-400 border border-dashed rounded-xl p-5 text-center">No respiratory support records yet. Add the first record above.</div>}
           </div>

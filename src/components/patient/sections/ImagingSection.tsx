@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Image as ImageIcon, Plus, Trash2, X, Layers, Edit2, Upload } from 'lucide-react';
 import { Patient, ImagingStudy } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { useIsPreviousViewer } from '../PreviousAdmissionViewer';
 import { VoiceDictationButton } from '../VoiceDictationButton';
 import { ImageZoomModal } from '../ImageZoomModal';
 import { uploadClinicalMedia, optimizeClinicalImage, isClinicalImageFile, refreshClinicalMediaUrls } from '../../../services/mediaStorage';
@@ -19,6 +20,7 @@ const PRESET_SAMPLE_SCANS = [
 
 export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
   const { updatePatient, showToast } = useApp();
+  const isPreviousViewer = useIsPreviousViewer();
   const [selectedModality, setSelectedModality] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStudyId, setEditingStudyId] = useState<string | null>(null);
@@ -75,6 +77,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
   );
 
   const handleOpenAdd = () => {
+    if (isPreviousViewer) return;
     setEditingStudyId(null);
     setStudyType('Chest X-ray');
     setBodyRegion('Chest AP');
@@ -87,6 +90,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
   };
 
   const handleOpenEdit = (study: ImagingStudy) => {
+    if (isPreviousViewer) return;
     setEditingStudyId(study.id);
     setStudyType(study.modality || study.type || 'Chest X-ray');
     setBodyRegion(study.region || study.bodyRegion || 'Chest AP');
@@ -98,9 +102,10 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
     setShowAddModal(true);
   };
 
-  const persist = (updated: ImagingStudy[]) => updatePatient(patient.id, { imaging: updated as any });
+  const persist = (updated: ImagingStudy[]) => { if (isPreviousViewer) return; updatePatient(patient.id, { imaging: updated as any }); };
 
   const handleDeleteStudy = (studyId: string) => {
+    if (isPreviousViewer) return;
     persist(studies.filter(s => s.id !== studyId));
     showToast('Imaging study removed', 'success');
   };
@@ -211,7 +216,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
           <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><ImageIcon className="w-5 h-5 text-cyan-500" /> Diagnostic Imaging & Scans</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">Chest X-ray, CT Brain/Chest/Abdo, Echocardiogram, Angiogram, MRI, Ultrasound with high-res scans</p>
         </div>
-        <button onClick={handleOpenAdd} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold transition-colors shadow-sm self-start sm:self-auto"><Plus className="w-4 h-4" /> Add Imaging Study</button>
+        <button disabled={isPreviousViewer} onClick={handleOpenAdd} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold transition-colors shadow-sm self-start sm:self-auto"><Plus className="w-4 h-4" /> Add Imaging Study</button>
       </div>
 
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto no-scrollbar">
@@ -233,7 +238,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <button onClick={() => { if (uploadingImages) return; setActiveStudyForUpload(study.id); fileInputRef.current?.click(); }} disabled={uploadingImages} className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5">{uploadingImages ? 'Uploading…' : <><Upload className="w-3.5 h-3.5 text-cyan-500" /> Upload Scan</>}</button>
                 <button onClick={() => handleOpenEdit(study)} className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" title="Edit Study"><Edit2 className="w-3.5 h-3.5" /></button>
-                <button onClick={() => handleDeleteStudy(study.id)} className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-500" title="Delete Study"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button disabled={isPreviousViewer} onClick={() => handleDeleteStudy(study.id)} className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-500" title="Delete Study"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </div>
 

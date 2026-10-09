@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Patient, PhysicalExam } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
+import { useIsPreviousViewer } from '../PreviousAdmissionViewer';
 import { VoiceDictationButton } from '../VoiceDictationButton';
 import { meaningfulExaminationText } from '../../../services/examinationContent';
 
@@ -32,6 +33,7 @@ const defaultExamData = {
 
 export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient }) => {
   const { updatePatient, showToast } = useApp();
+  const isPreviousViewer = useIsPreviousViewer();
   const [activeTab, setActiveTab] = useState<'cv' | 'neuro' | 'resp' | 'general' | 'abdomen' | 'extremities'>('cv');
   const [isEditing, setIsEditing] = useState(false);
 
@@ -48,6 +50,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
   });
 
   const handleSave = () => {
+    if (isPreviousViewer) return;
     updatePatient(patient.id, {
       examination: exam as any,
     });
@@ -68,6 +71,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
           </p>
         </div>
 
+        {!isPreviousViewer && (
         <button
           onClick={() => {
             if (isEditing) handleSave();
@@ -89,6 +93,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
             </>
           )}
         </button>
+        )}
       </div>
 
       {/* Tabs */}
