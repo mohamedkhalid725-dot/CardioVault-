@@ -10,6 +10,7 @@ import {
   Activity,
   AlertCircle,
   Footprints,
+  ChevronDown,
 } from 'lucide-react';
 import { Patient, PhysicalExam } from '../../../types/clinical';
 import { useApp } from '../../../context/AppContext';
@@ -34,7 +35,9 @@ const defaultExamData = {
 export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient }) => {
   const { updatePatient, showToast } = useApp();
   const isPreviousViewer = useIsPreviousViewer();
-  const [activeTab, setActiveTab] = useState<'cv' | 'neuro' | 'resp' | 'general' | 'abdomen' | 'extremities'>('cv');
+  type ExamSystemId = 'cv' | 'neuro' | 'resp' | 'general' | 'abdomen' | 'extremities';
+  const [openSystems, setOpenSystems] = useState<Record<ExamSystemId, boolean>>({ cv: false, neuro: false, resp: false, general: false, abdomen: false, extremities: false });
+  const toggleSystem = (id: ExamSystemId) => setOpenSystems((p) => ({ ...p, [id]: !p[id] }));
   const [isEditing, setIsEditing] = useState(false);
 
   const rawExam = patient.examination || (patient as any).physicalExam || {};
@@ -121,77 +124,16 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto no-scrollbar">
-        <button
-          onClick={() => setActiveTab('cv')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            activeTab === 'cv'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Heart className="w-3.5 h-3.5 text-rose-500" /> Cardiovascular Exam
-        </button>
-
-        <button
-          onClick={() => setActiveTab('neuro')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            activeTab === 'neuro'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Brain className="w-3.5 h-3.5 text-purple-500" /> Neurologic Exam
-        </button>
-
-        <button
-          onClick={() => setActiveTab('resp')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            activeTab === 'resp'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Wind className="w-3.5 h-3.5 text-sky-500" /> Respiratory Exam
-        </button>
-
-        <button
-          onClick={() => setActiveTab('general')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            activeTab === 'general'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5 text-emerald-500" /> General Appearance
-        </button>
-
-        <button
-          onClick={() => setActiveTab('abdomen')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            activeTab === 'abdomen'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Activity className="w-3.5 h-3.5 text-amber-500" /> Abdomen & GI
-        </button>
-
-        <button
-          onClick={() => setActiveTab('extremities')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            activeTab === 'extremities'
-              ? 'bg-cyan-500 text-slate-950 shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Footprints className="w-3.5 h-3.5 text-indigo-500" /> Extremities & Pulses
-        </button>
-      </div>
-
       {/* Cardiovascular Tab */}
-      {activeTab === 'cv' && (
+      <button
+        type="button"
+        onClick={() => toggleSystem('cv')}
+        className="w-full flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] text-xs font-bold text-slate-700 dark:text-slate-200"
+      >
+        <Heart className="w-4 h-4 text-rose-500" /> Cardiovascular Exam
+        <ChevronDown className="w-4 h-4 ml-auto text-slate-400" />
+      </button>
+      {openSystems.cv && (
         <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Heart className="w-4 h-4 text-rose-500" /> Precordial Auscultation & Hemodynamic Perfusion
@@ -317,7 +259,15 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
       )}
 
       {/* Neurologic Tab */}
-      {activeTab === 'neuro' && (
+      <button
+        type="button"
+        onClick={() => toggleSystem('neuro')}
+        className="w-full flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] text-xs font-bold text-slate-700 dark:text-slate-200"
+      >
+        <Brain className="w-4 h-4 text-purple-500" /> Neurologic Exam
+        <ChevronDown className="w-4 h-4 ml-auto text-slate-400" />
+      </button>
+      {openSystems.neuro && (
         <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Brain className="w-4 h-4 text-purple-500" /> Cranial Nerves, Motor Power & Reflexes
@@ -445,7 +395,15 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
       )}
 
       {/* Respiratory Tab */}
-      {activeTab === 'resp' && (
+      <button
+        type="button"
+        onClick={() => toggleSystem('resp')}
+        className="w-full flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] text-xs font-bold text-slate-700 dark:text-slate-200"
+      >
+        <Wind className="w-4 h-4 text-sky-500" /> Respiratory Exam
+        <ChevronDown className="w-4 h-4 ml-auto text-slate-400" />
+      </button>
+      {openSystems.resp && (
         <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Wind className="w-4 h-4 text-sky-500" /> Breath Sounds & Thoracic Examination
@@ -548,7 +506,15 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
       )}
 
       {/* General Appearance */}
-      {activeTab === 'general' && (
+      <button
+        type="button"
+        onClick={() => toggleSystem('general')}
+        className="w-full flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] text-xs font-bold text-slate-700 dark:text-slate-200"
+      >
+        <Layers className="w-4 h-4 text-emerald-500" /> General Appearance
+        <ChevronDown className="w-4 h-4 ml-auto text-slate-400" />
+      </button>
+      {openSystems.general && (
         <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Layers className="w-4 h-4 text-emerald-500" /> General Habit, Edema & Stigmata
@@ -645,7 +611,15 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
       )}
 
       {/* Abdomen Tab */}
-      {activeTab === 'abdomen' && (
+      <button
+        type="button"
+        onClick={() => toggleSystem('abdomen')}
+        className="w-full flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] text-xs font-bold text-slate-700 dark:text-slate-200"
+      >
+        <Activity className="w-4 h-4 text-amber-500" /> Abdomen & GI
+        <ChevronDown className="w-4 h-4 ml-auto text-slate-400" />
+      </button>
+      {openSystems.abdomen && (
         <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Activity className="w-4 h-4 text-amber-500" /> Abdominal Palpation, Peritoneal Signs & Bowel Sounds
@@ -748,7 +722,15 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
       )}
 
       {/* Extremities Tab */}
-      {activeTab === 'extremities' && (
+      <button
+        type="button"
+        onClick={() => toggleSystem('extremities')}
+        className="w-full flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] text-xs font-bold text-slate-700 dark:text-slate-200"
+      >
+        <Footprints className="w-4 h-4 text-indigo-500" /> Extremities & Pulses
+        <ChevronDown className="w-4 h-4 ml-auto text-slate-400" />
+      </button>
+      {openSystems.extremities && (
         <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Footprints className="w-4 h-4 text-indigo-500" /> Peripheral Extremities, Edema & Calves
