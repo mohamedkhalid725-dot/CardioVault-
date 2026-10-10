@@ -192,14 +192,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
 
       {/* Cardiovascular Tab */}
       {activeTab === 'cv' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Heart className="w-4 h-4 text-rose-500" /> Precordial Auscultation & Hemodynamic Perfusion
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Heart Sounds (S1, S2)
               </span>
               {isEditing ? (
@@ -215,14 +215,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.heartSounds} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,heartSounds:draft}})} fieldLabel="heartSounds" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.cardiovascular.heartSounds)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Murmurs, Rubs & Gallops
               </span>
               {isEditing ? (
@@ -238,14 +238,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.murmurs} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,murmurs:draft}})} fieldLabel="murmurs" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.cardiovascular.murmurs)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Apex Beat / PMI
               </span>
               {isEditing ? (
@@ -261,14 +261,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.apexBeat} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,apexBeat:draft}})} fieldLabel="apexBeat" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.cardiovascular.apexBeat)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Jugular Venous Pressure (JVP)
               </span>
               {isEditing ? (
@@ -284,14 +284,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.jvp} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,jvp:draft}})} fieldLabel="jvp" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.cardiovascular.jvp)}
                 </p>
               )}
             </div>
 
-            <div className="sm:col-span-2 p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="sm:col-span-2 p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Peripheral Pulses & Perfusion
               </span>
               {isEditing ? (
@@ -307,7 +307,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.cardiovascular.peripheralPulses} onApply={(draft)=>setExam({...exam,cardiovascular:{...exam.cardiovascular,peripheralPulses:draft}})} fieldLabel="peripheralPulses" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {[meaningfulExaminationText(exam.cardiovascular.peripheralPulses), meaningfulExaminationText(exam.cardiovascular.perfusion) ? `Cap refill: ${meaningfulExaminationText(exam.cardiovascular.perfusion)}` : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
@@ -318,14 +318,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
 
       {/* Neurologic Tab */}
       {activeTab === 'neuro' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Brain className="w-4 h-4 text-purple-500" /> Cranial Nerves, Motor Power & Reflexes
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Consciousness & GCS
               </span>
               {isEditing ? (
@@ -341,14 +341,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.consciousness} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,consciousness:draft}})} fieldLabel="consciousness" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {[meaningfulExaminationText(exam.neurological.consciousness), meaningfulExaminationText(exam.neurological.gcs)].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Pupillary Light Reflex
               </span>
               {isEditing ? (
@@ -364,14 +364,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.pupils} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,pupils:draft}})} fieldLabel="pupils" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.neurological.pupils)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Motor Power (Grade 0-5)
               </span>
               {isEditing ? (
@@ -387,14 +387,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.motor} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,motor:draft}})} fieldLabel="motor" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.neurological.motor)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Motor Power Grade (0-5)
               </span>
               {isEditing ? (
@@ -412,14 +412,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.neurological.motorPower)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Deep Tendon Reflexes & Babinski
               </span>
               {isEditing ? (
@@ -435,7 +435,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.neurological.reflexes} onApply={(draft)=>setExam({...exam,neurological:{...exam.neurological,reflexes:draft}})} fieldLabel="reflexes" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.neurological.reflexes)}
                 </p>
               )}
@@ -446,14 +446,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
 
       {/* Respiratory Tab */}
       {activeTab === 'resp' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Wind className="w-4 h-4 text-sky-500" /> Breath Sounds & Thoracic Examination
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Chest Expansion & Inspection
               </span>
               {isEditing ? (
@@ -469,14 +469,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.chestExam} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,chestExam:draft}})} fieldLabel="chestExam" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.respiratory.chestExam)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Air Entry
               </span>
               {isEditing ? (
@@ -492,14 +492,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.airEntry} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,airEntry:draft}})} fieldLabel="airEntry" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.respiratory.airEntry)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Added Breath Sounds
               </span>
               {isEditing ? (
@@ -515,14 +515,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.addedSounds} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,addedSounds:draft}})} fieldLabel="addedSounds" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.respiratory.addedSounds)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Work of Breathing
               </span>
               {isEditing ? (
@@ -538,7 +538,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.respiratory.workOfBreathing} onApply={(draft)=>setExam({...exam,respiratory:{...exam.respiratory,workOfBreathing:draft}})} fieldLabel="workOfBreathing" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.respiratory.workOfBreathing)}
                 </p>
               )}
@@ -549,14 +549,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
 
       {/* General Appearance */}
       {activeTab === 'general' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Layers className="w-4 h-4 text-emerald-500" /> General Habit, Edema & Stigmata
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 General Appearance
               </span>
               {isEditing ? (
@@ -572,14 +572,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.general.appearance} onApply={(draft)=>setExam({...exam,general:{...exam.general,appearance:draft}})} fieldLabel="appearance" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.general.appearance)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Hydration & Perfusion
               </span>
               {isEditing ? (
@@ -595,14 +595,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.general.hydration} onApply={(draft)=>setExam({...exam,general:{...exam.general,hydration:draft}})} fieldLabel="hydration" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.general.hydration)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Pallor / Cyanosis / Jaundice
               </span>
               {isEditing ? (
@@ -635,7 +635,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   </label>
                 </div>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {[exam.general.pallor ? 'Pallor present' : '', exam.general.cyanosis ? 'Cyanosis present' : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
@@ -646,14 +646,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
 
       {/* Abdomen Tab */}
       {activeTab === 'abdomen' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Activity className="w-4 h-4 text-amber-500" /> Abdominal Palpation, Peritoneal Signs & Bowel Sounds
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Inspection & Palpation
               </span>
               {isEditing ? (
@@ -669,14 +669,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.palpation} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,palpation:draft}})} fieldLabel="palpation" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.abdomen.palpation)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Tenderness & Guarding
               </span>
               {isEditing ? (
@@ -692,14 +692,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.tenderness} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,tenderness:draft}})} fieldLabel="tenderness" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.abdomen.tenderness)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Organomegaly & Ascites
               </span>
               {isEditing ? (
@@ -715,14 +715,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.organomegaly} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,organomegaly:draft}})} fieldLabel="organomegaly" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {[meaningfulExaminationText(exam.abdomen.organomegaly), meaningfulExaminationText(exam.abdomen.ascites) ? `Ascites: ${meaningfulExaminationText(exam.abdomen.ascites)}` : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Bowel Sounds
               </span>
               {isEditing ? (
@@ -738,7 +738,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.abdomen.bowelSounds} onApply={(draft)=>setExam({...exam,abdomen:{...exam.abdomen,bowelSounds:draft}})} fieldLabel="bowelSounds" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.abdomen.bowelSounds)}
                 </p>
               )}
@@ -749,14 +749,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
 
       {/* Extremities Tab */}
       {activeTab === 'extremities' && (
-        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Footprints className="w-4 h-4 text-indigo-500" /> Peripheral Extremities, Edema & Calves
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Peripheral Pulses (Dorsalis Pedis / Post-Tibial)
               </span>
               {isEditing ? (
@@ -772,14 +772,14 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.extremities.pulses} onApply={(draft)=>setExam({...exam,extremities:{...exam.extremities,pulses:draft}})} fieldLabel="pulses" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {examFieldText(exam.extremities.pulses)}
                 </p>
               )}
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 Peripheral Edema & Calves
               </span>
               {isEditing ? (
@@ -795,7 +795,7 @@ export const ExaminationSection: React.FC<ExaminationSectionProps> = ({ patient 
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs"
                 /><div className="mt-1"><VoiceDictationButton value={exam.extremities.edema} onApply={(draft)=>setExam({...exam,extremities:{...exam.extremities,edema:draft}})} fieldLabel="edema" /></div></>
               ) : (
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                <p className="text-[11px] font-semibold text-slate-900 dark:text-white">
                   {[meaningfulExaminationText(exam.extremities.edema), meaningfulExaminationText(exam.extremities.temp) ? `Temperature: ${meaningfulExaminationText(exam.extremities.temp)}` : ''].filter(Boolean).join(' • ') || 'Not documented'}
                 </p>
               )}
