@@ -84,6 +84,63 @@ function matchesAlias(line: string, alias: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${escapeRegExp(alias)}([^a-z0-9]|$)`).test(line);
 }
 
+// Small edit distance for OCR-broken names ("sasophils" -> "basophils").
+// Short aliases (length 3 or less) stay exact-only: fuzzy on them causes
+// far more wrong-name errors than it fixes.
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// Fuzzy fallback: tolerates 1-2 wrong letters in a single word token.
+// Multi-word aliases must match exactly; only single words go fuzzy.
+function fuzzyAlias(line: string, alias: string): boolean {
+  if (alias.includes(' ') || alias.length <= 3) return false;
+  const threshold = alias.length <= 5 ? 1 : 2;
+  for (const token of line.split(/[^a-z0-9+]+/)) {
+    if (!token || Math.abs(token.length - alias.length) > threshold) continue;
+    if (editDistance(token, alias) <= threshold) return true;
+  }
+  return false;
+}
+
+// Canonical test name -> laboratory panel (same names as the Labs UI filter).
+const TEST_PANELS: Record<string, string> = {
+  Hemoglobin: 'CBC', RBC: 'CBC', PCV: 'CBC', MCV: 'CBC', MCH: 'CBC', MCHC: 'CBC',
+  RDW: 'CBC', WBC: 'CBC', Neutrophils: 'CBC', Lymphocytes: 'CBC', Eosinophils: 'CBC',
+  Monocytes: 'CBC', Basophils: 'CBC', 'Platelet Count': 'CBC', MPV: 'CBC',
+  Sodium: 'Chemistry', Potassium: 'Chemistry', Chloride: 'Chemistry', Bicarbonate: 'Chemistry',
+  Urea: 'Chemistry', Creatinine: 'Chemistry', Glucose: 'Chemistry', Calcium: 'Chemistry',
+  Troponin: 'Cardiac Markers', 'CK-MB': 'Cardiac Markers', BNP: 'Cardiac Markers',
+  'D-Dimer': 'Coagulation', INR: 'Coagulation',
+  HbA1c: 'Diabetes', AST: 'Liver', ALT: 'Liver', TSH: 'Thyroid',
+  pH: 'ABG', PaCO2: 'ABG', PaO2: 'ABG', Lactate: 'ABG',
+  ESR: 'Inflammatory / Infection', CRP: 'Inflammatory / Infection',
+};
+
+// Panel for one extracted test. Unknown tests go to Custom Lab, never to a
+// fabricated panel name.
+export function panelForTest(testName: string): string {
+  const clean = String(testName || '').trim();
+  if (TEST_PANELS[clean]) return TEST_PANELS[clean];
+  const lower = clean.toLowerCase();
+  for (const key of Object.keys(TEST_PANELS)) {
+    if (key.toLowerCase() === lower) return TEST_PANELS[key];
+  }
+  return 'Custom Lab';
+}
+
 function extractRange(rest: string): { lo: number; hi: number; raw: string } | null {
   const matches = [...rest.matchAll(/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/gi)];
   if (!matches.length) return null;
@@ -133,11 +190,22 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
     if (HEADER_JUNK.some((junk) => line.includes(junk))) continue;
 
     // Longest alias wins so "total wbc" beats "wbc", "packed cell volume" beats "pcv".
-    let best: { name: string; alias: string } | null = null;
+    // Exact whole-word match first; single-word fuzzy (1-2 letters) only as
+    // fallback, and still requires an explicit reference range below.
+    let best: { name: string; alias: string; fuzzy: boolean } | null = null;
     for (const test of TEST_ALIASES) {
       for (const alias of test.aliases) {
-        if (matchesAlias(line, alias) && (!best || alias.length > best.alias.length)) {
-          best = { name: test.name, alias };
+        if (matchesAlias(line, alias) && (!best || (alias.length > best.alias.length && !best.fuzzy))) {
+          best = { name: test.name, alias, fuzzy: false };
+        }
+      }
+    }
+    if (!best) {
+      for (const test of TEST_ALIASES) {
+        for (const alias of test.aliases) {
+          if (fuzzyAlias(line, alias) && (!best || alias.length > best.alias.length)) {
+            best = { name: test.name, alias, fuzzy: true };
+          }
         }
       }
     }
@@ -169,6 +237,20 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
       continue;
     }
     const value = numbers[0];
+    // Decimal-point rescue: OCR often drops the dot in small ranges, reading
+    // "4.5 - 5.5" as "450 - 550". When the value is small and the range is
+    // ~100x larger, restore the decimals rather than storing a wrong range.
+    let lo = range.lo;
+    let hi = range.hi;
+    let rangeFixed = false;
+    if (value < 20 && lo >= 100 && lo / Math.max(value, 0.01) > 10) {
+      lo = lo / 100;
+      hi = hi / 100;
+      rangeFixed = true;
+    }
+    if (rangeFixed) {
+      notes.push(`${best.name} reference range decimal point restored (${range.raw} -> ${lo} - ${hi}); confirm manually.`);
+    }
     const unit = extractUnit(rest);
 
     const hasLow = /\blow\b/.test(line) || /↓/.test(rawLine);
@@ -180,17 +262,20 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
     if (hasCritical) status = 'critical';
     else if (hasHigh) status = 'high';
     else if (hasLow) status = 'low';
-    else if (range) status = value < range.lo ? 'low' : value > range.hi ? 'high' : 'normal';
+    else status = value < lo ? 'low' : value > hi ? 'high' : 'normal';
     if (hasBorderline) {
       status = 'unknown';
       notes.push(`${best.name} is borderline (${value}${unit ? ` ${unit}` : ''}); confirm manually.`);
+    }
+    if (best.fuzzy) {
+      notes.push(`${best.name} name was read with minor letter errors; confirm the test name manually.`);
     }
 
     results.push({
       testName: best.name,
       value,
       unit,
-      referenceRange: `${range.lo} - ${range.hi}`,
+      referenceRange: `${lo} - ${hi}`,
       status,
     });
   }
