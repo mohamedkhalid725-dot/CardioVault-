@@ -9,6 +9,11 @@ export const formatAbgTimestamp = (timestamp: string): string => {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : value;
 };
+export const parseExplicitNumber = (value: string): number | undefined => {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
 export const sortAbgRecords = (records: ABGRecord[]): ABGRecord[] =>
   records.map((record, index) => ({
     record, index, parsed: Date.parse(String(record.timestamp || '')),
