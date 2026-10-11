@@ -20,6 +20,7 @@
     "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/abgHistory.test.ts test/previousAdmissionViewer.test.ts"
   },
   "dependencies": {
+    "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor-firebase/app-check": "7.5.0",
     "@capacitor-firebase/authentication": "7.5.0",
     "@capacitor-firebase/firestore": "7.3.0",
