@@ -7,6 +7,7 @@ import type { ExtractedLabResult } from './aiLogic';
 export interface ParsedLabOcr {
   results: ExtractedLabResult[];
   notes: string[];
+  rawText: string;
 }
 
 // Canonical test name + OCR-tolerant aliases (lowercase, punctuation stripped).
@@ -36,7 +37,7 @@ const TEST_ALIASES: Array<{ name: string; aliases: string[] }> = [
   { name: 'Creatinine', aliases: ['creatinine'] },
   { name: 'Glucose', aliases: ['fasting glucose', 'random glucose', 'glucose', 'fbs', 'rbs'] },
   { name: 'Calcium', aliases: ['calcium'] },
-  { name: 'Troponin', aliases: ['hs troponin', 'troponin', 'hs-trop', 'trop'] },
+  { name: 'Troponin', aliases: ['hs troponin', 'troponin'] },
   { name: 'CK-MB', aliases: ['ck-mb', 'ckmb'] },
   { name: 'BNP', aliases: ['nt-probnp', 'nt probnp', 'bnp'] },
   { name: 'D-Dimer', aliases: ['d-dimer', 'd dimer'] },
@@ -73,11 +74,14 @@ const normalize = (s: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Whole-word match for every alias: prevents a fragment inside another word
+// (for example "trop" inside "neutrophils") from hijacking the test name.
 function matchesAlias(line: string, alias: string): boolean {
-  if (alias.length <= 3) {
-    return new RegExp(`(^|[^a-z])${alias.replace(/[+]/g, '\\$&')}([^a-z]|$)`).test(line);
-  }
-  return line.includes(alias);
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(alias)}([^a-z0-9]|$)`).test(line);
 }
 
 function extractRange(rest: string): { lo: number; hi: number; raw: string } | null {
@@ -107,7 +111,21 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
   const results: ExtractedLabResult[] = [];
   const notes: string[] = [];
   const seen = new Set<string>();
-  const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const source = String(text || '');
+  const rawLines = source.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  // Join split lines: a test name on one line with its numbers on the next
+  // (common when Tesseract breaks "PCV" / "Basophils" rows in two).
+  const lines: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    let cur = rawLines[i];
+    const norm = normalize(cur);
+    const hasAlias = TEST_ALIASES.some((t) => t.aliases.some((a) => matchesAlias(norm, a)));
+    if (hasAlias && !/\d/.test(cur) && i + 1 < rawLines.length) {
+      cur = `${cur} ${rawLines[i + 1]}`;
+      i++;
+    }
+    lines.push(cur);
+  }
 
   for (const rawLine of lines) {
     const line = normalize(rawLine);
@@ -137,7 +155,13 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
     if (idx >= 0) rest = `${rest.slice(0, idx)} ${rest.slice(idx + best.alias.length)}`;
 
     const range = extractRange(rest);
-    if (range) rest = rest.replace(range.raw, ' ');
+    // Never accept a result without an explicit reference range: a name plus
+    // a stray number is how "MCH 20" and "Troponin 60" style errors slip in.
+    if (!range) {
+      notes.push(`${best.name} needs manual review: reference range could not be read.`);
+      continue;
+    }
+    rest = rest.replace(range.raw, ' ');
 
     const numbers = [...rest.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0])).filter(Number.isFinite);
     if (!numbers.length) {
@@ -166,10 +190,10 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
       testName: best.name,
       value,
       unit,
-      referenceRange: range ? `${range.lo} - ${range.hi}` : '',
+      referenceRange: `${range.lo} - ${range.hi}`,
       status,
     });
   }
 
-  return { results, notes };
+  return { results, notes, rawText: source };
 }

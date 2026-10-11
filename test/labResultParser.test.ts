@@ -65,3 +65,28 @@ test('never fabricates values for unclear lines', () => {
   assert.equal(results.length, 0);
   assert.ok(notes.length >= 0);
 });
+
+test('broken neutrophil fragment never becomes troponin', () => {
+  const { results } = parseLabOcrText('trophils 60 Normal 50 - 62 %');
+  assert.equal(results.some((r) => r.testName === 'Troponin'), false);
+});
+
+test('full neutrophils line keeps its own name', () => {
+  const { results } = parseLabOcrText('Neutrophils 60 Normal 50 - 62 %');
+  const neu = results.find((r) => r.testName === 'Neutrophils');
+  assert.ok(neu);
+  assert.equal(neu.value, 60);
+});
+
+test('result without a reference range goes to manual review, not results', () => {
+  const { results, notes } = parseLabOcrText('MCH 20 pg');
+  assert.equal(results.length, 0);
+  assert.ok(notes.some((n) => n.includes('MCH') && n.includes('reference range')));
+});
+
+test('split name and numbers on two lines are joined', () => {
+  const { results } = parseLabOcrText('Packed Cell Volume (PCV)\n45 Normal 40 - 50 %');
+  const pcv = results.find((r) => r.testName === 'PCV');
+  assert.ok(pcv);
+  assert.equal(pcv.value, 45);
+});
