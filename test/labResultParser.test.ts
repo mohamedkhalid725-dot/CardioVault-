@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLabOcrText } from '../src/services/labResultParser.ts';
+import { parseLabOcrText, panelForTest } from '../src/services/labResultParser.ts';
 
 // Simulated on-device OCR output for a printed CBC report.
 const CBC_OCR = `
@@ -89,4 +89,35 @@ test('split name and numbers on two lines are joined', () => {
   const pcv = results.find((r) => r.testName === 'PCV');
   assert.ok(pcv);
   assert.equal(pcv.value, 45);
+});
+
+test('one-letter OCR error in name still matches with a manual-review note', () => {
+  const { results, notes } = parseLabOcrText('Sasophils 0 Normal 00 - 02 %');
+  const baso = results.find((r) => r.testName === 'Basophils');
+  assert.ok(baso);
+  assert.equal(baso.value, 0);
+  assert.ok(notes.some((n) => n.includes('Basophils') && n.includes('letter errors')));
+});
+
+test('fuzzy never hijacks a broken neutrophil line into troponin', () => {
+  const { results } = parseLabOcrText('Neutrophils i 60 Normal 50 - 62 Tn');
+  assert.equal(results.some((r) => r.testName === 'Troponin'), false);
+  assert.ok(results.some((r) => r.testName === 'Neutrophils'));
+});
+
+test('dropped decimal point in range is restored with a note', () => {
+  const { results, notes } = parseLabOcrText('Total RBC count 5.00 Normal 450 - 550 mill/cumm');
+  const rbc = results.find((r) => r.testName === 'RBC');
+  assert.ok(rbc);
+  assert.equal(rbc.referenceRange, '4.5 - 5.5');
+  assert.ok(notes.some((n) => n.includes('RBC') && n.includes('decimal')));
+});
+
+test('panel mapping sends tests to their real panels', () => {
+  assert.equal(panelForTest('Hemoglobin'), 'CBC');
+  assert.equal(panelForTest('MCV'), 'CBC');
+  assert.equal(panelForTest('Sodium'), 'Chemistry');
+  assert.equal(panelForTest('Troponin'), 'Cardiac Markers');
+  assert.equal(panelForTest('D-Dimer'), 'Coagulation');
+  assert.equal(panelForTest('Something Unknown'), 'Custom Lab');
 });
