@@ -20,6 +20,7 @@
     "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/abgHistory.test.ts test/previousAdmissionViewer.test.ts"
   },
   "dependencies": {
+    "@capacitor-firebase/app-check": "7.5.0",
     "@capacitor-firebase/authentication": "7.5.0",
     "@capacitor-firebase/firestore": "7.3.0",
     "@capacitor/android": "^7.4.4",
@@ -43,21 +44,21 @@
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3",
-    "@capacitor-firebase/app-check": "7.5.0"
+    "tesseract.js": "^7.0.0",
+    "vite": "^6.2.3"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
+    "@firebase/rules-unit-testing": "4.0.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "@types/react": "^19.1.13",
-    "@types/react-dom": "^19.1.9",
-    "@firebase/rules-unit-testing": "4.0.1"
+    "typescript": "~5.8.2"
   },
   "engines": {
     "node": "24.x"
