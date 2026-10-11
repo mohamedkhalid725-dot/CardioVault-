@@ -163,3 +163,47 @@ test('rod and segmented neutrophils stay distinct', () => {
   assert.ok(seg);
   assert.equal(seg.value, 28);
 });
+
+test('thousand separators stay joined', () => {
+  const { results } = parseLabOcrText('TOTAL LEUKOCYTE COUNT 5,100 cumm 4,800 - 10,800');
+  const wbc = results.find((r) => r.testName === 'WBC');
+  assert.ok(wbc);
+  assert.equal(wbc.value, 5100);
+  assert.equal(wbc.referenceRange, '4800 - 10800');
+});
+
+test('single-bound range is kept with its bound', () => {
+  const { results } = parseLabOcrText('BASOPHILS 1 % < 2');
+  const baso = results.find((r) => r.testName === 'Basophils');
+  assert.ok(baso);
+  assert.equal(baso.value, 1);
+  assert.equal(baso.referenceRange, '< 2');
+  assert.equal(baso.status, 'normal');
+});
+
+test('method prefix never steals the result name', () => {
+  const { results } = parseLabOcrText('MEAN CELL HAEMOGLOBIN, MCH 30.0 Pg 27 - 32');
+  assert.equal(results.some((r) => r.testName === 'MCH' && r.value === 30), true);
+  const { results: results2 } = parseLabOcrText('MEAN CELL HAEMOGLOBIN CON, MCHC H 35.7 % 31.5 - 34.5');
+  assert.equal(results2.some((r) => r.testName === 'MCHC' && r.value === 35.7), true);
+});
+
+test('catalog parses routine chemistry and lipid rows', () => {
+  const { results } = parseLabOcrText(
+    'Sodium 140 mmol/L 135 - 145\nLDL Cholesterol 110 mg/dL 0 - 100\nTSH 2.5 mIU/L 0.4 - 4.0',
+  );
+  assert.equal(results.find((r) => r.testName === 'Sodium')?.value, 140);
+  assert.equal(results.find((r) => r.testName === 'LDL')?.value, 110);
+  assert.equal(results.find((r) => r.testName === 'TSH')?.value, 2.5);
+});
+
+test('catalog panel mapping covers the routine panels', () => {
+  assert.equal(panelForTest('LDL'), 'Lipid Profile');
+  assert.equal(panelForTest('Free T4'), 'Thyroid');
+  assert.equal(panelForTest('Fibrinogen'), 'Coagulation');
+  assert.equal(panelForTest('Ferritin'), 'Iron / Vitamins');
+  assert.equal(panelForTest('Procalcitonin'), 'Inflammatory / Infection');
+  assert.equal(panelForTest('PSA'), 'Custom Lab');
+  assert.equal(panelForTest('Bilirubin'), 'Liver');
+  assert.equal(panelForTest('eGFR'), 'Chemistry');
+});

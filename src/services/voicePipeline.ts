@@ -3,7 +3,9 @@
 // Layer 2 (cloud free-tier): raw text polished into Medical English.
 // Nothing is fabricated: empty or unclear recognition is reported, never guessed.
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// llama-3.3-70b-versatile was shut down by Groq on 2026-08-16; gpt-oss-120b is
+// the vendor-recommended replacement for the free/developer tier.
+const GROQ_MODEL = 'openai/gpt-oss-120b';
 // Single-locale v1: mixed utterances are recognized under ar-EG and reviewed
 // by the physician. A second en-US pass was rejected (double recording UX).
 export const PIPELINE_SPEECH_LOCALE = 'ar-EG';

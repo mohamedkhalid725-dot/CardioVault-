@@ -19,7 +19,7 @@ const TEST_ALIASES: Array<{ name: string; aliases: string[] }> = [
   { name: 'MCH', aliases: ['mch'] },
   { name: 'MCHC', aliases: ['mchc'] },
   { name: 'RDW', aliases: ['rdw-cv', 'rdw'] },
-  { name: 'WBC', aliases: ['total wbc', 'wbc count', 'wbc', 'tlc', 'white blood cell'] },
+  { name: 'WBC', aliases: ['total wbc', 'wbc count', 'total leukocyte count', 'leukocyte count', 'leukocytes', 'leukocyte', 'leucocyte count', 'leucocytes', 'leucocyte', 'wbc', 'tlc', 'white blood cell'] },
   { name: 'Neutrophils', aliases: ['neutrophils', 'neutrophil'] },
   { name: 'Rod neutrophils', aliases: ['rod neutrophil', 'rod neutrophils', 'band neutrophil', 'band neutrophils'] },
   { name: 'Segmented neutrophils', aliases: ['segmented neutrophil', 'segmented neutrophils', 'seg neutrophil', 'polymorph'] },
@@ -30,24 +30,85 @@ const TEST_ALIASES: Array<{ name: string; aliases: string[] }> = [
   { name: 'Platelet Count', aliases: ['platelet count', 'platelet', 'plt'] },
   { name: 'MPV', aliases: ['mpv'] },
   { name: 'ESR', aliases: ['esr'] },
-  { name: 'CRP', aliases: ['hs-crp', 'crp'] },
+  { name: 'CRP', aliases: ['hs-crp', 'c-reactive protein', 'crp'] },
   { name: 'Sodium', aliases: ['sodium', 'na+'] },
   { name: 'Potassium', aliases: ['potassium', 'k+'] },
   { name: 'Chloride', aliases: ['chloride', 'cl-'] },
-  { name: 'Bicarbonate', aliases: ['bicarbonate', 'hco3'] },
-  { name: 'Urea', aliases: ['urea', 'bun'] },
-  { name: 'Creatinine', aliases: ['creatinine'] },
-  { name: 'Glucose', aliases: ['fasting glucose', 'random glucose', 'glucose', 'fbs', 'rbs'] },
-  { name: 'Calcium', aliases: ['calcium'] },
-  { name: 'Troponin', aliases: ['hs troponin', 'troponin'] },
+  { name: 'Bicarbonate', aliases: ['bicarbonate', 'hco3', 'co2', 'carbon dioxide'] },
+  { name: 'Urea', aliases: ['urea', 'bun', 'blood urea nitrogen'] },
+  { name: 'Creatinine', aliases: ['creatinine', 'serum creatinine', 'creat'] },
+  { name: 'eGFR', aliases: ['egfr', 'gfr', 'estimated gfr'] },
+  { name: 'Glucose', aliases: ['fasting glucose', 'random glucose', 'postprandial glucose', 'glucose', 'blood sugar', 'fbs', 'rbs', 'fbg', 'rbg'] },
+  { name: 'Calcium', aliases: ['serum calcium', 'calcium'] },
+  { name: 'Magnesium', aliases: ['magnesium'] },
+  { name: 'Phosphate', aliases: ['phosphate', 'phosphorus', 'po4'] },
+  { name: 'Uric Acid', aliases: ['uric acid', 'urate'] },
+  { name: 'Total Protein', aliases: ['total protein', 'protein total'] },
+  { name: 'Globulin', aliases: ['globulin'] },
+  { name: 'Anion Gap', aliases: ['anion gap'] },
+  { name: 'A/G Ratio', aliases: ['a/g ratio', 'albumin globulin ratio'] },
+  { name: 'Osmolality', aliases: ['osmolality', 'serum osmolality', 'osm'] },
+  { name: 'Albumin', aliases: ['albumin', 'serum albumin'] },
+  { name: 'ALP', aliases: ['alkaline phosphatase', 'alk phos', 'alp'] },
+  { name: 'Bilirubin', aliases: ['total bilirubin', 'bilirubin', 'tbili', 'bili'] },
+  { name: 'Direct Bilirubin', aliases: ['direct bilirubin', 'conjugated bilirubin', 'dbili'] },
+  { name: 'GGT', aliases: ['ggt', 'gamma gt', 'gamma-glutamyl', 'gamma glutamyl'] },
+  { name: 'LDH', aliases: ['ldh', 'lactate dehydrogenase'] },
+  { name: 'Troponin', aliases: ['hs troponin', 'troponin i', 'troponin t', 'troponin', 'ctni', 'ctnt'] },
+  { name: 'CK', aliases: ['creatine kinase', 'creatine phosphokinase', 'cpk', 'ck'] },
+  { name: 'Myoglobin', aliases: ['myoglobin'] },
   { name: 'CK-MB', aliases: ['ck-mb', 'ckmb'] },
   { name: 'BNP', aliases: ['nt-probnp', 'nt probnp', 'bnp'] },
   { name: 'D-Dimer', aliases: ['d-dimer', 'd dimer'] },
+  { name: 'PT', aliases: ['prothrombin time', 'pt'] },
+  { name: 'aPTT', aliases: ['partial thromboplastin time', 'aptt', 'aptt', 'ptt'] },
+  { name: 'Fibrinogen', aliases: ['fibrinogen', 'fib'] },
+  { name: 'Thrombin Time', aliases: ['thrombin time'] },
+  { name: 'Bleeding Time', aliases: ['bleeding time'] },
+  { name: 'Clotting Time', aliases: ['clotting time'] },
+  { name: 'Protein C', aliases: ['protein c'] },
+  { name: 'Protein S', aliases: ['protein s'] },
   { name: 'INR', aliases: ['inr'] },
   { name: 'HbA1c', aliases: ['hba1c', 'hb a1c', 'a1c'] },
+  { name: 'Insulin', aliases: ['fasting insulin', 'insulin'] },
+  { name: 'C-Peptide', aliases: ['c-peptide', 'c peptide', 'cpeptide'] },
+  { name: 'Total Cholesterol', aliases: ['total cholesterol', 'cholesterol'] },
+  { name: 'LDL', aliases: ['ldl cholesterol', 'ldl-c', 'ldl'] },
+  { name: 'HDL', aliases: ['hdl cholesterol', 'hdl-c', 'hdl'] },
+  { name: 'Triglycerides', aliases: ['triglycerides', 'triglyceride'] },
+  { name: 'VLDL', aliases: ['vldl cholesterol', 'vldl'] },
+  { name: 'Non-HDL', aliases: ['non-hdl', 'non hdl'] },
+  { name: 'Lp(a)', aliases: ['lipoprotein a', 'lp(a)', 'lpa'] },
+  { name: 'ApoB', aliases: ['apolipoprotein b', 'apob'] },
+  { name: 'ApoA1', aliases: ['apolipoprotein a1', 'apoa1'] },
+  { name: 'Serum Iron', aliases: ['serum iron', 'iron'] },
+  { name: 'Ferritin', aliases: ['ferritin', 'serum ferritin'] },
+  { name: 'TIBC', aliases: ['tibc', 'total iron binding'] },
+  { name: 'UIBC', aliases: ['uibc'] },
+  { name: 'Transferrin Saturation', aliases: ['transferrin saturation', 'tsat'] },
+  { name: 'Vitamin B12', aliases: ['vitamin b12', 'cobalamin', 'b12'] },
+  { name: 'Folate', aliases: ['folate', 'folic acid'] },
+  { name: 'Vitamin D', aliases: ['25-oh vitamin d', '25 oh vitamin d', 'vitamin d'] },
+  { name: 'Procalcitonin', aliases: ['procalcitonin'] },
+  { name: 'Rheumatoid Factor', aliases: ['rheumatoid factor', 'ra factor'] },
+  { name: 'ASO', aliases: ['antistreptolysin o', 'aso titre', 'aso'] },
+  { name: 'ANA', aliases: ['antinuclear antibodies', 'antinuclear antibody', 'ana'] },
+  { name: 'Base Excess', aliases: ['base excess'] },
+  { name: 'O2 Saturation', aliases: ['oxygen saturation', 'o2 saturation', 'sao2', 'spo2'] },
+  { name: 'PSA', aliases: ['prostate specific antigen', 'psa'] },
+  { name: 'CEA', aliases: ['carcinoembryonic antigen', 'cea'] },
+  { name: 'AFP', aliases: ['alpha fetoprotein', 'afp'] },
+  { name: 'CA-125', aliases: ['ca-125', 'ca125'] },
+  { name: 'CA19-9', aliases: ['ca19-9', 'ca 19-9'] },
   { name: 'AST', aliases: ['ast', 'sgot'] },
   { name: 'ALT', aliases: ['alt', 'sgpt'] },
   { name: 'TSH', aliases: ['tsh'] },
+  { name: 'Free T4', aliases: ['free t4', 'ft4'] },
+  { name: 'Free T3', aliases: ['free t3', 'ft3'] },
+  { name: 'Total T4', aliases: ['total t4', 'thyroxine', 't4'] },
+  { name: 'Total T3', aliases: ['total t3', 'triiodothyronine', 't3'] },
+  { name: 'TPO Antibodies', aliases: ['anti-tpo', 'thyroid peroxidase', 'tpo'] },
+  { name: 'TSI', aliases: ['thyroid stimulating immunoglobulin', 'tsi', 'trab'] },
   { name: 'pH', aliases: ['ph'] },
   { name: 'PaCO2', aliases: ['paco2', 'pa co2'] },
   { name: 'PaO2', aliases: ['pao2', 'pa o2'] },
@@ -65,11 +126,14 @@ const HEADER_JUNK = [
   'investigation', 'reference value', 'biological reference', 'primary sample',
   'end of report', 'thanks for reference', 'page 1 of', 'generated on',
   'sample collected', 'registered on', 'collected on', 'reported on', 'interpretation',
+  'differential',
 ];
 
 const normalize = (s: string): string =>
   s
     .toLowerCase()
+    // Join thousand separators first: "5,100" -> "5100" ( else it reads as 5 ).
+    .replace(/(\d),(\d{3})(?!\d)/g, '$1$2')
     .replace(/(\d)\.(\d)/g, '$1_dec_$2') // protect decimal points inside numbers
     .replace(/[.,;:()|]/g, ' ')
     .replace(/_dec_/g, '.')
@@ -125,10 +189,31 @@ const TEST_PANELS: Record<string, string> = {
   Sodium: 'Chemistry', Potassium: 'Chemistry', Chloride: 'Chemistry', Bicarbonate: 'Chemistry',
   Urea: 'Chemistry', Creatinine: 'Chemistry', Glucose: 'Chemistry', Calcium: 'Chemistry',
   Troponin: 'Cardiac Markers', 'CK-MB': 'Cardiac Markers', BNP: 'Cardiac Markers',
+  CK: 'Cardiac Markers', Myoglobin: 'Cardiac Markers',
   'D-Dimer': 'Coagulation', INR: 'Coagulation',
-  HbA1c: 'Diabetes', AST: 'Liver', ALT: 'Liver', TSH: 'Thyroid',
+  PT: 'Coagulation', aPTT: 'Coagulation', Fibrinogen: 'Coagulation',
+  'Thrombin Time': 'Coagulation', 'Bleeding Time': 'Coagulation',
+  'Clotting Time': 'Coagulation', 'Protein C': 'Coagulation', 'Protein S': 'Coagulation',
+  HbA1c: 'Diabetes', Insulin: 'Diabetes', 'C-Peptide': 'Diabetes',
+  AST: 'Liver', ALT: 'Liver', Albumin: 'Liver', ALP: 'Liver', Bilirubin: 'Liver',
+  'Direct Bilirubin': 'Liver', GGT: 'Liver', LDH: 'Liver',
+  TSH: 'Thyroid', 'Free T4': 'Thyroid', 'Free T3': 'Thyroid', 'Total T4': 'Thyroid',
+  'Total T3': 'Thyroid', 'TPO Antibodies': 'Thyroid', TSI: 'Thyroid',
   pH: 'ABG', PaCO2: 'ABG', PaO2: 'ABG', Lactate: 'ABG',
+  'Base Excess': 'ABG', 'O2 Saturation': 'ABG',
   ESR: 'Inflammatory / Infection', CRP: 'Inflammatory / Infection',
+  Procalcitonin: 'Inflammatory / Infection', 'Rheumatoid Factor': 'Inflammatory / Infection',
+  ASO: 'Inflammatory / Infection', ANA: 'Inflammatory / Infection',
+  eGFR: 'Chemistry', Magnesium: 'Chemistry', Phosphate: 'Chemistry', 'Uric Acid': 'Chemistry',
+  'Total Protein': 'Chemistry', Globulin: 'Chemistry', 'Anion Gap': 'Chemistry',
+  'A/G Ratio': 'Chemistry', Osmolality: 'Chemistry',
+  'Total Cholesterol': 'Lipid Profile', LDL: 'Lipid Profile', HDL: 'Lipid Profile',
+  Triglycerides: 'Lipid Profile', VLDL: 'Lipid Profile', 'Non-HDL': 'Lipid Profile',
+  'Lp(a)': 'Lipid Profile', ApoB: 'Lipid Profile', ApoA1: 'Lipid Profile',
+  'Serum Iron': 'Iron / Vitamins', Ferritin: 'Iron / Vitamins', TIBC: 'Iron / Vitamins',
+  UIBC: 'Iron / Vitamins', 'Transferrin Saturation': 'Iron / Vitamins',
+  'Vitamin B12': 'Iron / Vitamins', Folate: 'Iron / Vitamins', 'Vitamin D': 'Iron / Vitamins',
+  PSA: 'Custom Lab', CEA: 'Custom Lab', AFP: 'Custom Lab', 'CA-125': 'Custom Lab', 'CA19-9': 'Custom Lab',
 };
 
 // Panel for one extracted test. Unknown tests go to Custom Lab, never to a
@@ -191,14 +276,21 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
     if (!line) continue;
     if (HEADER_JUNK.some((junk) => line.includes(junk))) continue;
 
-    // Longest alias wins so "total wbc" beats "wbc", "packed cell volume" beats "pcv".
+    // Rightmost alias wins: in "MEAN CELL HAEMOGLOBIN, MCH 30.0" the test
+    // being reported is MCH (adjacent to the numbers), not the HAEMOGLOBIN
+    // mentioned in the method prefix. Ties break toward the longest alias.
     // Exact whole-word match first; single-word fuzzy (1-2 letters) only as
     // fallback, and still requires an explicit reference range below.
-    let best: { name: string; alias: string; fuzzy: boolean } | null = null;
+    let best: { name: string; alias: string; fuzzy: boolean; end: number } | null = null;
     for (const test of TEST_ALIASES) {
       for (const alias of test.aliases) {
-        if (matchesAlias(line, alias) && (!best || (alias.length > best.alias.length && !best.fuzzy))) {
-          best = { name: test.name, alias, fuzzy: false };
+        const re = new RegExp(`(^|[^a-z0-9])${escapeRegExp(alias)}([^a-z0-9]|$)`, 'g');
+        let m: RegExpExecArray | null;
+        let end = -1;
+        while ((m = re.exec(line)) !== null) end = m.index + m[0].length;
+        if (end < 0) continue;
+        if (!best || end > best.end || (end === best.end && alias.length > best.alias.length)) {
+          best = { name: test.name, alias, fuzzy: false, end };
         }
       }
     }
@@ -206,7 +298,7 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
       for (const test of TEST_ALIASES) {
         for (const alias of test.aliases) {
           if (fuzzyAlias(line, alias) && (!best || alias.length > best.alias.length)) {
-            best = { name: test.name, alias, fuzzy: true };
+            best = { name: test.name, alias, fuzzy: true, end: -1 };
           }
         }
       }
@@ -234,13 +326,16 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
       .replace(/\(\s*10\s*\/[^)]*\)/gi, ' ');
 
     const range = extractRange(rest);
+    // Single-bound reference ("< 2" for Basophils): explicit in the source,
+    // so it is kept with its bound instead of dropped to manual review.
+    const boundMatch = !range ? rest.match(/<\s*(-?\d+(?:\.\d+)?)/) : null;
     // Never accept a result without an explicit reference range: a name plus
     // a stray number is how "MCH 20" and "Troponin 60" style errors slip in.
-    if (!range) {
+    if (!range && !boundMatch) {
       notes.push(`${best.name} needs manual review: reference range could not be read.`);
       continue;
     }
-    rest = rest.replace(range.raw, ' ');
+    if (range) rest = rest.replace(range.raw, ' ');
 
     const numbers = [...rest.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0])).filter(Number.isFinite);
     if (!numbers.length) {
@@ -248,6 +343,27 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
       continue;
     }
     const value = numbers[0];
+    if (!range) {
+      // Single-bound reference ("< 2" for Basophils): explicit in the source.
+      const bound = Number(boundMatch?.[1]);
+      if (!Number.isFinite(bound)) {
+        notes.push(`${best.name} needs manual review: reference range could not be read.`);
+        continue;
+      }
+      const unitB = extractUnit(rest);
+      const bLow = /\blow\b/.test(line) || /↓/.test(rawLine);
+      const bHigh = /\bhigh\b/.test(line) || /↑/.test(rawLine);
+      const bCritical = /\bcritical\b/.test(line);
+      let bStatus: ExtractedLabResult['status'] = value < bound ? 'normal' : 'high';
+      if (bCritical) bStatus = 'critical';
+      else if (bHigh) bStatus = 'high';
+      else if (bLow) bStatus = 'low';
+      if (best.fuzzy) {
+        notes.push(`${best.name} name was read with minor letter errors; confirm the test name manually.`);
+      }
+      results.push({ testName: best.name, value, unit: unitB, referenceRange: `< ${bound}`, status: bStatus });
+      continue;
+    }
     // Decimal-point rescue: OCR often drops the dot in ranges, reading
     // "4.5 - 5.5" as "450 - 550". The fix applies ONLY when the corrected
     // range actually contains the value — otherwise a correct range like
