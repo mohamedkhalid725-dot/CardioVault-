@@ -121,3 +121,45 @@ test('panel mapping sends tests to their real panels', () => {
   assert.equal(panelForTest('D-Dimer'), 'Coagulation');
   assert.equal(panelForTest('Something Unknown'), 'Custom Lab');
 });
+
+test('unit exponent never becomes the value', () => {
+  const { results } = parseLabOcrText('Red blood cell (10^6/ml) 2.56 Normal 3.9 - 5.3');
+  const rbc = results.find((r) => r.testName === 'RBC');
+  assert.ok(rbc);
+  assert.equal(rbc.value, 2.56);
+});
+
+test('standalone value 10 survives exponent stripping', () => {
+  const { results } = parseLabOcrText('Total WBC count 10 Normal 4 - 11 cumm');
+  const wbc = results.find((r) => r.testName === 'WBC');
+  assert.ok(wbc);
+  assert.equal(wbc.value, 10);
+});
+
+test('correct large range is never decimal-corrupted', () => {
+  const { results, notes } = parseLabOcrText('Platelets (10^3/uL) 56 Normal 150 - 450 cumm');
+  const plt = results.find((r) => r.testName === 'Platelet Count');
+  assert.ok(plt);
+  assert.equal(plt.value, 56);
+  assert.equal(plt.referenceRange, '150 - 450');
+  assert.equal(plt.status, 'low');
+  assert.equal(notes.some((n) => n.includes('decimal point restored')), false);
+});
+
+test('far-outside value is kept but loudly flagged', () => {
+  const { results, notes } = parseLabOcrText('Hemoglobin (g/dl) 74 Normal 11.5 - 13.5 g/dl');
+  const hb = results.find((r) => r.testName === 'Hemoglobin');
+  assert.ok(hb);
+  assert.equal(hb.value, 74);
+  assert.ok(notes.some((n) => n.includes('Hemoglobin') && n.includes('decimal')));
+});
+
+test('rod and segmented neutrophils stay distinct', () => {
+  const { results } = parseLabOcrText('Rod neutrophil (%) 2 Low 3 - 5\nSegmented neutrophil (%) 28 Low 27 - 55');
+  const rod = results.find((r) => r.testName === 'Rod neutrophils');
+  const seg = results.find((r) => r.testName === 'Segmented neutrophils');
+  assert.ok(rod);
+  assert.equal(rod.value, 2);
+  assert.ok(seg);
+  assert.equal(seg.value, 28);
+});

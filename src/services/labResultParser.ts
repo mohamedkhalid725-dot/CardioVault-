@@ -21,6 +21,8 @@ const TEST_ALIASES: Array<{ name: string; aliases: string[] }> = [
   { name: 'RDW', aliases: ['rdw-cv', 'rdw'] },
   { name: 'WBC', aliases: ['total wbc', 'wbc count', 'wbc', 'tlc', 'white blood cell'] },
   { name: 'Neutrophils', aliases: ['neutrophils', 'neutrophil'] },
+  { name: 'Rod neutrophils', aliases: ['rod neutrophil', 'rod neutrophils', 'band neutrophil', 'band neutrophils'] },
+  { name: 'Segmented neutrophils', aliases: ['segmented neutrophil', 'segmented neutrophils', 'seg neutrophil', 'polymorph'] },
   { name: 'Lymphocytes', aliases: ['lymphocytes', 'lymphocyte'] },
   { name: 'Eosinophils', aliases: ['eosinophils', 'eosinophil'] },
   { name: 'Monocytes', aliases: ['monocytes', 'monocyte'] },
@@ -118,7 +120,7 @@ function fuzzyAlias(line: string, alias: string): boolean {
 // Canonical test name -> laboratory panel (same names as the Labs UI filter).
 const TEST_PANELS: Record<string, string> = {
   Hemoglobin: 'CBC', RBC: 'CBC', PCV: 'CBC', MCV: 'CBC', MCH: 'CBC', MCHC: 'CBC',
-  RDW: 'CBC', WBC: 'CBC', Neutrophils: 'CBC', Lymphocytes: 'CBC', Eosinophils: 'CBC',
+  RDW: 'CBC', WBC: 'CBC', Neutrophils: 'CBC', 'Rod neutrophils': 'CBC', 'Segmented neutrophils': 'CBC', Lymphocytes: 'CBC', Eosinophils: 'CBC',
   Monocytes: 'CBC', Basophils: 'CBC', 'Platelet Count': 'CBC', MPV: 'CBC',
   Sodium: 'Chemistry', Potassium: 'Chemistry', Chloride: 'Chemistry', Bicarbonate: 'Chemistry',
   Urea: 'Chemistry', Creatinine: 'Chemistry', Glucose: 'Chemistry', Calcium: 'Chemistry',
@@ -221,6 +223,15 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
     let rest = line;
     const idx = rest.indexOf(best.alias);
     if (idx >= 0) rest = `${rest.slice(0, idx)} ${rest.slice(idx + best.alias.length)}`;
+    // Strip unit exponents (10^6/ml, 10^3/uL, 10%/ml, (10/uL)): OCR reads the
+    // "10" inside them and the parser would otherwise take it as the value
+    // (RBC/WBC/Platelets all showed value 10 from their units). A standalone
+    // value of 10 is never touched — only marked exponent forms are removed.
+    rest = rest
+      .replace(/\b10\s*\^[^ ]*/gi, ' ')
+      .replace(/\b10\s*[³²¹⁰-⁹]+\s*\/?\s*[a-zµμ]*\/?[a-zµμ]*/gi, ' ')
+      .replace(/\b10\s*%\s*\/\s*[a-zµμ]+/gi, ' ')
+      .replace(/\(\s*10\s*\/[^)]*\)/gi, ' ');
 
     const range = extractRange(rest);
     // Never accept a result without an explicit reference range: a name plus
@@ -237,19 +248,36 @@ export function parseLabOcrText(text: string): ParsedLabOcr {
       continue;
     }
     const value = numbers[0];
-    // Decimal-point rescue: OCR often drops the dot in small ranges, reading
-    // "4.5 - 5.5" as "450 - 550". When the value is small and the range is
-    // ~100x larger, restore the decimals rather than storing a wrong range.
+    // Decimal-point rescue: OCR often drops the dot in ranges, reading
+    // "4.5 - 5.5" as "450 - 550". The fix applies ONLY when the corrected
+    // range actually contains the value — otherwise a correct range like
+    // Platelets 150-450 would be corrupted into 1.5-4.5.
     let lo = range.lo;
     let hi = range.hi;
     let rangeFixed = false;
-    if (value < 20 && lo >= 100 && lo / Math.max(value, 0.01) > 10) {
-      lo = lo / 100;
-      hi = hi / 100;
-      rangeFixed = true;
+    if (value < 20 && lo >= 10 && lo / Math.max(value, 0.01) > 5) {
+      for (const divisor of [100, 10]) {
+        if (lo < divisor) continue;
+        const fixedLo = lo / divisor;
+        const fixedHi = hi / divisor;
+        if (value >= fixedLo && value <= fixedHi) {
+          lo = fixedLo;
+          hi = fixedHi;
+          rangeFixed = true;
+          break;
+        }
+      }
+      if (rangeFixed) {
+        notes.push(`${best.name} reference range decimal point restored (${range.raw} -> ${lo} - ${hi}); confirm manually.`);
+      } else {
+        notes.push(`${best.name} range (${range.raw}) looks too large next to value ${value} — probable lost decimal point; confirm manually.`);
+      }
     }
-    if (rangeFixed) {
-      notes.push(`${best.name} reference range decimal point restored (${range.raw} -> ${lo} - ${hi}); confirm manually.`);
+    // Loud flag when a value sits far outside its range (Hemoglobin 74 vs
+    // 11.5-13.5 means a lost decimal, 7.4). The value is kept as read —
+    // never altered — but it must not pass silently.
+    if (value > 3 * hi || (lo > 0 && value < lo / 3)) {
+      notes.push(`${best.name} value ${value} is far outside ${lo} - ${hi} — check for a lost decimal point before saving.`);
     }
     const unit = extractUnit(rest);
 
