@@ -174,10 +174,10 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         draw(white);
         doc.setLineWidth(0.8);
         doc.line(11, 16, 14, 16);
-        doc.line(14, 16, 15.8, 12);
-        doc.line(15.8, 12, 18, 20);
-        doc.line(18, 20, 20.2, 14);
-        doc.line(20.2, 14, 22, 16);
+        doc.line(14, 16, 16, 12);
+        doc.line(16, 12, 18, 20);
+        doc.line(18, 20, 20, 14);
+        doc.line(20, 14, 22, 16);
         doc.line(22, 16, 24, 16);
       };
 
@@ -191,7 +191,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         text(white);
         doc.text('Cardio', 31, 15);
         text(cyan);
-        doc.text('Vault', 58, 15);
+        doc.text('Vault', 31 + doc.getTextWidth('Cardio') + 2, 15);
 
         doc.setFontSize(8.2);
         text(white);
