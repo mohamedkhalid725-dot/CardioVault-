@@ -13,27 +13,38 @@ interface Props{
  onApply:(draft:string)=>void;
  disabled?:boolean;
  fieldLabel?:string;
+ // Opt-in to live on-device recognition on native. Default tap is the
+ // recorder path (record -> stop -> transcribeMedicalVoice); pass
+ // useLive to restore live-first, or long-press the mic for one live shot.
+ useLive?:boolean;
 }
 const base64ToBlob=(base64:string,mimeType:string)=>{const clean=base64.includes(',')?base64.split(',').pop()||'':base64;const bytes=Uint8Array.from(atob(clean),c=>c.charCodeAt(0));return new Blob([bytes],{type:mimeType||'audio/aac'});};
 let activeRecorderId:string|null=null;
 const claim=(id:string)=>{if(activeRecorderId&&activeRecorderId!==id)return false;activeRecorderId=id;return true;};
 const release=(id:string)=>{if(activeRecorderId===id)activeRecorderId=null;};
 
-export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false,fieldLabel='clinical field'})=>{
+export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false,fieldLabel='clinical field',useLive=false})=>{
  const id=useId();const{showToast,currentPatient}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);
- const nativeRecordingRef=useRef(false);const webRecorderRef=useRef<MediaRecorder|null>(null);const chunksRef=useRef<Blob[]>([]);const streamRef=useRef<MediaStream|null>(null);const liveSessionRef=useRef<LiveRecognitionSession|null>(null);const[pipelineUsed,setPipelineUsed]=useState(false);
+ const nativeRecordingRef=useRef(false);const webRecorderRef=useRef<MediaRecorder|null>(null);const chunksRef=useRef<Blob[]>([]);const streamRef=useRef<MediaStream|null>(null);const liveSessionRef=useRef<LiveRecognitionSession|null>(null);const[pipelineUsed,setPipelineUsed]=useState(false);const pressTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null);
  useEffect(()=>{if(cooldown<=0)return;const t=window.setInterval(()=>setCooldown(v=>Math.max(0,v-1)),1000);return()=>window.clearInterval(t);},[cooldown]);
- useEffect(()=>()=>{webRecorderRef.current?.stream.getTracks().forEach(t=>t.stop());streamRef.current?.getTracks().forEach(t=>t.stop());release(id);},[id]);
+ useEffect(()=>()=>{if(pressTimerRef.current!==null){clearTimeout(pressTimerRef.current);pressTimerRef.current=null;}webRecorderRef.current?.stream.getTracks().forEach(t=>t.stop());streamRef.current?.getTracks().forEach(t=>t.stop());release(id);},[id]);
  const isPreviousViewer=useIsPreviousViewer();
  if(isPreviousViewer)return null;
- const start=async()=>{
+ const startImpl=async(forceLive:boolean)=>{
   if(disabled||busy||recording||cooldown>0)return;
   if(!claim(id)){showToast('Another voice recording or AI request is already in progress. Please wait for it to finish.','error');return;}
   setBusy(true);setError('');setPipelineUsed(false);setFallback(false);
   if(!requestVoiceConsent()){release(id);setBusy(false);return;}
+  // RECORDER-FIRST ON NATIVE: single-locale (ar-EG) live recognition breaks
+  // mixed Arabic-English medical speech, and the native popup + stop chain
+  // hung on some Android builds. So the default native tap skips live
+  // recognition and records -> transcribes (same review modal as web).
+  // Live popup is opt-in only (long-press or useLive prop). Web keeps the
+  // live-first flow unchanged.
+  const wantLive=forceLive||useLive||!Capacitor.isNativePlatform();
   // Layer 1 (device, free): live on-device recognition. Falls through to
   // the recording + cloud flow below when unavailable on this platform.
-  try{const session=await startLiveRecognition();liveSessionRef.current=session;setRecording(true);setBusy(false);showToast(Capacitor.isNativePlatform()?'Speak in the voice popup. Finish there or tap the mic to stop.':'Listening on this device. Tap the mic again to stop.','info');return;}catch(layerError:any){liveSessionRef.current=null;showToast('On-device recognition unavailable ('+String(layerError?.message||'unknown error')+'). Using recorder instead.','info');}
+  if(wantLive){try{const session=await startLiveRecognition();liveSessionRef.current=session;setRecording(true);setBusy(false);showToast(Capacitor.isNativePlatform()?'Speak in the voice popup. Finish there or tap the mic to stop.':'Listening on this device. Tap the mic again to stop.','info');return;}catch(layerError:any){liveSessionRef.current=null;showToast('On-device recognition unavailable ('+String(layerError?.message||'unknown error')+'). Using recorder instead.','info');}}
   try{
    if(Capacitor.isNativePlatform()){
     const capability=await withVoiceTimeout(VoiceRecorder.canDeviceVoiceRecord(),'recorder check');if(!capability.value)throw new Error('Voice recording is not supported on this device.');
@@ -47,6 +58,11 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
   }catch(e:any){release(id);setError(String(e?.message||'Unable to start voice recording.'));showToast(String(e?.message||'Unable to start voice recording.'),'error');}
   finally{setBusy(false);}
  };
+ const start=()=>void startImpl(false);
+ const clearPressTimer=()=>{if(pressTimerRef.current!==null){clearTimeout(pressTimerRef.current);pressTimerRef.current=null;}};
+ const handlePointerDown=()=>{if(!Capacitor.isNativePlatform())return;clearPressTimer();pressTimerRef.current=setTimeout(()=>{pressTimerRef.current=null;void startImpl(true);},600);};
+ const handlePointerUp=()=>clearPressTimer();
+ const handleContextMenu=(e:React.MouseEvent)=>{if(!Capacitor.isNativePlatform())return;e.preventDefault();clearPressTimer();void startImpl(true);};
  const stop=async()=>{
   if(!recording||busy)return;setBusy(true);setError('');
   // Layer 1 result: stop live recognition, then polish (layer 2). The
@@ -72,7 +88,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
   // Safety net (B-D): one tap inserts the untouched transcription when the polished draft is wrong.
   const insertRaw=()=>{const clean=transcription.trim();if(!clean)return;const base=value.trimEnd();const combined=base?base+String.fromCharCode(10)+clean:clean;onApply(combined);setOpen(false);setDraft('');setTranscription('');showToast('Raw transcription inserted. Review the field and save it yourself.','success');};
  return <span className="inline-flex items-center">
-  <button type="button" onClick={()=>recording?void stop():void start()} disabled={disabled||busy||cooldown>0} title={cooldown>0?'AI limit reached, try again in ~'+cooldown+' seconds':'Voice dictation for '+fieldLabel} className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed">
+  <button type="button" onClick={()=>{clearPressTimer();recording?void stop():void start();}} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} onContextMenu={handleContextMenu} disabled={disabled||busy||cooldown>0} title={cooldown>0?'AI limit reached, try again in ~'+cooldown+' seconds':'Voice dictation for '+fieldLabel+(Capacitor.isNativePlatform()?' (long-press for on-device live recognition)':'')} className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed">
    {busy?<Loader2 className="w-4 h-4 animate-spin"/>:recording?<Square className="w-4 h-4"/>:<Mic className="w-4 h-4"/>}
   </button>
   {cooldown>0&&<span className="ml-2 text-[10px] font-bold text-amber-600 dark:text-amber-300">AI limit reached, try again in ~{cooldown} seconds</span>}

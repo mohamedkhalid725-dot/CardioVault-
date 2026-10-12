@@ -2,6 +2,11 @@
 // Layer 1 (device, free, no quota): live on-device speech recognition.
 // Layer 2 (cloud free-tier): raw text polished into Medical English.
 // Nothing is fabricated: empty or unclear recognition is reported, never guessed.
+// RECORDER-FIRST ON NATIVE (2026-10): the default native tap records audio and
+// transcribes via transcribeMedicalVoice (same review modal as web). Single-locale
+// (ar-EG) live recognition mangles mixed Arabic-English medical speech, and the
+// native popup + stop chain hung on some Android builds. Live recognition stays
+// available only as an opt-in (long-press or useLive=true); web flow is unchanged.
 import { Capacitor } from '@capacitor/core';
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 // llama-3.3-70b-versatile was shut down by Groq on 2026-08-16; gpt-oss-120b is

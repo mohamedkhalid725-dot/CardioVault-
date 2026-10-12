@@ -122,3 +122,11 @@
 .animate-cardiovault-loading {
   animation: cardiovault-loading 1.2s ease-in-out infinite;
 }
+/* Subtle pulse for the live-critical dot on Home (dot only — never the header). */
+@keyframes cardiovault-soft-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.82); }
+}
+.animate-cardiovault-soft-pulse {
+  animation: cardiovault-soft-pulse 2s ease-in-out infinite;
+}

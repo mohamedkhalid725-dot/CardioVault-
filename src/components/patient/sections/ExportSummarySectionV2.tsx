@@ -11,21 +11,16 @@ import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { installArabicTextSupport } from '../../../services/pdfArabicSupport';
 
+// Clean section list in required report order.
 const sections = [
-  ['overview', 'Overview'],
   ['history', 'History'],
-  ['vitals', 'Vitals & Balance'],
-  ['ecg', 'ECG'],
   ['examination', 'Examination'],
-  ['cardiology', 'Cardiology'],
-  ['medications', 'Medications'],
-  ['icu', 'ICU / Ventilator'],
-  ['imaging', 'Imaging'],
+  ['vitals', 'Vitals Summary'],
   ['labs', 'Laboratory'],
+  ['imaging', 'Imaging'],
+  ['medications', 'Medications'],
   ['procedures', 'Procedures'],
-  ['calculators', 'Calculators'],
   ['progress', 'Progress Notes'],
-  ['timeline', 'Timeline (Chronological)'],
 ] as const;
 
 const val = (v: any, fallback = '—') => {
@@ -37,67 +32,6 @@ const val = (v: any, fallback = '—') => {
 const compact = (v: any, max = 90) => {
   const s = val(v, '');
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
-};
-
-const imageData = async (url: string): Promise<string | null> => {
-  try {
-    const source = url.startsWith('data:image/')
-      ? url
-      : await new Promise<string | null>(resolve => {
-          const controller = new AbortController();
-          const timer = window.setTimeout(() => controller.abort(), 5000);
-          fetch(url, { signal: controller.signal })
-            .then(response => {
-              window.clearTimeout(timer);
-              if (!response.ok) {
-                resolve(null);
-                return null;
-              }
-              return response.blob();
-            })
-            .then(blob => {
-              if (!blob) return;
-              const reader = new FileReader();
-              reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-              reader.onerror = () => resolve(null);
-              reader.readAsDataURL(blob);
-            })
-            .catch(() => {
-              window.clearTimeout(timer);
-              resolve(null);
-            });
-        });
-
-    if (!source) return null;
-
-    // jsPDF is much more reliable on Android when attached clinical images are
-    // normalized to JPEG instead of passing through PNG/WebP/SVG formats.
-    return await new Promise<string | null>(resolve => {
-      const image = new Image();
-      image.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.max(1, image.naturalWidth || image.width);
-          canvas.height = Math.max(1, image.naturalHeight || image.height);
-          const context = canvas.getContext('2d');
-          if (!context) {
-            resolve(source);
-            return;
-          }
-          context.fillStyle = '#ffffff';
-          context.fillRect(0, 0, canvas.width, canvas.height);
-          context.drawImage(image, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/jpeg', 0.88));
-        } catch {
-          resolve(source);
-        }
-      };
-      image.onerror = () => resolve(source);
-      image.src = source;
-    });
-  } catch {
-    return null;
-  }
 };
 
 export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient }) => {
@@ -147,13 +81,12 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       showToast('Select at least one section.', 'error');
       return;
     }
-
     setBusy(true);
-
     try {
       const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
       installArabicTextSupport(doc);
 
+      // ---- palette ----
       const navy = [7, 42, 67];
       const teal = [0, 164, 180];
       const cyan = [18, 184, 196];
@@ -162,687 +95,388 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       const line = [205, 222, 230];
       const pale = [232, 245, 248];
       const white = [255, 255, 255];
-      let page = 1;
-      // Arabic names render as a canvas image below the baseline, so the
-      // banner grows and the following lines shift down. Latin path untouched.
-      const hasArabicName = /[\u0600-\u06FF]/.test(String(patient.fullName || ''));
+
+      const PAGE_W = 210;
+      const MARGIN = 8;
+      const CONTENT_W = PAGE_W - MARGIN * 2; // 194
+      const FOOTER_TOP = 270; // content must stay above this
+      const generatedAt = new Date().toLocaleString();
 
       const fill = (c: number[]) => doc.setFillColor(c[0], c[1], c[2]);
       const draw = (c: number[]) => doc.setDrawColor(c[0], c[1], c[2]);
       const text = (c: number[]) => doc.setTextColor(c[0], c[1], c[2]);
 
-      const logo = () => {
-        fill(teal);
-        doc.roundedRect(8, 7, 18, 18, 4, 4, 'F');
-        draw(white);
-        doc.setLineWidth(0.8);
-        doc.line(11, 16, 14, 16);
-        doc.line(14, 16, 16, 12);
-        doc.line(16, 12, 18, 20);
-        doc.line(18, 20, 20, 14);
-        doc.line(20, 14, 22, 16);
-        doc.line(22, 16, 24, 16);
-      };
+      let y = 0;
 
       const header = () => {
         fill(navy);
-        doc.rect(0, 0, 210, 31, 'F');
-        logo();
-
+        doc.rect(0, 0, PAGE_W, 26, 'F');
+        // logo
+        fill(teal);
+        doc.roundedRect(8, 6, 16, 16, 3.5, 3.5, 'F');
+        draw(white);
+        doc.setLineWidth(0.8);
+        doc.line(10.5, 14, 13, 14);
+        doc.line(13, 14, 14.5, 10.5);
+        doc.line(14.5, 10.5, 16.5, 17.5);
+        doc.line(16.5, 17.5, 18, 12.5);
+        doc.line(18, 12.5, 21.5, 14);
+        // title
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(21);
+        doc.setFontSize(19);
         text(white);
-        doc.text('Cardio', 31, 15);
+        doc.text('Cardio', 28, 13.5);
         text(cyan);
-        doc.text('Vault', 31 + doc.getTextWidth('Cardio') + 2, 15);
-
-        doc.setFontSize(8.2);
-        text(white);
-        doc.text('ICU & CCU Clinical Record', 31, 21);
+        doc.text('Vault', 28 + doc.getTextWidth('Cardio') + 1.5, 13.5);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.8);
+        doc.setFontSize(7);
         text([175, 218, 225]);
-        doc.text('Your Patients. Your Data. Always With You.', 31, 26);
-
+        doc.text('ICU & CCU Clinical Record', 28, 19);
+        // patient identity on the right of the header
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        text(cyan);
-        doc.text('CLINICAL REPORT', 166, 11);
+        doc.setFontSize(8.5);
+        text(white);
+        doc.text(compact(patient.fullName, 40) || 'Unnamed Patient', 202, 10, { align: 'right' });
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.6);
+        doc.setFontSize(7);
         text([205, 230, 235]);
-        doc.text('Confidential Medical Record', 166, 17);
+        doc.text(`MRN: ${val(patient.mrn)}   •   Bed: ${val(bed?.bedNumber)}`, 202, 15.5, { align: 'right' });
+        doc.text(`Generated: ${generatedAt}`, 202, 20.5, { align: 'right' });
       };
 
       const footer = () => {
         fill([248, 251, 252]);
-        doc.rect(0, 281, 210, 16, 'F');
+        doc.rect(0, 282, PAGE_W, 15, 'F');
         draw(line);
         doc.setLineWidth(0.3);
-        doc.line(8, 281, 202, 281);
+        doc.line(MARGIN, 282, PAGE_W - MARGIN, 282);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         text(muted);
-        doc.text('CardioVault  •  ICU & CCU Clinical Record', 9, 288);
-        doc.text('Confidential Medical Record', 9, 292);
-        doc.setFont('helvetica', 'bold');
-        text(navy);
-        doc.text(`Page ${page}`, 178, 292);
+        doc.text(`CardioVault  •  Confidential Medical Record  •  Generated ${generatedAt}`, 9, 288);
       };
 
-      const patientBanner = () => {
-        const bannerH = hasArabicName ? 28 : 25;
-        const nameY = hasArabicName ? 44 : 45;
-        const nameSize = hasArabicName ? 12 : 13;
-        const mrnY = hasArabicName ? 52.5 : 51;
-        const admissionY = hasArabicName ? 57.5 : 56;
-        fill([246, 251, 252]);
-        draw(line);
-        doc.roundedRect(8, 35, 194, bannerH, 2.5, 2.5, 'FD');
-
-        fill([218, 239, 243]);
-        doc.circle(21, 47.5, 7.5, 'F');
-        fill(navy);
-        doc.circle(21, 45.2, 2.2, 'F');
-        doc.roundedRect(17.5, 48, 7, 4.5, 1.5, 1.5, 'F');
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(nameSize);
-        text(navy);
-        doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', 33, nameY);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        text(ink);
-        doc.text(
-          `MRN: ${val(patient.mrn)}   •   Age/Sex: ${val(patient.age)} / ${val(patient.sex)}   •   Unit: ${val(unit?.name)}   •   Bed: ${val(bed?.bedNumber)}`,
-          33,
-          mrnY
-        );
-        doc.text(
-          `Admission: ${val(patient.admissionDate)} ${val(patient.admissionTime)}   •   Status: ${val(patient.status, 'Active')}`,
-          33,
-          admissionY
-        );
-
-        fill(teal);
-        doc.roundedRect(174, 39, 23, 7, 2, 2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        text(white);
-        doc.text(val(patient.status, 'ACTIVE').toUpperCase(), 177, 44);
+      // Simplified measured page-break guard: estimate block height with the
+      // same splitTextToSize wrap math used for drawing, then roll to a fresh
+      // headered page before content can collide with the footer.
+      const newPage = (continuationLabel?: string) => {
+        footer();
+        doc.addPage();
+        header();
+        y = 32;
+        if (continuationLabel) {
+          sectionTitle(`${continuationLabel} (continued)`);
+        }
+      };
+      const ensureSpace = (needed: number, continuationLabel?: string) => {
+        if (y + needed > FOOTER_TOP) newPage(continuationLabel);
       };
 
-      const sectionTitle = (label: string, x: number, y: number, w: number, icon = '') => {
+      const sectionTitle = (label: string) => {
+        ensureSpace(12);
         fill(pale);
         draw(line);
-        doc.roundedRect(x, y, w, 8, 1.8, 1.8, 'FD');
+        doc.roundedRect(MARGIN, y, CONTENT_W, 8, 1.8, 1.8, 'FD');
         fill(teal);
-        doc.roundedRect(x, y, 2.2, 8, 1.2, 1.2, 'F');
-        fill(navy);
-        doc.circle(x + 9, y + 4, 2.2, 'F');
-        fill(white);
-        if (icon === 'patient') {
-          doc.circle(x + 9, y + 3.1, 0.7, 'F');
-          doc.roundedRect(x + 7.5, y + 4.1, 3, 2.2, 0.8, 0.8, 'F');
-        } else if (icon === 'ecg') {
-          doc.setLineWidth(0.5);
-          doc.line(x + 6.8, y + 4.2, x + 8, y + 4.2);
-          doc.line(x + 8, y + 4.2, x + 8.7, y + 2.4);
-          doc.line(x + 8.7, y + 2.4, x + 9.4, y + 5.7);
-          doc.line(x + 9.4, y + 5.7, x + 10.2, y + 3.6);
-          doc.line(x + 10.2, y + 3.6, x + 11.2, y + 3.6);
-        } else if (icon === 'meds' || icon === 'infusions') {
-          doc.roundedRect(x + 7.2, y + 3.2, 3.6, 1.6, 0.8, 0.8, 'F');
-          doc.line(x + 9, y + 3.2, x + 9, y + 4.8);
-        } else if (icon === 'labs') {
-          doc.rect(x + 7.8, y + 2.4, 2.4, 3.2, 'F');
-          doc.line(x + 7.5, y + 2.4, x + 10.5, y + 2.4);
-        } else if (icon === 'procedures' || icon === 'plan') {
-          doc.rect(x + 8.1, y + 2.4, 1.8, 3.4, 'F');
-          doc.rect(x + 7.3, y + 3.2, 3.4, 1.8, 'F');
-        } else if (icon === 'progress' || icon === 'notes') {
-          doc.rect(x + 7.5, y + 2.7, 3, 3, 'F');
-          doc.line(x + 8, y + 3.5, x + 10, y + 3.5);
-          doc.line(x + 8, y + 4.4, x + 10, y + 4.4);
-        } else {
-          doc.rect(x + 7.5, y + 2.8, 3, 2.8, 'F');
-        }
+        doc.roundedRect(MARGIN, y, 2.2, 8, 1.2, 1.2, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         text(navy);
-        doc.text(label, x + 14, y + 5.3);
+        doc.text(label, MARGIN + 5, y + 5.4);
+        y += 10.5;
       };
 
-      const field = (x: number, y: number, label: string, value: any, w: number) => {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        text(teal);
-        doc.text(label, x, y);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10.5);
-        text(ink);
-        const lines = doc.splitTextToSize(val(value, '—'), w) as string[];
-        doc.text(lines, x, y + 4);
-        return 4 + Math.max(1, lines.length) * 4.1;
-      };
+      const measureLines = (s: string, w: number): string[] =>
+        doc.splitTextToSize(s, w) as string[];
 
-      const twoColumnFields = (
-        x: number,
-        y: number,
-        w: number,
-        rows: Array<[string, any]>
-      ) => {
-        const half = (w - 4) / 2;
-        let yy = y;
-        for (let i = 0; i < rows.length; i += 2) {
-          const pair = rows.slice(i, i + 2);
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(10.5);
-          const lineSets = pair.map(row => doc.splitTextToSize(val(row[1], '—'), half - 6) as string[]);
-          const boxH = Math.max(11, ...lineSets.map(lines => 8 + lines.length * 4.1));
-          pair.forEach((row, col) => {
-            const xx = x + col * (half + 4);
-            fill(white);
-            draw(line);
-            doc.roundedRect(xx, yy, half, boxH, 1.2, 1.2, 'FD');
-            field(xx + 3, yy + 4, row[0], row[1], half - 6);
-          });
-          yy += boxH + 2;
-        }
-        return yy;
-      };
-
-      const paragraphBox = (
-        x: number,
-        y: number,
-        w: number,
-        h: number,
-        label: string,
-        value: any,
-        max = 180
-      ) => {
+      // Label + wrapped value stacked block.
+      const para = (label: string, value: any) => {
+        const lines = measureLines(val(value, '—'), CONTENT_W - 6);
+        const h = 9 + lines.length * 3.8;
+        ensureSpace(h);
         fill(white);
         draw(line);
-        const safeValue = val(value, '—');
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        const lines = doc.splitTextToSize(safeValue, w - 6) as string[];
-        const lineH = 3.6;
-        const neededH = Math.max(h, 12 + lines.length * lineH);
-        doc.roundedRect(x, y, w, neededH, 1.4, 1.4, 'FD');
+        doc.roundedRect(MARGIN, y, CONTENT_W, h, 1.4, 1.4, 'FD');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.5);
         text(teal);
-        doc.text(label, x + 3, y + 4);
+        doc.text(label, MARGIN + 3, y + 4);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
+        doc.setFontSize(9.5);
         text(ink);
-        doc.text(lines, x + 3, y + 8);
-        return neededH;
+        doc.text(lines, MARGIN + 3, y + 8);
+        y += h + 2.5;
       };
 
-      const table = (
-        x: number,
-        y: number,
-        widths: number[],
-        headers: string[],
-        rows: string[][],
-        rowH = 6.2,
-        maxRows = 6
-      ) => {
-        let xx = x;
-        fill([225, 241, 245]);
-        draw([184, 208, 218]);
-        headers.forEach((h, i) => {
-          doc.rect(xx, y, widths[i], rowH, 'FD');
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
-          text(navy);
-          doc.text(h, xx + 1.7, y + Math.min(rowH - 1.5, 4.5));
-          xx += widths[i];
-        });
-        let yy = y + rowH;
-        rows.slice(0, maxRows).forEach(row => {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(9);
-          const cellLines = widths.map((width, i) =>
-            doc.splitTextToSize(val(row[i], '—'), width - 3.4) as string[]
-          );
-          const dynamicH = Math.max(rowH, 3 + Math.max(...cellLines.map(lines => lines.length)) * 3.7);
-          xx = x;
-          widths.forEach((width, i) => {
-            fill(white);
-            draw([205, 222, 230]);
-            doc.rect(xx, yy, width, dynamicH, 'FD');
-            text(ink);
-            doc.text(cellLines[i], xx + 1.7, yy + 2.8);
-            xx += width;
+      // Two-column key/value grid.
+      const kvGrid = (rows: Array<[string, any]>) => {
+        const half = (CONTENT_W - 3) / 2;
+        for (let i = 0; i < rows.length; i += 2) {
+          const pair = rows.slice(i, i + 2);
+          const heights = pair.map(([label, value]) => {
+            const vLines = measureLines(val(value, '—'), half - 6);
+            const lLines = measureLines(label, half - 6);
+            return 8 + (lLines.length + vLines.length) * 3.6;
           });
-          yy += dynamicH;
-        });
-        return yy;
+          const boxH = Math.max(13, ...heights);
+          ensureSpace(boxH + 2);
+          pair.forEach(([label, value], col) => {
+            const xx = MARGIN + col * (half + 3);
+            fill(white);
+            draw(line);
+            doc.roundedRect(xx, y, half, boxH, 1.2, 1.2, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            text(teal);
+            doc.text(label, xx + 3, y + 4);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9.5);
+            text(ink);
+            doc.text(measureLines(val(value, '—'), half - 6), xx + 3, y + 8);
+          });
+          y += boxH + 2;
+        }
+        y += 1;
       };
 
-      // Empty tables render a caption instead of a lonely header row.
-      // Header fill stays pale with navy text on every table() path.
-      const tableOrEmpty = (
-        x: number,
-        y: number,
-        widths: number[],
-        headers: string[],
-        rows: string[][],
-        label: string,
-        rowH = 6.2,
-        maxRows = 6
-      ) => {
+      // Clean table with per-row page-break guard and repeated header.
+      const cleanTable = (headers: string[], widths: number[], rows: string[][], emptyLabel: string, sectionLabel: string) => {
+        const rowH = 6.2;
         if (!rows.length) {
+          ensureSpace(9);
           doc.setFont('helvetica', 'italic');
           doc.setFontSize(8.5);
           text(muted);
-          doc.text(`No ${label} recorded.`, x + 1, y + 5);
-          return y + 9;
+          doc.text(`No ${emptyLabel} recorded.`, MARGIN + 1, y + 5);
+          y += 9;
+          return;
         }
-        return table(x, y, widths, headers, rows, rowH, maxRows);
-      };
-
-      // Measure-only twins of the drawing helpers (A2): same wrap math via
-      // splitTextToSize, no drawing. Single wrap truth feeds ensureSpace.
-      const measureParagraph = (w: number, h: number, value: any) => {
-        const lines = doc.splitTextToSize(val(value, '—'), w - 6) as string[];
-        return Math.max(h, 12 + lines.length * 3.6);
-      };
-      const measureTwoColumn = (w: number, rows: Array<[string, any]>) => {
-        const half = (w - 4) / 2;
-        let hh = 0;
-        for (let i = 0; i < rows.length; i += 2) {
-          const pair = rows.slice(i, i + 2);
-          const lineSets = pair.map(row => doc.splitTextToSize(val(row[1], '—'), half - 6) as string[]);
-          hh += Math.max(11, ...lineSets.map(lines => 8 + lines.length * 4.1)) + 2;
-        }
-        return hh;
-      };
-      const measureTable = (widths: number[], rows: string[][], rowH = 6.2, maxRows = 6) => {
-        let hh = rowH;
-        rows.slice(0, maxRows).forEach(row => {
-          const cellLines = widths.map((width, i) =>
-            doc.splitTextToSize(val(row[i], '—'), width - 3.4) as string[]
-          );
-          hh += Math.max(rowH, 3 + Math.max(...cellLines.map(lines => lines.length)) * 3.7);
+        const drawHeaderRow = () => {
+          let xx = MARGIN;
+          fill([225, 241, 245]);
+          draw([184, 208, 218]);
+          headers.forEach((h, i) => {
+            doc.rect(xx, y, widths[i], rowH, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.8);
+            text(navy);
+            doc.text(h, xx + 1.7, y + 4.4);
+            xx += widths[i];
+          });
+          y += rowH;
+        };
+        ensureSpace(rowH * 2);
+        drawHeaderRow();
+        rows.forEach(row => {
+          const cellLines = widths.map((w, i) => measureLines(val(row[i], '—'), w - 3.4));
+          const rh = Math.max(rowH, 3 + Math.max(...cellLines.map(l => l.length)) * 3.7);
+          if (y + rh > FOOTER_TOP) {
+            newPage(sectionLabel);
+            drawHeaderRow();
+          }
+          let xx = MARGIN;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8.8);
+          widths.forEach((w, i) => {
+            fill(white);
+            draw(line);
+            doc.rect(xx, y, w, rh, 'FD');
+            text(ink);
+            doc.text(cellLines[i], xx + 1.7, y + 3.4);
+            xx += w;
+          });
+          y += rh;
         });
-        return hh;
-      };
-      const measureTableOrEmpty = (widths: number[], rows: string[][], rowH = 6.2, maxRows = 6) =>
-        rows.length ? measureTable(widths, rows, rowH, maxRows) : 9;
-
-      // Shared page-break guard (A1): closes the current page with a footer
-      // and opens a fresh bannered continuation page. Both drawFirstPage and
-      // drawSecondPage use this so body content never reaches the footer band.
-      const FOOTER_GUARD_Y = 268;
-      const freshContentY = () => (hasArabicName ? 68 : 65);
-      const openContinuationPage = (title: string) => {
-        footer();
-        doc.addPage();
-        page = doc.getNumberOfPages();
-        header();
-        patientBanner();
-        const yy = freshContentY();
-        sectionTitle(`${title} Continued`, 8, yy, 194, 'notes');
-        return yy + 10;
+        y += 3;
       };
 
-      const drawFirstPage = async () => {
-        header();
-        patientBanner();
+      // ---- document ----
+      header();
+      y = 30;
 
-        let y = hasArabicName ? 68 : 65;
-        // First-page guard: same rule as the second page (A1).
-        const ensureSpace = (title: string, h: number) => {
-          if (y + h > FOOTER_GUARD_Y) {
-            y = openContinuationPage(title);
-            return true;
-          }
-          return false;
+      // Patient banner
+      {
+        const bannerH = 22;
+        ensureSpace(bannerH + 3);
+        fill([246, 251, 252]);
+        draw(line);
+        doc.roundedRect(MARGIN, y, CONTENT_W, bannerH, 2.5, 2.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        text(navy);
+        doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', MARGIN + 5, y + 7);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        text(ink);
+        doc.text(
+          `Age/Sex: ${val(patient.age)} / ${val(patient.sex)}   •   Unit: ${val(unit?.name)}   •   Bed: ${val(bed?.bedNumber)}   •   Status: ${val(patient.status, 'Active')}`,
+          MARGIN + 5, y + 13
+        );
+        doc.text(
+          `Diagnosis: ${compact(patient.primaryDiagnosis, 70)}   •   Admission: ${val(patient.admissionDate)} ${val(patient.admissionTime)}`,
+          MARGIN + 5, y + 18.5
+        );
+        y += bannerH + 4;
+      }
+
+      const p: any = patient as any;
+
+      if (has('history')) {
+        sectionTitle('History');
+        const s: any = p.clinicalSummary || {};
+        para('Chief Complaint', s.chiefComplaint);
+        para('History of Present Illness', s.hpi || s.summary);
+        kvGrid([
+          ['Past Medical History', (s.pmh || []).join(', ')],
+          ['Past Surgical History', (s.psh || []).join(', ')],
+          ['Drug History', s.drugHistory],
+          ['Allergies', (s.allergies || p.allergies || []).join(', ')],
+          ['Family History', s.familyHistory],
+          ['Social History', s.socialHistory],
+        ]);
+      }
+
+      if (has('examination')) {
+        sectionTitle('Examination');
+        const ex: any = p.examination || {};
+        kvGrid([
+          ['General', [ex.general?.appearance, ex.general?.consciousness, ex.general?.distress].filter(Boolean).join(' • ')],
+          ['Cardiovascular', [ex.cardiovascular?.heartSounds, ex.cardiovascular?.murmurs, ex.cardiovascular?.jvp].filter(Boolean).join(' • ')],
+          ['Respiratory', [ex.respiratory?.chestExam, ex.respiratory?.airEntry, ex.respiratory?.addedSounds].filter(Boolean).join(' • ')],
+          ['Abdomen', [ex.abdomen?.inspection, ex.abdomen?.palpation, ex.abdomen?.tenderness].filter(Boolean).join(' • ')],
+          ['Neurological', [ex.neurological?.consciousness, ex.neurological?.gcs, ex.neurological?.pupils].filter(Boolean).join(' • ')],
+          ['Extremities', [ex.extremities?.pulses, ex.extremities?.edema, ex.extremities?.perfusion].filter(Boolean).join(' • ')],
+        ]);
+      }
+
+      if (has('vitals')) {
+        sectionTitle('Vitals Summary (Latest)');
+        const v: any = p.vitalsHistory?.[0] || {};
+        kvGrid([
+          ['Blood Pressure', v.sbp ? `${v.sbp}/${val(v.dbp)} mmHg` : ''],
+          ['Heart Rate', v.hr ? `${v.hr} bpm` : ''],
+          ['Respiratory Rate', v.rr ? `${v.rr}/min` : ''],
+          ['SpO₂', v.spo2 ? `${v.spo2}%` : ''],
+          ['Temperature', v.temp ? `${v.temp} °C` : ''],
+          ['GCS', v.gcsTotal ? `${v.gcsTotal}/15` : ''],
+        ]);
+      }
+
+      if (has('labs')) {
+        sectionTitle('Laboratory (Latest, Grouped Panels)');
+        const lab: any = p.labs?.[0] || {};
+        const num = (k: string) => {
+          const raw = lab[k];
+          return raw === undefined || raw === null || raw === '' ? '—' : String(raw);
         };
+        cleanTable(['CBC', 'Result', 'Test', 'Result'], [48, 48, 48, 50], [
+          ['Hb', num('hb'), 'WBC', num('wbc')],
+          ['Platelets', num('platelets'), 'HCT', num('hct')],
+        ], 'CBC results', 'Laboratory');
+        cleanTable(['Renal', 'Result', 'Test', 'Result'], [48, 48, 48, 50], [
+          ['Urea', num('urea'), 'Creatinine', num('creatinine')],
+          ['eGFR', num('egfr'), 'Uric Acid', num('uricAcid')],
+        ], 'renal results', 'Laboratory');
+        cleanTable(['Electrolytes', 'Result', 'Test', 'Result'], [48, 48, 48, 50], [
+          ['Na', num('na'), 'K', num('k')],
+          ['Cl', num('cl'), 'Ca', num('ca')],
+        ], 'electrolyte results', 'Laboratory');
+        cleanTable(['Cardiac / Inflammatory', 'Result', 'Test', 'Result'], [48, 48, 48, 50], [
+          ['Troponin', num('troponin'), 'CK-MB', num('ckmb')],
+          ['CRP', num('crp'), 'Lactate', num('lactate')],
+          ['INR', num('inr'), 'Glucose', num('glucose')],
+        ], 'cardiac results', 'Laboratory');
+      }
 
-        if (has('overview')) {
-          const overviewRows: Array<[string, any]> = [
-            ['Primary Diagnosis', patient.primaryDiagnosis],
-            ['Secondary Diagnoses', patient.secondaryDiagnoses],
-            ['Allergies', (patient as any).allergies],
-            ['Weight', patient.weight ? `${patient.weight} kg` : ''],
-            ['Height', patient.height ? `${patient.height} cm` : ''],
-            ['Code Status', patient.codeStatus],
-            ['Conditions', (patient as any).additionalConditions],
-          ];
-          const continued = ensureSpace('Patient Information', 10 + measureTwoColumn(194, overviewRows));
-          if (!continued) {
-            sectionTitle('Patient Information', 8, y, 194, 'patient');
-            y += 10;
-          }
-          y = twoColumnFields(8, y, 194, overviewRows);
+      if (has('imaging')) {
+        sectionTitle('Imaging');
+        const studies: any[] = p.imaging || [];
+        cleanTable(
+          ['Date', 'Modality', 'Region', 'Impression'],
+          [28, 36, 45, 85],
+          studies.map(s => [
+            val(s.date),
+            val(s.modality || s.type),
+            val(s.bodyRegion || s.region),
+            compact(s.impression || s.findings, 80),
+          ]),
+          'imaging studies',
+          'Imaging'
+        );
+      }
+
+      if (has('medications')) {
+        sectionTitle('Medications (Current)');
+        const meds: any[] = (p.medications || []).filter((m: any) => m.status !== 'Discontinued');
+        cleanTable(
+          ['Drug', 'Dose', 'Route', 'Frequency'],
+          [62, 42, 36, 54],
+          meds.map(m => [val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency)]),
+          'medications',
+          'Medications'
+        );
+        const infusions: any[] = p.infusions || p.activeInfusions || [];
+        if (infusions.length) {
+          sectionTitle('Infusions (Current)');
+          cleanTable(
+            ['Drug', 'Rate', 'Details'],
+            [62, 52, 80],
+            infusions.map(i => [
+              val(i.drugName || (i as any).name || (i as any).drug),
+              val((i as any).rateMlHr ? `${(i as any).rateMlHr} mL/hr` : (i as any).rate || (i as any).dose),
+              compact((i as any).carrierFluid || (i as any).indication || (i as any).concentration, 50),
+            ]),
+            'infusions',
+            'Infusions'
+          );
         }
+      }
 
-        if (has('overview') || has('history')) {
-          const summary: any = (patient as any).clinicalSummary || {};
-          const ex: any = (patient as any).examination || {};
-          const summaryValue = summary.summary || summary.hpi || patient.primaryDiagnosis;
-          const hpiValue = summary.hpi;
-          const examValue = ex.general?.appearance || ex.neurological?.gcs || ex.cardiovascular?.heartSounds;
-          const historyH = 2 + 10
-            + Math.max(measureParagraph(104, 27, summaryValue), measureParagraph(94, 27, summary.chiefComplaint)) + 3
-            + Math.max(measureParagraph(104, 27, hpiValue), measureParagraph(94, 27, examValue)) + 3;
-          const continued = ensureSpace('Clinical Summary & History', historyH);
-          if (!continued) {
-            y += 2;
-            sectionTitle('Clinical Summary & History', 8, y, 104, 'history');
-            sectionTitle('History / Examination', 108, y, 94, 'exam');
-            y += 10;
-          }
-          const summaryH = paragraphBox(8, y, 104, 27, 'Clinical Summary', summaryValue, 170);
-          const complaintH = paragraphBox(108, y, 94, 27, 'Chief Complaint', summary.chiefComplaint, 130);
-          y += Math.max(summaryH, complaintH) + 3;
-          const hpiH = paragraphBox(8, y, 104, 27, 'History of Present Illness', hpiValue, 170);
-          const examH = paragraphBox(108, y, 94, 27, 'Examination', examValue, 130);
-          y += Math.max(hpiH, examH) + 3;
-        }
+      if (has('procedures')) {
+        sectionTitle('Procedures & Interventions');
+        const procs: any[] = p.procedures || [];
+        cleanTable(
+          ['Date', 'Procedure', 'Details'],
+          [28, 62, 104],
+          procs.map(pr => [
+            val(pr.date),
+            val(pr.procedure || pr.name || pr.surgeryName),
+            compact(pr.outcome || pr.findings || pr.indication, 80),
+          ]),
+          'procedures',
+          'Procedures'
+        );
+      }
 
-        if (has('vitals')) {
-          const v: any = (patient as any).vitalsHistory?.[0] || {};
-          const lab: any = (patient as any).labs?.[0] || {};
-          const vitalsRows: Array<[string, any]> = [
-            ['BP', v.sbp ? `${v.sbp}/${val(v.dbp)} mmHg` : ''],
-            ['HR', v.hr ? `${v.hr} bpm` : ''],
-            ['RR', v.rr ? `${v.rr}/min` : ''],
-            ['SpO₂', v.spo2 ? `${v.spo2}%` : ''],
-            ['Temp', v.temp ? `${v.temp} °C` : ''],
-            ['GCS', v.gcsTotal ? `${v.gcsTotal}/15` : ''],
-          ];
-          const labsRows: string[][] = [
-            ['Hb', val(lab.hb), 'WBC', val(lab.wbc)],
-            ['Platelets', val(lab.platelets), 'Cr', val(lab.creatinine)],
-            ['Na', val(lab.na), 'K', val(lab.k)],
-            ['Troponin', val(lab.troponin), 'INR', val(lab.inr)],
-          ];
-          const continued = ensureSpace('Vitals & Balance (Latest)',
-            10 + Math.max(measureTwoColumn(96, vitalsRows), measureTable([26, 24, 24, 22], labsRows, 6.2, 4)) + 3);
-          if (!continued) {
-            sectionTitle('Vitals & Balance (Latest)', 8, y, 96, 'vitals');
-            sectionTitle('Investigations (Latest)', 106, y, 96, 'labs');
-            y += 10;
-          }
-
-          const vitalsY = twoColumnFields(8, y, 96, vitalsRows);
-
-          const labsY = table(106, y, [26, 24, 24, 22], ['Test', 'Result', 'Test', 'Result'], labsRows, 6.2, 4);
-
-          y = Math.max(vitalsY, labsY) + 3;
-        }
-
-        if (has('ecg')) {
-          const e: any = (patient as any).ecgRecords?.[0] || {};
-          const interpValue = e.finalImpression || e.interpretation?.join(' • ');
-          const ecgUrl = (e.imageUrls || [])[0];
-          const ecgDetailsValue = `HR ${val(e.heartRate)} • Rhythm ${val(e.rhythm)} • Axis ${val(e.axis)} • QTc ${val(e.qtc)}`;
-          const ecgRightH = ecgUrl ? 38 : measureParagraph(94, 38, ecgDetailsValue);
-          const continued = ensureSpace('ECG (Latest)',
-            10 + Math.max(measureParagraph(96, 38, interpValue), ecgRightH) + 3);
-          if (!continued) {
-            sectionTitle('ECG (Latest)', 8, y, 96, 'ecg');
-            y += 10;
-          }
-          const interpH = paragraphBox(8, y, 96, 38, 'Interpretation', interpValue, 160);
-
-          let ecgDrawnH = ecgRightH;
-          if (ecgUrl) {
-            const data = await imageData(ecgUrl);
-            if (data) {
-              try {
-                doc.addImage(data, 'JPEG', 108, y, 94, 38, undefined, 'FAST');
-              } catch {
-                ecgDrawnH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
-              }
-            } else {
-              ecgDrawnH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
-            }
-          } else {
-            ecgDrawnH = paragraphBox(108, y, 94, 38, 'ECG Details', ecgDetailsValue, 130);
-          }
-          y = Math.max(interpH, ecgDrawnH) + 3;
-        }
-
-        if (has('cardiology')) {
-          const echo: any = (patient as any).cardiology?.echo || {};
-          const echoRows: Array<[string, any]> = [
-            ['LVEF', echo.ef !== undefined ? `${echo.ef}%` : ''],
-            ['LV Function', echo.lvFunction],
-            ['RWMA', echo.rwma],
-            ['RV Function', echo.rvFunction],
-            ['Valvular Disease', echo.otherFindings],
-            ['Summary', (patient as any).cardiology?.echoBriefSummary],
-          ];
-          const continued = ensureSpace('Echocardiography (Latest)', 10 + measureTwoColumn(194, echoRows) + 3);
-          if (!continued) {
-            sectionTitle('Echocardiography (Latest)', 8, y, 194, 'echo');
-            y += 10;
-          }
-          // P5: consume the block end so any following content flows correctly.
-          y = twoColumnFields(8, y, 194, echoRows) + 3;
-        }
-
-        footer();
-      };
-
-      const drawSecondPage = () => {
-        page = 2;
-        doc.addPage();
-        header();
-        patientBanner();
-
-        let y = hasArabicName ? 68 : 65;
-
-        // Page-break guard for flowing list sections: shared helper (A1).
-        const ensureSpace = (title: string, h: number) => {
-          if (y + h > FOOTER_GUARD_Y) {
-            y = openContinuationPage(title);
-            return true;
-          }
-          return false;
-        };
-
-        if (has('medications')) {
-          const meds: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
-          const medsRows: string[][] = meds.map(m => [
-            val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency),
-          ]);
-          const infusions: any[] = (patient as any).infusions || (patient as any).activeInfusions || [];
-          const infRows: string[][] = infusions.map(i => [
-            val(i.name || i.drug), val(i.rate || i.dose), compact(i.indication, 22),
-          ]);
-          const continued = ensureSpace('Medications (Current)',
-            10 + Math.max(
-              measureTableOrEmpty([40, 23, 22, 27], medsRows, 6.2, 6),
-              measureTableOrEmpty([30, 25, 25], infRows, 6.2, 6)) + 3);
-          if (!continued) {
-            sectionTitle('Medications (Current)', 8, y, 112, 'meds');
-            sectionTitle('Infusions (Current)', 122, y, 80, 'infusions');
-            y += 10;
-          }
-
-          const medsY = tableOrEmpty(8, y, [40, 23, 22, 27], ['Drug', 'Dose', 'Route', 'Frequency'], medsRows, 'medications', 6.2, 6);
-
-          const infY = tableOrEmpty(122, y, [30, 25, 25], ['Drug', 'Rate', 'Indication'], infRows, 'infusions', 6.2, 6);
-
-          y = Math.max(medsY, infY) + 3;
-        }
-
-        if (has('procedures')) {
-          const procedures: any[] = (patient as any).procedures || [];
-          const procRows: string[][] = procedures.map(p => [
-            val(p.date), val(p.procedure || p.name || p.surgeryName), compact(p.outcome || p.findings || p.indication, 40),
-          ]);
-          const devices: any[] = (patient as any).devices || (patient as any).lines || [];
-          const devRows: string[][] = devices.map(d => [
-            val(d.device || d.name || d.type), val(d.site), val(d.date),
-          ]);
-          const continued = ensureSpace('Procedures & Interventions',
-            10 + Math.max(
-              measureTableOrEmpty([25, 45, 42], procRows, 6.2, 5),
-              measureTableOrEmpty([28, 25, 27], devRows, 6.2, 5)) + 3);
-          if (!continued) {
-            sectionTitle('Procedures & Interventions', 8, y, 112, 'procedures');
-            sectionTitle('Lines & Devices', 122, y, 80, 'devices');
-            y += 10;
-          }
-
-          const procY = tableOrEmpty(8, y, [25, 45, 42], ['Date', 'Procedure', 'Details'], procRows, 'procedures', 6.2, 5);
-
-          const devY = tableOrEmpty(122, y, [28, 25, 27], ['Device', 'Site', 'Date'], devRows, 'lines & devices', 6.2, 5);
-
-          y = Math.max(procY, devY) + 3;
-        }
-
-        if (has('cardiology')) {
-          const c: any = (patient as any).cardiology || {};
-          const cardRows: Array<[string, any]> = [
-            ['Diagnosis', c.diagnosis || patient.primaryDiagnosis],
-            ['LVEF', c.ef !== undefined ? `${c.ef}%` : c.echo?.ef !== undefined ? `${c.echo.ef}%` : ''],
-            ['Coronary Angiography', c.coronaryAngiography],
-            ['Stents / Devices', c.stentsDevices || c.stents],
-            ['Antiplatelets', c.antiplatelets],
-            ['Anticoagulation', c.anticoagulation],
-          ];
-          const icu: any = (patient as any).icu || {};
-          const icuRows: Array<[string, any]> = [
-            ['Ventilator', icu.ventilator || (patient as any).ventilator?.mode],
-            ['Sedation', icu.sedation],
-            ['Vasopressors', icu.vasopressors],
-            ['Neurological Status', icu.neurologicalStatus || icu.gcs],
-            ['SOFA', icu.sofa],
-            ['APACHE II', icu.apacheII],
-          ];
-          const continued = ensureSpace('Cardiology',
-            10 + Math.max(measureTwoColumn(96, cardRows), measureTwoColumn(96, icuRows)) + 3);
-          if (!continued) {
-            sectionTitle('Cardiology', 8, y, 96, 'cardiology');
-            sectionTitle('ICU', 106, y, 96, 'icu');
-            y += 10;
-          }
-
-          const cardY = twoColumnFields(8, y, 96, cardRows);
-
-          const icuY = twoColumnFields(106, y, 96, icuRows);
-
-          y = Math.max(cardY, icuY) + 3;
-        }
-
-        if (has('progress')) {
-          const notes: any[] = (patient as any).progressNotes || [];
-          const notesRows: string[][] = notes.map(n => [
+      if (has('progress')) {
+        sectionTitle('Progress Notes (Latest)');
+        const notes: any[] = (p.progressNotes || []).slice(0, 12);
+        cleanTable(
+          ['Date & Time', 'Author', 'Note'],
+          [32, 38, 124],
+          notes.map(n => [
             `${val(n.date)} ${val(n.time)}`,
             compact(n.author, 22),
-            compact(n.assessment || n.plan || n.events || n.note, 105),
-          ]);
-          const continued = ensureSpace('Progress Notes (Latest)',
-            10 + measureTableOrEmpty([31, 38, 125], notesRows, 6.2, 5) + 3);
-          if (!continued) {
-            sectionTitle('Progress Notes (Latest)', 8, y, 194, 'progress');
-            y += 10;
-          }
-          y = tableOrEmpty(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notesRows, 'progress notes', 6.2, 5) + 3;
-        }
+            compact(n.assessment || n.plan || n.events || n.note, 120),
+          ]),
+          'progress notes',
+          'Progress Notes'
+        );
+      }
 
-        if (has('calculators') || has('timeline') || has('overview')) {
-          const latest: any = (patient as any).progressNotes?.[0] || {};
-          const planValue = latest.plan || 'Continue monitoring, investigations and treatment according to the active clinical plan.';
-          const timeline = ((patient as any).auditTrail || []).slice(0, 3).map((e: any) =>
-            `${new Date(e.timestamp).toLocaleDateString()} — ${e.action}`
-          ).join(' • ');
-          const noteValue = timeline || 'This report contains selected clinical data from the patient file.';
-          const continued = ensureSpace('Plan & Follow Up',
-            10 + Math.max(measureParagraph(112, 34, planValue), measureParagraph(80, 34, noteValue)));
-          if (!continued) {
-            sectionTitle('Plan & Follow Up', 8, y, 112, 'plan');
-            sectionTitle('Additional Notes', 122, y, 80, 'notes');
-            y += 10;
-          }
+      footer();
 
-          paragraphBox(8, y, 112, 34, 'Current Plan', planValue, 170);
-
-          paragraphBox(122, y, 80, 34, 'Record Note', noteValue, 100);
-        }
-
-        footer();
-      };
-
-      await drawFirstPage();
-      const needsSecondPage = ['medications','procedures','cardiology','progress','calculators','timeline'].some(has);
-      if (needsSecondPage) drawSecondPage();
-
-      // Long clinical lists continue onto additional A4 pages instead of being truncated.
-      // Chunks split by accumulated mm (A4), not by row count, so wrapped rows
-      // can never push a table into the footer. Each page gets its own footer.
-      const drawContinuationPages = (title: string, headers: string[], widths: number[], rows: string[][]) => {
-        if (!rows.length) return;
-        const rowHeight = (row: string[]) => {
-          const cellLines = widths.map((width, i) =>
-            doc.splitTextToSize(val(row[i], '—'), width - 3.4) as string[]
-          );
-          return Math.max(6.2, 3 + Math.max(...cellLines.map(lines => lines.length)) * 3.7);
-        };
-        const tableTop = Math.max(75, freshContentY() + 8 + 2);
-        const chunks: string[][][] = [];
-        let current: string[][] = [];
-        let currentH = 6.2;
-        for (const row of rows) {
-          const rh = rowHeight(row);
-          if (currentH + rh > FOOTER_GUARD_Y - tableTop && current.length) {
-            chunks.push(current);
-            current = [];
-            currentH = 6.2;
-          }
-          current.push(row);
-          currentH += rh;
-        }
-        if (current.length) chunks.push(current);
-        for (const chunk of chunks) {
-          footer();
-          doc.addPage();
-          page = doc.getNumberOfPages();
-          header();
-          patientBanner();
-          const top = freshContentY();
-          sectionTitle(title + ' • Continued', 8, top, 194, 'notes');
-          table(8, Math.max(75, top + 8 + 2), widths, headers, chunk, 6.2, chunk.length);
-          footer();
-        }
-      };
-      const medsForPdf: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
-      const infusionsForPdf: any[] = (patient as any).infusions || (patient as any).activeInfusions || [];
-      const proceduresForPdf: any[] = (patient as any).procedures || [];
-      const devicesForPdf: any[] = (patient as any).devices || (patient as any).lines || [];
-      const progressForPdf: any[] = (patient as any).progressNotes || [];
-      if (has('medications') && medsForPdf.length > 6) drawContinuationPages('Medications', ['Drug','Dose','Route','Frequency'], [55,35,35,55], medsForPdf.slice(6).map(m => [val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency)]));
-      if (has('medications') && infusionsForPdf.length > 6) drawContinuationPages('Infusions', ['Drug','Rate','Indication'], [55,35,104], infusionsForPdf.slice(6).map(i => [val(i.name || i.drug), val(i.rate || i.dose), compact(i.indication, 60)]));
-      if (has('procedures') && proceduresForPdf.length > 5) drawContinuationPages('Procedures & Interventions', ['Date','Procedure','Details'], [35,55,104], proceduresForPdf.slice(5).map(p => [val(p.date), val(p.procedure || p.name || p.surgeryName), compact(p.outcome || p.findings || p.indication, 70)]));
-      if (has('procedures') && devicesForPdf.length > 5) drawContinuationPages('Lines & Devices', ['Device','Site','Date'], [70,70,54], devicesForPdf.slice(5).map(d => [val(d.device || d.name || d.type), val(d.site), val(d.date)]));
-      if (has('progress') && progressForPdf.length > 5) drawContinuationPages('Progress Notes', ['Date & Time','Author','Note'], [35,40,119], progressForPdf.slice(5).map(n => [`${val(n.date)} ${val(n.time)}`, compact(n.author, 22), compact(n.assessment || n.plan || n.events || n.note, 105)]));
-
-      // The document length is data-driven. Update every footer after all pages
-      // have been created so the displayed total always matches the real PDF.
+      // Page numbers with real total (two-pass over finished pages).
       const totalPages = doc.getNumberOfPages();
       for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
         doc.setPage(pageNumber);
-        fill([248, 251, 252]);
-        doc.rect(172, 284, 30, 11, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7);
         text(navy);
-        doc.text('Page ' + pageNumber + ' of ' + totalPages, 178, 292);
+        doc.text(`Page ${pageNumber} of ${totalPages}`, 201, 288, { align: 'right' });
       }
 
-      // Generate the PDF exactly once as a Blob. This is more reliable in Android
-      // WebView than mixing arraybuffer/data-uri output paths.
+      // Single Blob output path (reliable in Android WebView).
       const blob = doc.output('blob') as Blob;
       const pdfData = await blob.arrayBuffer();
       if (!pdfData.byteLength) throw new Error('Generated PDF is empty.');
@@ -888,8 +522,6 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       }
     } catch (error) {
       console.error('CardioVault PDF export failed:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('CardioVault PDF export detail:', message);
       showToast('PDF generation failed. Check the PDF data and try again.', 'error');
     } finally {
       setBusy(false);
@@ -903,7 +535,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           <div>
             <h2 className="text-xl font-bold">Clinical PDF Export</h2>
             <p className="text-xs text-slate-500 mt-1">
-              CardioVault premium clinical template • A4 clinical report • Arabic patient names supported.
+              CardioVault clinical template • A4 report • Arabic patient names supported.
             </p>
           </div>
           <div className="flex gap-2">
@@ -926,9 +558,6 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
                 ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
                 : 'border-slate-200 dark:border-slate-800 text-slate-500'}`}
             >
-              <span className="w-6 h-6 rounded-lg bg-cyan-500/10 text-cyan-500 flex items-center justify-center text-[9px] font-black shrink-0">
-                {id === 'ecg' ? 'ECG' : id === 'labs' ? 'LAB' : id === 'imaging' ? 'IMG' : id === 'medications' ? 'RX' : id === 'procedures' ? 'PRO' : id === 'calculators' ? 'CAL' : id === 'progress' ? 'NOTE' : id === 'timeline' ? 'TL' : id === 'cardiology' ? '♥' : id === 'icu' ? 'ICU' : '•'}
-              </span>
               <span className="flex-1">{label}</span>
               <span className={has(id) ? "w-2 h-2 rounded-full bg-emerald-500 shrink-0" : "w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700 shrink-0"} />
             </button>
