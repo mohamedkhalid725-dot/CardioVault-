@@ -11,13 +11,13 @@ export const getClinicalNotificationSettings=():NotificationSettings=>{try{retur
 export const setClinicalNotificationSettings=(patch:Partial<NotificationSettings>):NotificationSettings=>{const next={...getClinicalNotificationSettings(),...patch};try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(next));}catch{}return next};
 const channelFor=(s:NotificationSettings)=>s.sound&&s.vibration?CHANNELS.full:s.vibration?CHANNELS.vibrate:s.sound?CHANNELS.sound:CHANNELS.silent;
 
-export async function initializeClinicalNotifications():Promise<boolean>{
+export async function initializeClinicalNotifications(force=false):Promise<boolean>{
  if(!Capacitor.isNativePlatform()){
   permissionGranted=typeof Notification==='undefined'||Notification.permission==='granted';
   if(typeof Notification!=='undefined'&&Notification.permission==='default'){try{permissionGranted=(await Notification.requestPermission())==='granted';}catch{permissionGranted=false;}}
   initialized=true;return permissionGranted;
  }
- if(initialized)return permissionGranted;
+ if(initialized&&!force)return permissionGranted;
  try{
   const permission=await LocalNotifications.requestPermissions();
   permissionGranted=permission.display==='granted';
@@ -35,18 +35,30 @@ export async function initializeClinicalNotifications():Promise<boolean>{
 
 export async function notifyClinicalData(message:string,title='CardioVault',extra?:{patientId?:string;section?:string;unitId?:string;type?:string;critical?:boolean}):Promise<void>{
  const settings=getClinicalNotificationSettings();
- if(!settings.enabled||((extra?.critical||extra?.type==='clinical-alert')&&!settings.clinicalAlerts))return;
+ const isCritical=extra?.critical===true||extra?.type==='clinical-alert';
+ if(!settings.enabled||(isCritical&&!settings.clinicalAlerts))return;
+ const finalTitle=isCritical?`Critical — ${title}`:title;
+ const finalBody=isCritical?(/^critical[\s:—-]/i.test(message)?message:`Critical alert: ${message}`):message;
  try{
   const ready=await initializeClinicalNotifications();if(!ready)return;
   if(!Capacitor.isNativePlatform()){
    if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
-    const n=new Notification(title,{body:message,tag:`cardiovault-${extra?.patientId||'clinical'}`});
+    const n=new Notification(finalTitle,{body:finalBody,tag:`cardiovault-${extra?.patientId||'clinical'}`});
     n.onclick=()=>{window.focus();window.dispatchEvent(new CustomEvent('cardiovault-notification-action',{detail:extra||{}}));};
    }
    return;
   }
-  await LocalNotifications.schedule({notifications:[{id:Math.floor(Date.now()%2147483647),title,body:message,channelId:channelFor(settings),schedule:{at:new Date(Date.now()+250)},extra:{type:extra?.type||'clinical-data-update',patientId:extra?.patientId,section:extra?.section,unitId:extra?.unitId,critical:extra?.critical===true}}]});
+  await LocalNotifications.schedule({notifications:[{id:(Math.floor(Date.now()%2147480000)+Math.floor(Math.random()*999)),title:finalTitle,body:finalBody,channelId:channelFor(settings),schedule:{at:new Date(Date.now()+250)},extra:{type:extra?.type||'clinical-data-update',patientId:extra?.patientId,section:extra?.section,unitId:extra?.unitId,critical:extra?.critical===true}}]});
  }catch(error){console.warn('Clinical notification failed:',error);}
+}
+
+export async function sendClinicalNotificationSelfTest():Promise<{general:boolean;clinical:boolean}>{
+ const settings=getClinicalNotificationSettings();
+ if(!settings.enabled)return{general:false,clinical:false};
+ await notifyClinicalData('Notifications are on. General clinical updates will arrive on this device.','CardioVault test',{type:'clinical-data-update'});
+ if(!settings.clinicalAlerts)return{general:true,clinical:false};
+ await notifyClinicalData('Sample urgent change. Critical alerts stand out like this.','CardioVault test',{type:'clinical-alert',critical:true});
+ return{general:true,clinical:true};
 }
 
 export async function installClinicalNotificationActionHandler(handler:(extra:any)=>void):Promise<void>{
