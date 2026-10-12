@@ -26,6 +26,45 @@ const sections = [
 
 const NP = 'Not provided';
 
+// Recorded-values-only rule (locked): anything unrecorded is omitted from the
+// PDF entirely — no "Not provided" rows, cells, or sections, even when the
+// section toggle is on. A fully-empty section (title + no content) vanishes.
+const isBlankRendered = (s: any): boolean => {
+  const str = String(s ?? '').trim();
+  if (!str || str === NP || str === '—' || str === '-') return true;
+  // Slash-joined composites ("Not provided / Not provided") and
+  // space-joined leftovers ("Not provided Not provided").
+  const withoutNp = str.split(NP).join('').replace(/[/•·:;|—–-]+/g, ' ').trim();
+  if (!withoutNp) return true;
+  return str.split('/').every(part => {
+    const t = part.trim();
+    return !t || t === '—' || t === '-' || t.startsWith(NP);
+  });
+};
+
+// App icon (public/cardiovault-logo.svg, same asset as the in-app CardioLogo)
+// rasterized at runtime so jsPDF can embed it in the header. Null on failure
+// so the header falls back to a drawn tile — the PDF never breaks.
+const loadLogoDataUrl = (): Promise<string | null> => new Promise(resolve => {
+  try {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(img, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/png'));
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = '/cardiovault-logo.svg';
+  } catch { resolve(null); }
+});
+
 const val = (v: any, fallback = NP) => {
   if (v === undefined || v === null || v === '') return fallback;
   if (Array.isArray(v)) return v.length ? v.join(', ') : fallback;
@@ -119,9 +158,11 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       const text = (c: number[]) => doc.setTextColor(c[0], c[1], c[2]);
 
       const p: any = patient as any;
-      const hospitalLine = unit?.name
-        ? `Fayoum General Hospital — ${unit.name}`
-        : 'Fayoum General Hospital — CCU Department';
+      const unitLine = unit?.name
+        ? `${unit.name} — CCU Department`
+        : 'CCU Department';
+      // CardioVault header brand mark (app icon). Loaded once per export.
+      const logoPng = await loadLogoDataUrl();
 
       // ---- cross-source discrepancy scan (existing data only, never invented) ----
       const discrepancies: Badge[] = [];
@@ -169,30 +210,49 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
       const header = () => {
         fill(navy);
-        doc.rect(0, 0, PAGE_W, 30, 'F');
-        // hospital / unit line
+        doc.rect(0, 0, PAGE_W, 32, 'F');
+        // Brand mark: app icon, with a drawn tile fallback so the header
+        // never breaks when the SVG cannot be rasterized.
+        let textX = MARGIN + 1;
+        if (logoPng) {
+          try {
+            doc.addImage(logoPng, 'PNG', MARGIN, 5, 15, 15);
+            textX = MARGIN + 19;
+          } catch { /* fall through to tile */ }
+        }
+        if (textX === MARGIN + 1) {
+          fill([8, 145, 178]);
+          doc.roundedRect(MARGIN, 5, 15, 15, 3, 3, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          text(white);
+          doc.text('CV', MARGIN + 7.5, 14.5, { align: 'center' });
+          textX = MARGIN + 19;
+        }
+        // CardioVault brand + unit line
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(12);
+        doc.setFontSize(13);
         text(white);
-        doc.text(compact(hospitalLine, 60), MARGIN + 1, 9);
+        doc.text('CardioVault', textX, 12);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         text([200, 214, 235]);
-        doc.text('CCU Case Presentation  •  Confidential Medical Record', MARGIN + 1, 14.5);
+        doc.text(compact(unitLine, 60), textX, 17);
+        doc.text('CCU Case Presentation  •  Confidential Medical Record', textX, 21.5);
         // patient line
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9.5);
         text(white);
         doc.text(
           `${compact(patient.fullName, 32) || 'Unnamed Patient'}  •  ${val(patient.age)} / ${val(patient.sex)}  •  MRN ${val(patient.mrn)}`,
-          MARGIN + 1, 21
+          textX, 26.5
         );
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         text([200, 214, 235]);
         doc.text(
           `Bed ${val(bed?.bedNumber)}  •  Admitted ${val(patient.admissionDate)} ${val(patient.admissionTime)}  •  Generated ${generatedAt}`,
-          MARGIN + 1, 26.5
+          textX, 30.5
         );
       };
 
@@ -205,7 +265,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         text(muted);
-        doc.text('Fayoum General Hospital - CCU Department', 9, 288);
+        doc.text('CardioVault — CCU Department', 9, 288);
       };
 
       // Measured page-break guard: estimate block height with the same
@@ -215,7 +275,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         footer();
         doc.addPage();
         header();
-        y = 36;
+        y = 38;
         if (continuationLabel) {
           sectionTitle(0, `${continuationLabel} (continued)`);
         }
@@ -224,7 +284,16 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         if (y + needed > FOOTER_TOP) newPage(continuationLabel);
       };
 
+      // Provisional section titles: a title is painted only when its section
+      // actually emits content. Fully-empty sections vanish completely.
+      let pendingTitle: { num: number; label: string } | null = null;
       const sectionTitle = (num: number, label: string) => {
+        pendingTitle = { num, label };
+      };
+      const flushTitle = () => {
+        if (!pendingTitle) return;
+        const { num, label } = pendingTitle;
+        pendingTitle = null;
         ensureSpace(12);
         fill(pale);
         draw(line);
@@ -256,7 +325,10 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       };
 
       // Label + wrapped value stacked block, optional badges after the label.
+      // Unrecorded values are omitted entirely (no "Not provided" blocks).
       const para = (label: string, value: any, badges: Badge[] = []) => {
+        if (isBlankRendered(val(value))) return;
+        flushTitle();
         const lines = measureLines(val(value), CONTENT_W - 6);
         const h = 9 + lines.length * 3.8;
         ensureSpace(h);
@@ -276,11 +348,16 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         y += h + 2.5;
       };
 
-      // Two-column key/value grid.
+      // Two-column key/value grid. Pairs with no recorded value are dropped
+      // (kept only when they carry badges, e.g. discrepancy flags).
       const kvGrid = (rows: Array<[string, any, Badge[]?]>) => {
+        const shown = rows.filter(([, value, badges]) =>
+          (badges && badges.length > 0) || !isBlankRendered(val(value)));
+        if (!shown.length) return;
+        flushTitle();
         const half = (CONTENT_W - 3) / 2;
-        for (let i = 0; i < rows.length; i += 2) {
-          const pair = rows.slice(i, i + 2);
+        for (let i = 0; i < shown.length; i += 2) {
+          const pair = shown.slice(i, i + 2);
           const heights = pair.map(([label, value]) => {
             const vLines = measureLines(val(value), half - 6);
             const lLines = measureLines(label, half - 6);
@@ -317,16 +394,10 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         emptyLabel: string, sectionLabel: string, rowFill?: number[][],
       ) => {
         const rowH = 6.2;
-        if (!rows.length) {
-          ensureSpace(9);
-          doc.setFont('helvetica', 'italic');
-          doc.setFontSize(8.5);
-          text(muted);
-          doc.text(NP, MARGIN + 1, y + 5);
-          y += 9;
-          return;
-        }
+        // Empty table (no recorded rows) is omitted entirely.
+        if (!rows.length) return;
         void emptyLabel;
+        flushTitle();
         const drawHeaderRow = () => {
           let xx = MARGIN;
           fill(navy);
@@ -386,7 +457,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
       // ---- document ----
       header();
-      y = 34;
+      y = 37;
 
       // ============ §1–2 Identification & Admission ============
       if (has('identification')) {
@@ -395,7 +466,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           ['Full Name', patient.fullName || patient.name],
           ['MRN', patient.mrn],
           ['Age / Sex', `${val(patient.age)} / ${val(patient.sex)}`, discrepancies.filter(d => d.t.startsWith('Age'))],
-          ['Weight / Height', `${val(patient.weight)} kg / ${val(patient.height)} cm`],
+          ['Weight / Height', (nonEmpty(patient.weight) || nonEmpty(patient.height)) ? `${val(patient.weight)} kg / ${val(patient.height)} cm` : NP],
           ['Unit / Bed', `${val(unit?.name)} / ${val(bed?.bedNumber)}`],
           ['Status / Code Status', `${val(patient.status, 'Active')} / ${val(patient.codeStatus)}`],
         ]);
@@ -449,7 +520,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         sectionTitle(9, 'Allergies');
         {
           const allergies = [...(s.allergies || []), ...(patient.allergies || [])].filter(Boolean);
-          para('Allergies', allergies.length ? allergies.join(', ') : 'No known allergies',
+          para('Allergies', allergies.length ? allergies.join(', ') : NP,
             allergies.length ? [{ t: 'ALLERGY', kind: 'rose' }] : []);
         }
         sectionTitle(10, 'Social History');
@@ -548,6 +619,8 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           const rows: string[][] = [];
           const tints: number[][] = [];
           const push = (test: string, value: string, fl: Flag | null) => {
+            // Recorded labs only — unrecorded tests never reach the PDF.
+            if (isBlankRendered(value)) return;
             rows.push([test, value, fl ? fl.t : '—']);
             tints.push(fl?.critical ? rowRose : white);
           };
@@ -594,10 +667,9 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             void dateW;
             const rows = keys
               .filter(k => serial.some(s => nonEmpty(s[k])))
-              .map(k => [labels[k], ...serial.map(s => (nonEmpty(s[k]) ? String(s[k]) : NP))]);
+              .map(k => [labels[k], ...serial.map(s => (nonEmpty(s[k]) ? String(s[k]) : '—'))]);
             cleanTable(['Test', ...serial.map(s => val(s.date, 'Latest'))], widths, rows, 'serial results', 'Serial Labs');
-          } else {
-            para('Serial Trends', 'Only one lab panel available — no trend to display.');
+            // Single panel: no trend to display, so §16 stays out of the PDF.
           }
         }
       }
@@ -636,9 +708,11 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             ['Other Findings', val(e.otherFindings)],
           ];
           const efBad = num(e.ef) !== null && (num(e.ef) as number) < 40;
-          cleanTable(['Parameter', 'Finding'], [62, 132], echoRows.map(r => r),
+          // Recorded echo parameters only — unrecorded rows never reach the PDF.
+          const echoRowsShown = echoRows.filter(r => !isBlankRendered(val(r[1])));
+          cleanTable(['Parameter', 'Finding'], [62, 132], echoRowsShown.map(r => r),
             'echo findings', 'Echocardiography',
-            echoRows.map(r => (r[0] === 'EF' && efBad ? rowRose : white)));
+            echoRowsShown.map(r => (r[0] === 'EF' && efBad ? rowRose : white)));
           kvGrid([
             ['Rhythm / HR / BP', `${val(c.rhythm)} / ${c.heartRate ? `${c.heartRate} bpm` : NP} / ${val(c.bp)}`, discrepancies.filter(d => d.t.startsWith('HR'))],
             ['HF Status / NYHA / Killip', `${val(c.heartFailureStatus)} / ${val(c.nyha || c.nyhaClass)} / ${val(c.killip || c.killipClass)}`],
@@ -723,10 +797,10 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           kvGrid([
             ['Support Type', support],
             ['Oxygen Device / Flow', v.oxygenDevice ? `${v.oxygenDevice}${v.oxygenFlow ? ` ${v.oxygenFlow} L/min` : ''}` : NP],
-            ['Mode / FiO₂ / PEEP', `${val(v.mode)} / ${v.fio2 ?? NP}% / ${v.peep ?? NP} cmH₂O`],
-            ['Tidal Volume / RR', `${v.tidalVolume ?? NP} mL / ${v.respiratoryRate ?? v.rr ?? NP}/min`],
-            ['Pressures (Peak/Plat/MAP)', `${v.peakPressure ?? NP} / ${v.plateauPressure ?? NP} / ${v.meanAirwayPressure ?? NP} cmH₂O`],
-            ['SpO₂ / EtCO₂', `${v.spo2 ?? NP}% / ${v.etco2 ?? NP} mmHg`],
+            ['Mode / FiO₂ / PEEP', (nonEmpty(v.mode) || v.fio2 != null || v.peep != null) ? `${val(v.mode)} / ${v.fio2 ?? NP}% / ${v.peep ?? NP} cmH₂O` : NP],
+            ['Tidal Volume / RR', (v.tidalVolume != null || v.respiratoryRate != null || v.rr != null) ? `${v.tidalVolume ?? NP} mL / ${v.respiratoryRate ?? v.rr ?? NP}/min` : NP],
+            ['Pressures (Peak/Plat/MAP)', (v.peakPressure != null || v.plateauPressure != null || v.meanAirwayPressure != null) ? `${v.peakPressure ?? NP} / ${v.plateauPressure ?? NP} / ${v.meanAirwayPressure ?? NP} cmH₂O` : NP],
+            ['SpO₂ / EtCO₂', (v.spo2 != null || v.etco2 != null) ? `${v.spo2 ?? NP}% / ${v.etco2 ?? NP} mmHg` : NP],
           ]);
           const abgs: any[] = (v.abgHistory || []).slice(0, 6);
           if (abgs.length) {
@@ -913,7 +987,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           <div>
             <h2 className="text-xl font-bold">CCU Case Presentation — PDF Export</h2>
             <p className="text-xs text-slate-500 mt-1">
-              25-section CCU template • navy header/footer • A4 report • Arabic patient names supported.
+              25-section CCU template • CardioVault header • recorded values only • A4 report • Arabic patient names supported.
             </p>
           </div>
           <div className="flex gap-2">

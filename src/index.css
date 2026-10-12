@@ -131,33 +131,71 @@
   animation: cardiovault-soft-pulse 2s ease-in-out infinite;
 }
 
-/* Subtle always-on glow pulse for the sticky app header bar.
-   Box-shadow only (no layout/paint-heavy props), low opacity, ~3s loop.
-   Single cyan tint reads tastefully on both light and dark surfaces. */
+/* Always-on glow pulse for the sticky app header bar (locked: must pulse —
+   verified on the APK build, not the stale web preview).
+   Box-shadow only (no layout/paint-heavy props), cyan theme tint. */
 @keyframes cardiovault-header-glow {
-  0%, 100% { box-shadow: 0 0 12px rgba(6, 182, 214, 0.10); }
-  50% { box-shadow: 0 0 22px rgba(6, 182, 214, 0.22); }
+  0%, 100% { box-shadow: 0 0 18px rgba(6, 182, 214, 0.28), 0 2px 10px rgba(59, 130, 246, 0.12); }
+  50% { box-shadow: 0 0 36px rgba(6, 182, 214, 0.5), 0 2px 18px rgba(59, 130, 246, 0.28); }
 }
 .animate-cardiovault-header-glow {
   animation: cardiovault-header-glow 3s ease-in-out infinite;
 }
 
-/* Wave shimmer for the Home "Today at a glance" gradient title.
-   Animates background-position over a 200%+ gradient; base gradient
-   colors stay defined in the component markup. */
+/* Rotating wave of blue light sweeping around the header (same cyan/blue
+   theme). A blurred conic layer rotating behind the header content. */
+.cardiovault-header-orbit {
+  position: absolute;
+  inset: -45% -15%;
+  z-index: 0;
+  pointer-events: none;
+  background: conic-gradient(from 0deg, transparent 0%, transparent 62%, rgba(34, 211, 238, 0.28) 80%, rgba(59, 130, 246, 0.45) 90%, transparent 100%);
+  filter: blur(16px);
+  animation: cardiovault-orbit-spin 7s linear infinite;
+}
+@keyframes cardiovault-orbit-spin {
+  to { transform: rotate(360deg); }
+}
+/* Blue light beam travelling along the header bottom edge. */
+.cardiovault-header-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, #22d3ee, #3b82f6, #22d3ee, transparent);
+  background-size: 200% 100%;
+  animation: cardiovault-beam-slide 3.5s linear infinite;
+}
+@keyframes cardiovault-beam-slide {
+  from { background-position: 200% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* Wave shimmer for the Home "Today at a glance" gradient title (locked:
+   visible on both APK and web — same bundle, same class). Gradient sweep +
+   glow pulse so it reads clearly on light and dark surfaces. */
 @keyframes cardiovault-wavy-text {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
+@keyframes cardiovault-wavy-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(6, 182, 214, 0.35)) brightness(1); }
+  50% { filter: drop-shadow(0 0 10px rgba(6, 182, 214, 0.85)) brightness(1.18); }
+}
 .animate-cardiovault-wavy-text {
-  background-size: 200% auto;
-  animation: cardiovault-wavy-text 6s ease-in-out infinite;
+  background-size: 250% auto;
+  animation: cardiovault-wavy-text 4s linear infinite, cardiovault-wavy-glow 2.5s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-cardiovault-header-glow,
-  .animate-cardiovault-wavy-text {
+  .animate-cardiovault-wavy-text,
+  .cardiovault-header-orbit,
+  .cardiovault-header-beam {
     animation: none;
   }
 }
