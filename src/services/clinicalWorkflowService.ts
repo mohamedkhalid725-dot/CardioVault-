@@ -20,39 +20,51 @@ const TASKS_KEY = 'cardiovault_clinical_tasks_v2';
 const PROTOCOLS_KEY = 'cardiovault_clinical_protocols_v2';
 const TEMPLATES_KEY = 'cardiovault_med_templates_v2';
 const TASK_WORKSPACE_ID = 'cardiovault_master_workspace';
-const TASK_COLLECTION = `workspaces/${TASK_WORKSPACE_ID}/tasks`;
+// Launch security: tasks live under their unit so the unit-scoped rules can
+// enforce the board boundary. The old top-level /tasks collection has no rule.
+const taskCollection = (unitId: string) => `workspaces/${TASK_WORKSPACE_ID}/units/${unitId}/tasks`;
 
 const safeSnapshot = (snapshot: any): any => {
   try { return typeof snapshot?.data === 'function' ? (snapshot.data() || null) : (snapshot?.data || null); }
   catch { return null; }
 };
 
-async function readCloudTasks(): Promise<ClinicalTask[]> {
-  try {
-    if (Capacitor.isNativePlatform()) {
-      const result: any = await FirebaseFirestore.getCollection({ reference: TASK_COLLECTION });
-      return (result?.snapshots || [])
-        .map((snapshot: any) => safeSnapshot(snapshot))
-        .filter(Boolean) as ClinicalTask[];
+async function readCloudTasks(unitIds: string[]): Promise<ClinicalTask[]> {
+  const out: ClinicalTask[] = [];
+  for (const unitId of unitIds) {
+    if (!unitId) continue;
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const result: any = await FirebaseFirestore.getCollection({ reference: taskCollection(unitId) });
+        for (const snapshot of result?.snapshots || []) {
+          const data = safeSnapshot(snapshot);
+          if (data) out.push(data as ClinicalTask);
+        }
+        continue;
+      }
+      const snap = await webGetDocs(webCollection(taskCollection(unitId)));
+      snap.docs.forEach(doc => out.push(doc.data() as ClinicalTask));
+    } catch (error) {
+      // Units the member cannot access stay unread: rules deny, we skip.
+      console.warn('Clinical task cloud read skipped for unit:', unitId);
     }
-    const snap = await webGetDocs(webCollection(TASK_COLLECTION));
-    return snap.docs.map(doc => doc.data() as ClinicalTask);
-  } catch (error) {
-    console.warn('Clinical task cloud read failed:', error);
-    return [];
   }
+  return out;
 }
 
 async function writeCloudTask(task: ClinicalTask): Promise<void> {
+  const unitId = String(task.unitId || '');
+  if (!unitId) return;
+  const reference = `${taskCollection(unitId)}/${task.id}`;
   if (Capacitor.isNativePlatform()) {
     await FirebaseFirestore.setDocument({
-      reference: `${TASK_COLLECTION}/${task.id}`,
+      reference,
       data: task,
       merge: true,
     });
     return;
   }
-  await webSetDoc(webDoc(`${TASK_COLLECTION}/${task.id}`), task, { merge: true });
+  await webSetDoc(webDoc(reference), task, { merge: true });
 }
 
 async function writeCloudTasks(tasks: ClinicalTask[]): Promise<void> {
@@ -62,9 +74,9 @@ async function writeCloudTasks(tasks: ClinicalTask[]): Promise<void> {
   }
 }
 
-async function syncTasksFromCloud(): Promise<ClinicalTask[]> {
+async function syncTasksFromCloud(unitIds: string[]): Promise<ClinicalTask[]> {
   const local = ClinicalWorkflowService.getTasks();
-  const remote = await readCloudTasks();
+  const remote = unitIds.length ? await readCloudTasks(unitIds) : [];
   if (!remote.length) return local;
 
   const merged = new Map<string, ClinicalTask>();
@@ -163,8 +175,8 @@ export const ClinicalWorkflowService = {
     try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {}
   },
 
-  async hydrateTasks(): Promise<ClinicalTask[]> {
-    return syncTasksFromCloud();
+  async hydrateTasks(unitIds: string[] = []): Promise<ClinicalTask[]> {
+    return syncTasksFromCloud(unitIds);
   },
 
   async publishLocalTasks(): Promise<void> {

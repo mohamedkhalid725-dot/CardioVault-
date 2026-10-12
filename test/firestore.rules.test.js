@@ -119,6 +119,15 @@ async function seed() {
         unitId: UNIT_A,
         unitIds: [UNIT_A],
       }),
+      setDoc(doc(db, path("members", "userF")), {
+        uid: "userF",
+        workspaceId: WORKSPACE,
+        active: true,
+        forceReauth: false,
+        role: "clinical_editor",
+        unitId: UNIT_A,
+        unitIds: [UNIT_A],
+      }),
       setDoc(doc(db, path("team", "userE")), {
         uid: "userE",
         workspaceId: WORKSPACE,
@@ -135,6 +144,24 @@ async function seed() {
         patientId: PATIENT_B,
         unitId: UNIT_B,
         label: "FAKE B",
+      }),
+      setDoc(doc(db, path("units", UNIT_A, "tasks", "taskA")), {
+        id: "taskA",
+        unitId: UNIT_A,
+        title: "Unit A task",
+        priority: "routine",
+        status: "pending",
+        createdBy: "seed",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      setDoc(doc(db, path("units", UNIT_B, "tasks", "taskB")), {
+        id: "taskB",
+        unitId: UNIT_B,
+        title: "Unit B task",
+        priority: "routine",
+        status: "pending",
+        createdBy: "seed",
+        createdAt: "2026-01-01T00:00:00.000Z",
       }),
     ]);
   });
@@ -385,4 +412,77 @@ test("9. any path not explicitly allowed is denied", async () => {
   await assertFails(setDoc(unknown, { any: "value" }));
   await assertFails(getDoc(topLevelUnknown));
   await assertFails(setDoc(topLevelUnknown, { any: "value" }));
+});
+
+test("14. cross-unit patient move needs editor rights on both units", async () => {
+  // B is a clinical_editor of Unit B only: pulling A's patient into B must fail.
+  await assertFails(
+    updateDoc(doc(dbFor("userB"), patientPath(PATIENT_A)), { unitId: UNIT_B, label: "MOVED" }),
+  );
+  // Same-unit clinical edits still succeed.
+  await assertSucceeds(updateDoc(doc(dbFor("userB"), patientPath(PATIENT_B)), { label: "UPDATE" }));
+  // C edits both units: a legitimate transfer A -> B succeeds.
+  await assertSucceeds(
+    updateDoc(doc(dbFor("userC"), patientPath(PATIENT_A)), { unitId: UNIT_B }),
+  );
+});
+
+test("15. fresh members cannot self-grant the consultant role", async () => {
+  const db = dbFor("userF");
+  const selfRef = doc(db, path("team", "userF"));
+  const profile = {
+    uid: "userF",
+    workspaceId: WORKSPACE,
+    departmentId: "dept-cardiology",
+    status: "active",
+  };
+  await assertFails(setDoc(selfRef, { ...profile, role: "consultant" }));
+  await assertSucceeds(setDoc(selfRef, { ...profile, role: "resident" }));
+});
+
+test("16. task boards are scoped to the member's unit", async () => {
+  const dbA = dbFor("userA");
+  const dbB = dbFor("userB");
+  const taskA = doc(dbA, path("units", UNIT_A, "tasks", "taskA"));
+  const taskB = doc(dbA, path("units", UNIT_B, "tasks", "taskB"));
+
+  await assertSucceeds(getDoc(taskA));
+  await assertSucceeds(
+    getDocs(collection(dbA, path("units", UNIT_A, "tasks"))),
+  );
+  await assertSucceeds(
+    setDoc(doc(dbA, path("units", UNIT_A, "tasks", "createdByA")), {
+      id: "createdByA",
+      unitId: UNIT_A,
+      title: "Unit A task",
+      priority: "routine",
+      status: "pending",
+      createdBy: "userA",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    }),
+  );
+
+  await assertFails(getDoc(taskB));
+  await assertFails(getDocs(collection(dbA, path("units", UNIT_B, "tasks"))));
+  await assertFails(
+    setDoc(doc(dbA, path("units", UNIT_B, "tasks", "illegalByA")), {
+      id: "illegalByA",
+      unitId: UNIT_B,
+      title: "ILLEGAL",
+      priority: "routine",
+      status: "pending",
+      createdBy: "userA",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    }),
+  );
+  await assertFails(updateDoc(taskB, { status: "completed" }));
+
+  // B keeps full access to its own unit board.
+  await assertSucceeds(getDoc(doc(dbB, path("units", UNIT_B, "tasks", "taskB"))));
+
+  // The retired top-level /tasks collection has no rule: denied for everyone.
+  await assertFails(getDoc(doc(dbA, path("tasks", "legacy"))));
+  await assertFails(
+    setDoc(doc(dbA, path("tasks", "legacy")), { id: "legacy", unitId: UNIT_A, title: "x" }),
+  );
 });

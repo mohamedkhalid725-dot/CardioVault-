@@ -16,7 +16,7 @@ import { AuthorizationService } from '../../services/authorizationService';
 import { ClinicalTask, Patient } from '../../types/clinical';
 
 export const PersonalWorklistView: React.FC = () => {
-  const { currentUser, patients, beds, setCurrentPatientId, setCurrentView, showToast } = useApp();
+  const { currentUser, patients, beds, units, setCurrentPatientId, setCurrentView, showToast } = useApp();
   const [tasks, setTasks] = useState<ClinicalTask[]>(() => ClinicalWorkflowService.getTasks());
   const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed'>('pending');
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
@@ -27,7 +27,7 @@ export const PersonalWorklistView: React.FC = () => {
 
   React.useEffect(() => {
     let active = true;
-    void ClinicalWorkflowService.hydrateTasks().finally(() => { if (active) setTaskVersion(v => v + 1); });
+    void ClinicalWorkflowService.hydrateTasks(units.map(u=>u.id)).finally(() => { if (active) setTaskVersion(v => v + 1); });
     const handleTasks = () => setTaskVersion(v => v + 1);
     window.addEventListener('cardiovault-task-updated', handleTasks);
     return () => { active = false; window.removeEventListener('cardiovault-task-updated', handleTasks); };

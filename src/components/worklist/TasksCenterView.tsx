@@ -9,9 +9,9 @@ const priorityClass=(p:ClinicalTask['priority'])=>p==='stat'?'bg-rose-500/10 tex
 const isOverdue=(t:ClinicalTask)=>!!t.dueDateTime&&t.status!=='completed'&&t.status!=='cancelled'&&new Date(t.dueDateTime).getTime()<Date.now();
 
 export const TasksCenterView:React.FC=()=>{
- const{currentUser,patients,beds,setCurrentPatientId,setCurrentView,setActivePatientSection,showToast}=useApp();
+ const{currentUser,patients,beds,units,setCurrentPatientId,setCurrentView,setActivePatientSection,showToast}=useApp();
  const[version,setVersion]=useState(0);const[filter,setFilter]=useState<'all'|'pending'|'completed'|'overdue'>('pending');const[priority,setPriority]=useState<'all'|'stat'|'urgent'|'routine'>('all');
- useEffect(()=>{let active=true;void ClinicalWorkflowService.hydrateTasks().finally(()=>{if(active)setVersion(v=>v+1)});const h=()=>setVersion(v=>v+1);window.addEventListener('cardiovault-task-updated',h);window.addEventListener('cardiovault-data-restored',h);return()=>{active=false;window.removeEventListener('cardiovault-task-updated',h);window.removeEventListener('cardiovault-data-restored',h)}},[]);
+ useEffect(()=>{let active=true;void ClinicalWorkflowService.hydrateTasks(units.map(u=>u.id)).finally(()=>{if(active)setVersion(v=>v+1)});const h=()=>setVersion(v=>v+1);window.addEventListener('cardiovault-task-updated',h);window.addEventListener('cardiovault-data-restored',h);return()=>{active=false;window.removeEventListener('cardiovault-task-updated',h);window.removeEventListener('cardiovault-data-restored',h)}},[]);
  const authorized=useMemo(()=>AuthorizationService.filterAuthorizedPatients<Patient>(patients.filter(p=>!p.isArchived),currentUser),[patients,currentUser]);
  const tasks=useMemo(()=>ClinicalWorkflowService.getTasks(),[version]);
  const clinicalActions=useMemo(()=>{
