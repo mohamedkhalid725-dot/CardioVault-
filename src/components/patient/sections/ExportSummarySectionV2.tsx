@@ -424,6 +424,28 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         return yy;
       };
 
+      // Empty tables render a caption instead of a lonely header row.
+      // Header fill stays pale with navy text on every table() path.
+      const tableOrEmpty = (
+        x: number,
+        y: number,
+        widths: number[],
+        headers: string[],
+        rows: string[][],
+        label: string,
+        rowH = 6.2,
+        maxRows = 6
+      ) => {
+        if (!rows.length) {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(8.5);
+          text(muted);
+          doc.text(`No ${label} recorded.`, x + 1, y + 5);
+          return y + 9;
+        }
+        return table(x, y, widths, headers, rows, rowH, maxRows);
+      };
+
       const drawFirstPage = async () => {
         header();
         patientBanner();
@@ -560,14 +582,14 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           }
 
           const meds: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
-          const medsY = table(8, y, [40, 23, 22, 27], ['Drug', 'Dose', 'Route', 'Frequency'], meds.map(m => [
+          const medsY = tableOrEmpty(8, y, [40, 23, 22, 27], ['Drug', 'Dose', 'Route', 'Frequency'], meds.map(m => [
             val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency),
-          ]), 6.2, 6);
+          ]), 'medications', 6.2, 6);
 
           const infusions: any[] = (patient as any).infusions || (patient as any).activeInfusions || [];
-          const infY = table(122, y, [30, 25, 25], ['Drug', 'Rate', 'Indication'], infusions.map(i => [
+          const infY = tableOrEmpty(122, y, [30, 25, 25], ['Drug', 'Rate', 'Indication'], infusions.map(i => [
             val(i.name || i.drug), val(i.rate || i.dose), compact(i.indication, 22),
-          ]), 6.2, 6);
+          ]), 'infusions', 6.2, 6);
 
           y = Math.max(medsY, infY) + 3;
         }
@@ -581,14 +603,14 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           }
 
           const procedures: any[] = (patient as any).procedures || [];
-          const procY = table(8, y, [25, 45, 42], ['Date', 'Procedure', 'Details'], procedures.map(p => [
+          const procY = tableOrEmpty(8, y, [25, 45, 42], ['Date', 'Procedure', 'Details'], procedures.map(p => [
             val(p.date), val(p.procedure || p.name || p.surgeryName), compact(p.outcome || p.findings || p.indication, 40),
-          ]), 6.2, 5);
+          ]), 'procedures', 6.2, 5);
 
           const devices: any[] = (patient as any).devices || (patient as any).lines || [];
-          const devY = table(122, y, [28, 25, 27], ['Device', 'Site', 'Date'], devices.map(d => [
+          const devY = tableOrEmpty(122, y, [28, 25, 27], ['Device', 'Site', 'Date'], devices.map(d => [
             val(d.device || d.name || d.type), val(d.site), val(d.date),
-          ]), 6.2, 5);
+          ]), 'lines & devices', 6.2, 5);
 
           y = Math.max(procY, devY) + 3;
         }
@@ -631,11 +653,11 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             y += 10;
           }
           const notes: any[] = (patient as any).progressNotes || [];
-          y = table(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notes.map(n => [
+          y = tableOrEmpty(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notes.map(n => [
             `${val(n.date)} ${val(n.time)}`,
             compact(n.author, 22),
             compact(n.assessment || n.plan || n.events || n.note, 105),
-          ]), 6.2, 5) + 3;
+          ]), 'progress notes', 6.2, 5) + 3;
         }
 
         if (has('calculators') || has('timeline') || has('overview')) {
