@@ -10,6 +10,51 @@ const GROQ_MODEL = 'openai/gpt-oss-120b';
 // by the physician. A second en-US pass was rejected (double recording UX).
 export const PIPELINE_SPEECH_LOCALE = 'ar-EG';
 
+// VA-1: the native voice start chain hung forever on some Android builds
+// (awaits that never resolve nor reject). Every await in the voice start
+// path races a watchdog so the mic button can never spin forever; each
+// timeout names its stage so field reports identify the hanging call.
+export const VOICE_START_TIMEOUT_MS = 15000;
+export function withVoiceTimeout<T>(work: Promise<T>, stage: string, timeoutMs = VOICE_START_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Voice start timed out at ${stage}. Please try again.`)), timeoutMs);
+  });
+  return Promise.race([work.finally(() => { if (timer !== undefined) clearTimeout(timer); }), timeout]);
+}
+
+// Launch consent: voice audio leaves the device for speech recognition and
+// AI transcription. Asked once per session; audio clips are never stored.
+const VOICE_CONSENT_KEY = 'cardiovault_voice_consent_v1';
+export function hasVoiceConsent(): boolean {
+  try { return sessionStorage.getItem(VOICE_CONSENT_KEY) === '1'; } catch { return false; }
+}
+export function requestVoiceConsent(): boolean {
+  if (hasVoiceConsent()) return true;
+  const ok = window.confirm(
+    'Voice dictation sends speech audio to speech-recognition and AI transcription services to produce text. Audio clips are not stored.\nالإملاء الصوتي يرسل الصوت لخدمات التفريغ النصي. لا نحفظ التسجيلات الصوتية.'
+  );
+  try { if (ok) sessionStorage.setItem(VOICE_CONSENT_KEY, '1'); } catch { /* session-only */ }
+  return ok;
+}
+
+// Launch scrub: exact-match patient identifiers are replaced locally before
+// any transcript text reaches a cloud model. Nothing is guessed: only the
+// supplied tokens are replaced, everything else passes through untouched.
+export function scrubIdentifiers(text: string, tokens: Array<string | undefined>): { text: string; redacted: boolean } {
+  let out = text;
+  let redacted = false;
+  for (const raw of tokens) {
+    const token = String(raw || '').trim();
+    if (token.length < 2) continue;
+    const placeholder = /^\d+$/.test(token) ? '[ID]' : '[NAME]';
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const next = out.replace(new RegExp(escaped, 'g'), placeholder);
+    if (next !== out) { out = next; redacted = true; }
+  }
+  return { text: out, redacted };
+}
+
 const polishCache = new Map<string, string>();
 
 export function normalizePolishKey(text: string): string {
@@ -54,28 +99,28 @@ export interface LiveRecognitionSession {
 export async function startLiveRecognition(
   onPartial?: (text: string) => void,
 ): Promise<LiveRecognitionSession> {
-  const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-  const permission = await SpeechRecognition.requestPermissions();
+  const { SpeechRecognition } = await withVoiceTimeout(import('@capacitor-community/speech-recognition'), 'speech plugin load');
+  const permission = await withVoiceTimeout(SpeechRecognition.requestPermissions(), 'permission request');
   const granted = (permission as { speechRecognition?: string }).speechRecognition === 'granted';
   if (!granted) throw new Error('Speech recognition permission was denied.');
 
   let best = '';
   let settled = false;
-  const listener = await SpeechRecognition.addListener('partialResults', (data: { matches?: string[] }) => {
+  const listener = await withVoiceTimeout(SpeechRecognition.addListener('partialResults', (data: { matches?: string[] }) => {
     const top = data?.matches?.[0] || '';
     if (top.trim()) {
       best = top;
       onPartial?.(top);
     }
-  });
+  }), 'result listener');
   try {
     // partialResults:true resolves start() immediately; results arrive via listener.
-    await SpeechRecognition.start({
+    await withVoiceTimeout(SpeechRecognition.start({
       language: PIPELINE_SPEECH_LOCALE,
       maxResults: 5,
       partialResults: true,
       popup: false,
-    });
+    }), 'recognition start');
   } catch (error) {
     await listener.remove();
     throw error instanceof Error ? error : new Error('Live speech recognition could not start.');
@@ -85,7 +130,7 @@ export async function startLiveRecognition(
       if (settled) throw new Error('Recognition already stopped.');
       settled = true;
       try {
-        await SpeechRecognition.stop();
+        await withVoiceTimeout(SpeechRecognition.stop(), 'recognition stop', 8000);
       } catch {
         // stop() may reject when nothing is listening; still return what we heard.
       }
@@ -96,10 +141,12 @@ export async function startLiveRecognition(
   };
 }
 
-export async function polishToMedicalEnglish(transcription: string, fieldLabel: string): Promise<string> {
+export async function polishToMedicalEnglish(transcription: string, fieldLabel: string, redactTokens?: Array<string | undefined>): Promise<string> {
   const clean = transcription.trim();
   if (!clean) throw new Error('Nothing was recognized to polish.');
-  const cached = cachedPolish(clean);
+  // Patient identifiers never reach the cloud model: exact-match local scrub.
+  const scrubbed = scrubIdentifiers(clean, redactTokens || []).text;
+  const cached = cachedPolish(scrubbed);
   if (cached) return cached;
   const apiKey = String(import.meta.env.VITE_GROQ_API_KEY || '').trim();
   if (!apiKey) {
@@ -112,7 +159,7 @@ export async function polishToMedicalEnglish(transcription: string, fieldLabel: 
       model: GROQ_MODEL,
       temperature: 0,
       response_format: { type: 'json_object' },
-      messages: [{ role: 'user', content: buildPolishPrompt(clean, fieldLabel) }],
+      messages: [{ role: 'user', content: buildPolishPrompt(scrubbed, fieldLabel) }],
     }),
   });
   if (response.status === 429) throw new Error('Voice polish limit reached. Please wait a little and try again.');
@@ -129,7 +176,7 @@ export async function polishToMedicalEnglish(transcription: string, fieldLabel: 
     throw new Error('Voice polish returned an invalid response.');
   }
   if (!medicalEnglish) throw new Error('Voice polish returned an empty response.');
-  storePolish(clean, medicalEnglish);
+  storePolish(scrubbed, medicalEnglish);
   return medicalEnglish;
 }
 

@@ -25,6 +25,8 @@ service firebase.storage {
         && firestore.exists(
           /databases/(default)/documents/workspaces/$(masterWorkspace())/members/$(request.auth.uid)
         )
+        && memberData().active != false
+        && memberData().forceReauth != true
         && memberData().unitId == unitId
         && firestore.exists(
           /databases/(default)/documents/accessCodes/$(memberData().accessCodeHash)

@@ -4,7 +4,7 @@ import{Capacitor}from'@capacitor/core';
 import{VoiceRecorder}from'capacitor-voice-recorder';
 import{AI_MODEL,AI_TEST_DATA_ONLY}from'../../config/aiConfig';
 import{transcribeMedicalVoice}from'../../services/aiLogic';
-import{startLiveRecognition,polishToMedicalEnglish,type LiveRecognitionSession}from'../../services/voicePipeline';
+import{startLiveRecognition,polishToMedicalEnglish,withVoiceTimeout,requestVoiceConsent,type LiveRecognitionSession}from'../../services/voicePipeline';
 import{useApp}from'../../context/AppContext';
 import{useIsPreviousViewer}from'./PreviousAdmissionViewer';
 
@@ -20,7 +20,7 @@ const claim=(id:string)=>{if(activeRecorderId&&activeRecorderId!==id)return fals
 const release=(id:string)=>{if(activeRecorderId===id)activeRecorderId=null;};
 
 export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false,fieldLabel='clinical field'})=>{
- const id=useId();const{showToast}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);
+ const id=useId();const{showToast,currentPatient}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);
  const nativeRecordingRef=useRef(false);const webRecorderRef=useRef<MediaRecorder|null>(null);const chunksRef=useRef<Blob[]>([]);const streamRef=useRef<MediaStream|null>(null);const liveSessionRef=useRef<LiveRecognitionSession|null>(null);const[pipelineUsed,setPipelineUsed]=useState(false);
  useEffect(()=>{if(cooldown<=0)return;const t=window.setInterval(()=>setCooldown(v=>Math.max(0,v-1)),1000);return()=>window.clearInterval(t);},[cooldown]);
  useEffect(()=>()=>{webRecorderRef.current?.stream.getTracks().forEach(t=>t.stop());streamRef.current?.getTracks().forEach(t=>t.stop());release(id);},[id]);
@@ -30,17 +30,18 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
   if(disabled||busy||recording||cooldown>0)return;
   if(!claim(id)){showToast('Another voice recording or AI request is already in progress. Please wait for it to finish.','error');return;}
   setBusy(true);setError('');setPipelineUsed(false);
+  if(!requestVoiceConsent()){release(id);setBusy(false);return;}
   // Layer 1 (device, free): live on-device recognition. Falls through to
   // the recording + cloud flow below when unavailable on this platform.
-  try{const session=await startLiveRecognition();liveSessionRef.current=session;setRecording(true);setBusy(false);showToast('Listening on this device. Tap the mic again to stop.','info');return;}catch{liveSessionRef.current=null;}
+  try{const session=await startLiveRecognition();liveSessionRef.current=session;setRecording(true);setBusy(false);showToast('Listening on this device. Tap the mic again to stop.','info');return;}catch(layerError:any){liveSessionRef.current=null;showToast('On-device recognition unavailable ('+String(layerError?.message||'unknown error')+'). Using recorder instead.','info');}
   try{
    if(Capacitor.isNativePlatform()){
-    const capability=await VoiceRecorder.canDeviceVoiceRecord();if(!capability.value)throw new Error('Voice recording is not supported on this device.');
-    const permission=await VoiceRecorder.requestAudioRecordingPermission();if(!permission.value)throw new Error('Microphone permission was denied.');
-    await VoiceRecorder.startRecording();nativeRecordingRef.current=true;setRecording(true);showToast('Voice recording started. Tap the mic again to stop.','info');return;
+    const capability=await withVoiceTimeout(VoiceRecorder.canDeviceVoiceRecord(),'recorder check');if(!capability.value)throw new Error('Voice recording is not supported on this device.');
+    const permission=await withVoiceTimeout(VoiceRecorder.requestAudioRecordingPermission(),'microphone permission');if(!permission.value)throw new Error('Microphone permission was denied.');
+    await withVoiceTimeout(VoiceRecorder.startRecording(),'recorder start');nativeRecordingRef.current=true;setRecording(true);showToast('Voice recording started. Tap the mic again to stop.','info');return;
    }
    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined')throw new Error('Audio recording is not supported in this browser.');
-   const stream=await navigator.mediaDevices.getUserMedia({audio:true});streamRef.current=stream;
+   const stream=await withVoiceTimeout(navigator.mediaDevices.getUserMedia({audio:true}),'microphone access');streamRef.current=stream;
    const types=['audio/webm;codecs=opus','audio/webm','audio/mp4'];const mime=types.find(t=>MediaRecorder.isTypeSupported(t));const recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
    chunksRef.current=[];recorder.ondataavailable=e=>{if(e.data.size)chunksRef.current.push(e.data);};webRecorderRef.current=recorder;recorder.start();setRecording(true);showToast('Voice recording started. Tap the mic again to stop.','info');
   }catch(e:any){release(id);setError(String(e?.message||'Unable to start voice recording.'));showToast(String(e?.message||'Unable to start voice recording.'),'error');}
@@ -51,16 +52,16 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
   // Layer 1 result: stop live recognition, then polish (layer 2). The
   // transcription is always kept so a polish failure loses nothing.
   const live=liveSessionRef.current;liveSessionRef.current=null;
-  if(live){try{const text=await live.stop();setRecording(false);setBusy(true);setTranscription(text);try{const polished=await polishToMedicalEnglish(text,fieldLabel);setDraft(polished);setPipelineUsed(true);setOpen(true);showToast('Draft is ready. Review it before inserting.','success');}catch(polishError){setDraft('');setPipelineUsed(true);setOpen(true);const msg=String((polishError as any)?.message||'Voice polish failed.');setError(msg);showToast(msg+' The transcription is kept for manual editing.','error');}}catch(liveError){setError(String((liveError as any)?.message||'Voice recognition failed.'));}finally{setRecording(false);setBusy(false);release(id);}return;}
+  if(live){try{const text=await withVoiceTimeout(live.stop(),'recognition stop',8000);setRecording(false);setBusy(true);setTranscription(text);try{const polished=await withVoiceTimeout(polishToMedicalEnglish(text,fieldLabel,[currentPatient?.fullName,currentPatient?.mrn]),'voice polish',30000);setDraft(polished);setPipelineUsed(true);setOpen(true);showToast('Draft is ready. Review it before inserting.','success');}catch(polishError){setDraft('');setPipelineUsed(true);setOpen(true);const msg=String((polishError as any)?.message||'Voice polish failed.');setError(msg);showToast(msg+' The transcription is kept for manual editing.','error');}}catch(liveError){setError(String((liveError as any)?.message||'Voice recognition failed.'));}finally{setRecording(false);setBusy(false);release(id);}return;}
   try{
    let blob:Blob;
    if(nativeRecordingRef.current){
-    const result:any=await VoiceRecorder.stopRecording();nativeRecordingRef.current=false;const v=result?.value||result;const base64=String(v?.recordDataBase64||'');if(!base64)throw new Error('The recorder returned no audio data.');blob=base64ToBlob(base64,String(v?.mimeType||'audio/aac'));
+    const result:any=await withVoiceTimeout(VoiceRecorder.stopRecording(),'recorder stop',8000);nativeRecordingRef.current=false;const v=result?.value||result;const base64=String(v?.recordDataBase64||'');if(!base64)throw new Error('The recorder returned no audio data.');blob=base64ToBlob(base64,String(v?.mimeType||'audio/aac'));
    }else{
     const recorder=webRecorderRef.current;if(!recorder)throw new Error('The browser recorder is not available.');blob=await new Promise<Blob>((resolve,reject)=>{recorder.onstop=()=>{try{streamRef.current?.getTracks().forEach(t=>t.stop());resolve(new Blob(chunksRef.current,{type:recorder.mimeType||'audio/webm'}));}catch(e){reject(e);}};recorder.stop();});
     webRecorderRef.current=null;
    }
-   setRecording(false);setBusy(true);const result=await transcribeMedicalVoice(blob);setDraft(result.medicalEnglish||result.transcription||'');setTranscription(result.transcription||'');setFallback(result.model!==AI_MODEL);setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');
+   setRecording(false);setBusy(true);const result=await withVoiceTimeout(transcribeMedicalVoice(blob),'voice transcription',45000);setDraft(result.medicalEnglish||result.transcription||'');setTranscription(result.transcription||'');setFallback(result.model!==AI_MODEL);setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');
   }catch(e:any){
    const retry=Number(e?.details?.retryAfterSeconds||0);if(e?.details?.httpStatus===429&&retry>0)setCooldown(retry);
    const msg=e?.details?.httpStatus===429&&retry>0?'AI limit reached, try again in ~'+retry+' seconds':String(e?.message||'AI voice transcription failed.');
