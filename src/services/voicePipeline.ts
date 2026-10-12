@@ -2,6 +2,7 @@
 // Layer 1 (device, free, no quota): live on-device speech recognition.
 // Layer 2 (cloud free-tier): raw text polished into Medical English.
 // Nothing is fabricated: empty or unclear recognition is reported, never guessed.
+import { Capacitor } from '@capacitor/core';
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 // llama-3.3-70b-versatile was shut down by Groq on 2026-08-16; gpt-oss-120b is
 // the vendor-recommended replacement for the free/developer tier.
@@ -103,6 +104,48 @@ export async function startLiveRecognition(
   const permission = await withVoiceTimeout(SpeechRecognition.requestPermissions(), 'permission request');
   const granted = (permission as { speechRecognition?: string }).speechRecognition === 'granted';
   if (!granted) throw new Error('Speech recognition permission was denied.');
+
+  // B-C: native partials proved unreliable in the field (garbage ar-EG text
+  // while Chrome on the same utterances was exact). On native, use the system
+  // popup instead: start() resolves with final server-processed matches and
+  // no unstable partial is ever kept. Web keeps the live-partials flow below.
+  if (Capacitor.isNativePlatform()) {
+    let finished = false;
+    let finalize: (text: string) => void = () => {};
+    let fail: (error: unknown) => void = () => {};
+    const done = new Promise<string>((resolve, reject) => { finalize = resolve; fail = reject; });
+    const settleResolve = (text: string) => { if (!finished) { finished = true; finalize(text); } };
+    const settleReject = (error: unknown) => { if (!finished) { finished = true; fail(error); } };
+    // User-paced dictation: long watchdog (naming the stage) so long speech
+    // is never cut, while a hung plugin call still cannot spin forever.
+    withVoiceTimeout(SpeechRecognition.start({
+      language: PIPELINE_SPEECH_LOCALE,
+      maxResults: 5,
+      popup: true,
+    }), 'native finals', 120000).then(
+      (result: { matches?: string[] }) => {
+        const top = String(result?.matches?.[0] || '').trim();
+        if (top) settleResolve(top);
+        else settleReject(new Error('No speech was recognized. Please try again.'));
+      },
+      (error: unknown) => {
+        settleReject(error instanceof Error ? error : new Error('Live speech recognition could not start.'));
+      },
+    );
+    return {
+      stop: async () => {
+        if (!finished) {
+          try {
+            await withVoiceTimeout(SpeechRecognition.stop(), 'recognition stop', 8000);
+          } catch {
+            // stop() may reject when the popup already closed; the pending
+            // start() settlement still resolves or rejects done exactly once.
+          }
+        }
+        return done;
+      },
+    };
+  }
 
   let best = '';
   let settled = false;

@@ -33,7 +33,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
   if(!requestVoiceConsent()){release(id);setBusy(false);return;}
   // Layer 1 (device, free): live on-device recognition. Falls through to
   // the recording + cloud flow below when unavailable on this platform.
-  try{const session=await startLiveRecognition();liveSessionRef.current=session;setRecording(true);setBusy(false);showToast('Listening on this device. Tap the mic again to stop.','info');return;}catch(layerError:any){liveSessionRef.current=null;showToast('On-device recognition unavailable ('+String(layerError?.message||'unknown error')+'). Using recorder instead.','info');}
+  try{const session=await startLiveRecognition();liveSessionRef.current=session;setRecording(true);setBusy(false);showToast(Capacitor.isNativePlatform()?'Speak in the voice popup. Finish there or tap the mic to stop.':'Listening on this device. Tap the mic again to stop.','info');return;}catch(layerError:any){liveSessionRef.current=null;showToast('On-device recognition unavailable ('+String(layerError?.message||'unknown error')+'). Using recorder instead.','info');}
   try{
    if(Capacitor.isNativePlatform()){
     const capability=await withVoiceTimeout(VoiceRecorder.canDeviceVoiceRecord(),'recorder check');if(!capability.value)throw new Error('Voice recording is not supported on this device.');
