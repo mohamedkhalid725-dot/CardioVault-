@@ -780,16 +780,41 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       if (needsSecondPage) drawSecondPage();
 
       // Long clinical lists continue onto additional A4 pages instead of being truncated.
-      const drawContinuationPages = (title: string, headers: string[], widths: number[], rows: string[][], chunkSize = 24) => {
+      // Chunks split by accumulated mm (A4), not by row count, so wrapped rows
+      // can never push a table into the footer. Each page gets its own footer.
+      const drawContinuationPages = (title: string, headers: string[], widths: number[], rows: string[][]) => {
         if (!rows.length) return;
-        for (let offset = 0; offset < rows.length; offset += chunkSize) {
-          const chunk = rows.slice(offset, offset + chunkSize);
+        const rowHeight = (row: string[]) => {
+          const cellLines = widths.map((width, i) =>
+            doc.splitTextToSize(val(row[i], '—'), width - 3.4) as string[]
+          );
+          return Math.max(6.2, 3 + Math.max(...cellLines.map(lines => lines.length)) * 3.7);
+        };
+        const tableTop = Math.max(75, freshContentY() + 8 + 2);
+        const chunks: string[][][] = [];
+        let current: string[][] = [];
+        let currentH = 6.2;
+        for (const row of rows) {
+          const rh = rowHeight(row);
+          if (currentH + rh > FOOTER_GUARD_Y - tableTop && current.length) {
+            chunks.push(current);
+            current = [];
+            currentH = 6.2;
+          }
+          current.push(row);
+          currentH += rh;
+        }
+        if (current.length) chunks.push(current);
+        for (const chunk of chunks) {
+          footer();
           doc.addPage();
           page = doc.getNumberOfPages();
           header();
           patientBanner();
-          sectionTitle(title + ' • Continued', 8, hasArabicName ? 68 : 65, 194, 'notes');
-          table(8, 75, widths, headers, chunk, 6.2, chunk.length);
+          const top = freshContentY();
+          sectionTitle(title + ' • Continued', 8, top, 194, 'notes');
+          table(8, Math.max(75, top + 8 + 2), widths, headers, chunk, 6.2, chunk.length);
+          footer();
         }
       };
       const medsForPdf: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
