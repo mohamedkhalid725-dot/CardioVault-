@@ -446,15 +446,42 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         return table(x, y, widths, headers, rows, rowH, maxRows);
       };
 
+      // Shared page-break guard (A1): closes the current page with a footer
+      // and opens a fresh bannered continuation page. Both drawFirstPage and
+      // drawSecondPage use this so body content never reaches the footer band.
+      const FOOTER_GUARD_Y = 268;
+      const freshContentY = () => (hasArabicName ? 68 : 65);
+      const openContinuationPage = (title: string) => {
+        footer();
+        doc.addPage();
+        page = doc.getNumberOfPages();
+        header();
+        patientBanner();
+        const yy = freshContentY();
+        sectionTitle(`${title} Continued`, 8, yy, 194, 'notes');
+        return yy + 10;
+      };
+
       const drawFirstPage = async () => {
         header();
         patientBanner();
 
         let y = hasArabicName ? 68 : 65;
+        // First-page guard: same rule as the second page (A1).
+        const ensureSpace = (title: string, h: number) => {
+          if (y + h > FOOTER_GUARD_Y) {
+            y = openContinuationPage(title);
+            return true;
+          }
+          return false;
+        };
 
         if (has('overview')) {
-          sectionTitle('Patient Information', 8, y, 194, 'patient');
-          y += 10;
+          const continued = ensureSpace('Patient Information', 65);
+          if (!continued) {
+            sectionTitle('Patient Information', 8, y, 194, 'patient');
+            y += 10;
+          }
           y = twoColumnFields(8, y, 194, [
             ['Primary Diagnosis', patient.primaryDiagnosis],
             ['Secondary Diagnoses', patient.secondaryDiagnoses],
@@ -467,10 +494,13 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('overview') || has('history')) {
-          y += 2;
-          sectionTitle('Clinical Summary & History', 8, y, 104, 'history');
-          sectionTitle('History / Examination', 108, y, 94, 'exam');
-          y += 10;
+          const continued = ensureSpace('Clinical Summary & History', 75);
+          if (!continued) {
+            y += 2;
+            sectionTitle('Clinical Summary & History', 8, y, 104, 'history');
+            sectionTitle('History / Examination', 108, y, 94, 'exam');
+            y += 10;
+          }
           const summary: any = (patient as any).clinicalSummary || {};
           const summaryH = paragraphBox(8, y, 104, 27, 'Clinical Summary', summary.summary || summary.hpi || patient.primaryDiagnosis, 170);
           const complaintH = paragraphBox(108, y, 94, 27, 'Chief Complaint', summary.chiefComplaint, 130);
@@ -482,9 +512,12 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('vitals')) {
-          sectionTitle('Vitals & Balance (Latest)', 8, y, 96, 'vitals');
-          sectionTitle('Investigations (Latest)', 106, y, 96, 'labs');
-          y += 10;
+          const continued = ensureSpace('Vitals & Balance (Latest)', 55);
+          if (!continued) {
+            sectionTitle('Vitals & Balance (Latest)', 8, y, 96, 'vitals');
+            sectionTitle('Investigations (Latest)', 106, y, 96, 'labs');
+            y += 10;
+          }
 
           const v: any = (patient as any).vitalsHistory?.[0] || {};
           const vitalsY = twoColumnFields(8, y, 96, [
@@ -508,9 +541,12 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('ecg')) {
-          sectionTitle('ECG (Latest)', 8, y, 96, 'ecg');
+          const continued = ensureSpace('ECG (Latest)', 55);
+          if (!continued) {
+            sectionTitle('ECG (Latest)', 8, y, 96, 'ecg');
+            y += 10;
+          }
           const e: any = (patient as any).ecgRecords?.[0] || {};
-          y += 10;
           const interpH = paragraphBox(8, y, 96, 38, 'Interpretation', e.finalImpression || e.interpretation?.join(' • '), 160);
 
           let ecgRightH = 38;
@@ -533,17 +569,21 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('cardiology')) {
-          sectionTitle('Echocardiography (Latest)', 8, y, 194, 'echo');
-          y += 10;
+          const continued = ensureSpace('Echocardiography (Latest)', 55);
+          if (!continued) {
+            sectionTitle('Echocardiography (Latest)', 8, y, 194, 'echo');
+            y += 10;
+          }
           const echo: any = (patient as any).cardiology?.echo || {};
-          twoColumnFields(8, y, 194, [
+          // P5: consume the block end so any following content flows correctly.
+          y = twoColumnFields(8, y, 194, [
             ['LVEF', echo.ef !== undefined ? `${echo.ef}%` : ''],
             ['LV Function', echo.lvFunction],
             ['RWMA', echo.rwma],
             ['RV Function', echo.rvFunction],
             ['Valvular Disease', echo.otherFindings],
             ['Summary', (patient as any).cardiology?.echoBriefSummary],
-          ]);
+          ]) + 3;
         }
 
         footer();
@@ -557,17 +597,10 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
         let y = hasArabicName ? 68 : 65;
 
-        // Page-break guard for flowing list sections: when the block would
-        // run into the fixed footer, continue on a fresh bannered page.
+        // Page-break guard for flowing list sections: shared helper (A1).
         const ensureSpace = (title: string, h: number) => {
-          if (y + h > 268) {
-            doc.addPage();
-            page = doc.getNumberOfPages();
-            header();
-            patientBanner();
-            y = hasArabicName ? 68 : 65;
-            sectionTitle(title + ' Continued', 8, y, 194, 'notes');
-            y += 10;
+          if (y + h > FOOTER_GUARD_Y) {
+            y = openContinuationPage(title);
             return true;
           }
           return false;
