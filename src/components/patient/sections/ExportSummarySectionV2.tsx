@@ -537,7 +537,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           y += 10;
           const echo: any = (patient as any).cardiology?.echo || {};
           twoColumnFields(8, y, 194, [
-            ['LVEF', echo.ef ? `${echo.ef}%` : ''],
+            ['LVEF', echo.ef !== undefined ? `${echo.ef}%` : ''],
             ['LV Function', echo.lvFunction],
             ['RWMA', echo.rwma],
             ['RV Function', echo.rvFunction],
@@ -626,7 +626,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           const c: any = (patient as any).cardiology || {};
           const cardY = twoColumnFields(8, y, 96, [
             ['Diagnosis', c.diagnosis || patient.primaryDiagnosis],
-            ['LVEF', c.ef ? `${c.ef}%` : c.echo?.ef ? `${c.echo.ef}%` : ''],
+            ['LVEF', c.ef !== undefined ? `${c.ef}%` : c.echo?.ef !== undefined ? `${c.echo.ef}%` : ''],
             ['Coronary Angiography', c.coronaryAngiography],
             ['Stents / Devices', c.stentsDevices || c.stents],
             ['Antiplatelets', c.antiplatelets],
