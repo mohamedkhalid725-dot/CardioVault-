@@ -446,6 +446,35 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         return table(x, y, widths, headers, rows, rowH, maxRows);
       };
 
+      // Measure-only twins of the drawing helpers (A2): same wrap math via
+      // splitTextToSize, no drawing. Single wrap truth feeds ensureSpace.
+      const measureParagraph = (w: number, h: number, value: any) => {
+        const lines = doc.splitTextToSize(val(value, '—'), w - 6) as string[];
+        return Math.max(h, 12 + lines.length * 3.6);
+      };
+      const measureTwoColumn = (w: number, rows: Array<[string, any]>) => {
+        const half = (w - 4) / 2;
+        let hh = 0;
+        for (let i = 0; i < rows.length; i += 2) {
+          const pair = rows.slice(i, i + 2);
+          const lineSets = pair.map(row => doc.splitTextToSize(val(row[1], '—'), half - 6) as string[]);
+          hh += Math.max(11, ...lineSets.map(lines => 8 + lines.length * 4.1)) + 2;
+        }
+        return hh;
+      };
+      const measureTable = (widths: number[], rows: string[][], rowH = 6.2, maxRows = 6) => {
+        let hh = rowH;
+        rows.slice(0, maxRows).forEach(row => {
+          const cellLines = widths.map((width, i) =>
+            doc.splitTextToSize(val(row[i], '—'), width - 3.4) as string[]
+          );
+          hh += Math.max(rowH, 3 + Math.max(...cellLines.map(lines => lines.length)) * 3.7);
+        });
+        return hh;
+      };
+      const measureTableOrEmpty = (widths: number[], rows: string[][], rowH = 6.2, maxRows = 6) =>
+        rows.length ? measureTable(widths, rows, rowH, maxRows) : 9;
+
       // Shared page-break guard (A1): closes the current page with a footer
       // and opens a fresh bannered continuation page. Both drawFirstPage and
       // drawSecondPage use this so body content never reaches the footer band.
@@ -477,12 +506,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         };
 
         if (has('overview')) {
-          const continued = ensureSpace('Patient Information', 65);
-          if (!continued) {
-            sectionTitle('Patient Information', 8, y, 194, 'patient');
-            y += 10;
-          }
-          y = twoColumnFields(8, y, 194, [
+          const overviewRows: Array<[string, any]> = [
             ['Primary Diagnosis', patient.primaryDiagnosis],
             ['Secondary Diagnoses', patient.secondaryDiagnoses],
             ['Allergies', (patient as any).allergies],
@@ -490,100 +514,120 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             ['Height', patient.height ? `${patient.height} cm` : ''],
             ['Code Status', patient.codeStatus],
             ['Conditions', (patient as any).additionalConditions],
-          ]);
+          ];
+          const continued = ensureSpace('Patient Information', 10 + measureTwoColumn(194, overviewRows));
+          if (!continued) {
+            sectionTitle('Patient Information', 8, y, 194, 'patient');
+            y += 10;
+          }
+          y = twoColumnFields(8, y, 194, overviewRows);
         }
 
         if (has('overview') || has('history')) {
-          const continued = ensureSpace('Clinical Summary & History', 75);
+          const summary: any = (patient as any).clinicalSummary || {};
+          const ex: any = (patient as any).examination || {};
+          const summaryValue = summary.summary || summary.hpi || patient.primaryDiagnosis;
+          const hpiValue = summary.hpi;
+          const examValue = ex.general?.appearance || ex.neurological?.gcs || ex.cardiovascular?.heartSounds;
+          const historyH = 2 + 10
+            + Math.max(measureParagraph(104, 27, summaryValue), measureParagraph(94, 27, summary.chiefComplaint)) + 3
+            + Math.max(measureParagraph(104, 27, hpiValue), measureParagraph(94, 27, examValue)) + 3;
+          const continued = ensureSpace('Clinical Summary & History', historyH);
           if (!continued) {
             y += 2;
             sectionTitle('Clinical Summary & History', 8, y, 104, 'history');
             sectionTitle('History / Examination', 108, y, 94, 'exam');
             y += 10;
           }
-          const summary: any = (patient as any).clinicalSummary || {};
-          const summaryH = paragraphBox(8, y, 104, 27, 'Clinical Summary', summary.summary || summary.hpi || patient.primaryDiagnosis, 170);
+          const summaryH = paragraphBox(8, y, 104, 27, 'Clinical Summary', summaryValue, 170);
           const complaintH = paragraphBox(108, y, 94, 27, 'Chief Complaint', summary.chiefComplaint, 130);
           y += Math.max(summaryH, complaintH) + 3;
-          const hpiH = paragraphBox(8, y, 104, 27, 'History of Present Illness', summary.hpi, 170);
-          const ex: any = (patient as any).examination || {};
-          const examH = paragraphBox(108, y, 94, 27, 'Examination', ex.general?.appearance || ex.neurological?.gcs || ex.cardiovascular?.heartSounds, 130);
+          const hpiH = paragraphBox(8, y, 104, 27, 'History of Present Illness', hpiValue, 170);
+          const examH = paragraphBox(108, y, 94, 27, 'Examination', examValue, 130);
           y += Math.max(hpiH, examH) + 3;
         }
 
         if (has('vitals')) {
-          const continued = ensureSpace('Vitals & Balance (Latest)', 55);
-          if (!continued) {
-            sectionTitle('Vitals & Balance (Latest)', 8, y, 96, 'vitals');
-            sectionTitle('Investigations (Latest)', 106, y, 96, 'labs');
-            y += 10;
-          }
-
           const v: any = (patient as any).vitalsHistory?.[0] || {};
-          const vitalsY = twoColumnFields(8, y, 96, [
+          const lab: any = (patient as any).labs?.[0] || {};
+          const vitalsRows: Array<[string, any]> = [
             ['BP', v.sbp ? `${v.sbp}/${val(v.dbp)} mmHg` : ''],
             ['HR', v.hr ? `${v.hr} bpm` : ''],
             ['RR', v.rr ? `${v.rr}/min` : ''],
             ['SpO₂', v.spo2 ? `${v.spo2}%` : ''],
             ['Temp', v.temp ? `${v.temp} °C` : ''],
             ['GCS', v.gcsTotal ? `${v.gcsTotal}/15` : ''],
-          ]);
-
-          const lab: any = (patient as any).labs?.[0] || {};
-          const labsY = table(106, y, [26, 24, 24, 22], ['Test', 'Result', 'Test', 'Result'], [
+          ];
+          const labsRows: string[][] = [
             ['Hb', val(lab.hb), 'WBC', val(lab.wbc)],
             ['Platelets', val(lab.platelets), 'Cr', val(lab.creatinine)],
             ['Na', val(lab.na), 'K', val(lab.k)],
             ['Troponin', val(lab.troponin), 'INR', val(lab.inr)],
-          ], 6.2, 4);
+          ];
+          const continued = ensureSpace('Vitals & Balance (Latest)',
+            10 + Math.max(measureTwoColumn(96, vitalsRows), measureTable([26, 24, 24, 22], labsRows, 6.2, 4)) + 3);
+          if (!continued) {
+            sectionTitle('Vitals & Balance (Latest)', 8, y, 96, 'vitals');
+            sectionTitle('Investigations (Latest)', 106, y, 96, 'labs');
+            y += 10;
+          }
+
+          const vitalsY = twoColumnFields(8, y, 96, vitalsRows);
+
+          const labsY = table(106, y, [26, 24, 24, 22], ['Test', 'Result', 'Test', 'Result'], labsRows, 6.2, 4);
 
           y = Math.max(vitalsY, labsY) + 3;
         }
 
         if (has('ecg')) {
-          const continued = ensureSpace('ECG (Latest)', 55);
+          const e: any = (patient as any).ecgRecords?.[0] || {};
+          const interpValue = e.finalImpression || e.interpretation?.join(' • ');
+          const ecgUrl = (e.imageUrls || [])[0];
+          const ecgDetailsValue = `HR ${val(e.heartRate)} • Rhythm ${val(e.rhythm)} • Axis ${val(e.axis)} • QTc ${val(e.qtc)}`;
+          const ecgRightH = ecgUrl ? 38 : measureParagraph(94, 38, ecgDetailsValue);
+          const continued = ensureSpace('ECG (Latest)',
+            10 + Math.max(measureParagraph(96, 38, interpValue), ecgRightH) + 3);
           if (!continued) {
             sectionTitle('ECG (Latest)', 8, y, 96, 'ecg');
             y += 10;
           }
-          const e: any = (patient as any).ecgRecords?.[0] || {};
-          const interpH = paragraphBox(8, y, 96, 38, 'Interpretation', e.finalImpression || e.interpretation?.join(' • '), 160);
+          const interpH = paragraphBox(8, y, 96, 38, 'Interpretation', interpValue, 160);
 
-          let ecgRightH = 38;
-          const ecgUrl = (e.imageUrls || [])[0];
+          let ecgDrawnH = ecgRightH;
           if (ecgUrl) {
             const data = await imageData(ecgUrl);
             if (data) {
               try {
                 doc.addImage(data, 'JPEG', 108, y, 94, 38, undefined, 'FAST');
               } catch {
-                ecgRightH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
+                ecgDrawnH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
               }
             } else {
-              ecgRightH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
+              ecgDrawnH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
             }
           } else {
-            ecgRightH = paragraphBox(108, y, 94, 38, 'ECG Details', `HR ${val(e.heartRate)} • Rhythm ${val(e.rhythm)} • Axis ${val(e.axis)} • QTc ${val(e.qtc)}`, 130);
+            ecgDrawnH = paragraphBox(108, y, 94, 38, 'ECG Details', ecgDetailsValue, 130);
           }
-          y = Math.max(interpH, ecgRightH) + 3;
+          y = Math.max(interpH, ecgDrawnH) + 3;
         }
 
         if (has('cardiology')) {
-          const continued = ensureSpace('Echocardiography (Latest)', 55);
-          if (!continued) {
-            sectionTitle('Echocardiography (Latest)', 8, y, 194, 'echo');
-            y += 10;
-          }
           const echo: any = (patient as any).cardiology?.echo || {};
-          // P5: consume the block end so any following content flows correctly.
-          y = twoColumnFields(8, y, 194, [
+          const echoRows: Array<[string, any]> = [
             ['LVEF', echo.ef !== undefined ? `${echo.ef}%` : ''],
             ['LV Function', echo.lvFunction],
             ['RWMA', echo.rwma],
             ['RV Function', echo.rvFunction],
             ['Valvular Disease', echo.otherFindings],
             ['Summary', (patient as any).cardiology?.echoBriefSummary],
-          ]) + 3;
+          ];
+          const continued = ensureSpace('Echocardiography (Latest)', 10 + measureTwoColumn(194, echoRows) + 3);
+          if (!continued) {
+            sectionTitle('Echocardiography (Latest)', 8, y, 194, 'echo');
+            y += 10;
+          }
+          // P5: consume the block end so any following content flows correctly.
+          y = twoColumnFields(8, y, 194, echoRows) + 3;
         }
 
         footer();
@@ -607,90 +651,105 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         };
 
         if (has('medications')) {
-          const continued = ensureSpace('Medications (Current)', 50);
+          const meds: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
+          const medsRows: string[][] = meds.map(m => [
+            val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency),
+          ]);
+          const infusions: any[] = (patient as any).infusions || (patient as any).activeInfusions || [];
+          const infRows: string[][] = infusions.map(i => [
+            val(i.name || i.drug), val(i.rate || i.dose), compact(i.indication, 22),
+          ]);
+          const continued = ensureSpace('Medications (Current)',
+            10 + Math.max(
+              measureTableOrEmpty([40, 23, 22, 27], medsRows, 6.2, 6),
+              measureTableOrEmpty([30, 25, 25], infRows, 6.2, 6)) + 3);
           if (!continued) {
             sectionTitle('Medications (Current)', 8, y, 112, 'meds');
             sectionTitle('Infusions (Current)', 122, y, 80, 'infusions');
             y += 10;
           }
 
-          const meds: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
-          const medsY = tableOrEmpty(8, y, [40, 23, 22, 27], ['Drug', 'Dose', 'Route', 'Frequency'], meds.map(m => [
-            val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency),
-          ]), 'medications', 6.2, 6);
+          const medsY = tableOrEmpty(8, y, [40, 23, 22, 27], ['Drug', 'Dose', 'Route', 'Frequency'], medsRows, 'medications', 6.2, 6);
 
-          const infusions: any[] = (patient as any).infusions || (patient as any).activeInfusions || [];
-          const infY = tableOrEmpty(122, y, [30, 25, 25], ['Drug', 'Rate', 'Indication'], infusions.map(i => [
-            val(i.name || i.drug), val(i.rate || i.dose), compact(i.indication, 22),
-          ]), 'infusions', 6.2, 6);
+          const infY = tableOrEmpty(122, y, [30, 25, 25], ['Drug', 'Rate', 'Indication'], infRows, 'infusions', 6.2, 6);
 
           y = Math.max(medsY, infY) + 3;
         }
 
         if (has('procedures')) {
-          const continued = ensureSpace('Procedures & Interventions', 43);
+          const procedures: any[] = (patient as any).procedures || [];
+          const procRows: string[][] = procedures.map(p => [
+            val(p.date), val(p.procedure || p.name || p.surgeryName), compact(p.outcome || p.findings || p.indication, 40),
+          ]);
+          const devices: any[] = (patient as any).devices || (patient as any).lines || [];
+          const devRows: string[][] = devices.map(d => [
+            val(d.device || d.name || d.type), val(d.site), val(d.date),
+          ]);
+          const continued = ensureSpace('Procedures & Interventions',
+            10 + Math.max(
+              measureTableOrEmpty([25, 45, 42], procRows, 6.2, 5),
+              measureTableOrEmpty([28, 25, 27], devRows, 6.2, 5)) + 3);
           if (!continued) {
             sectionTitle('Procedures & Interventions', 8, y, 112, 'procedures');
             sectionTitle('Lines & Devices', 122, y, 80, 'devices');
             y += 10;
           }
 
-          const procedures: any[] = (patient as any).procedures || [];
-          const procY = tableOrEmpty(8, y, [25, 45, 42], ['Date', 'Procedure', 'Details'], procedures.map(p => [
-            val(p.date), val(p.procedure || p.name || p.surgeryName), compact(p.outcome || p.findings || p.indication, 40),
-          ]), 'procedures', 6.2, 5);
+          const procY = tableOrEmpty(8, y, [25, 45, 42], ['Date', 'Procedure', 'Details'], procRows, 'procedures', 6.2, 5);
 
-          const devices: any[] = (patient as any).devices || (patient as any).lines || [];
-          const devY = tableOrEmpty(122, y, [28, 25, 27], ['Device', 'Site', 'Date'], devices.map(d => [
-            val(d.device || d.name || d.type), val(d.site), val(d.date),
-          ]), 'lines & devices', 6.2, 5);
+          const devY = tableOrEmpty(122, y, [28, 25, 27], ['Device', 'Site', 'Date'], devRows, 'lines & devices', 6.2, 5);
 
           y = Math.max(procY, devY) + 3;
         }
 
         if (has('cardiology')) {
-          const continued = ensureSpace('Cardiology', 42);
-          if (!continued) {
-            sectionTitle('Cardiology', 8, y, 96, 'cardiology');
-            sectionTitle('ICU', 106, y, 96, 'icu');
-            y += 10;
-          }
-
           const c: any = (patient as any).cardiology || {};
-          const cardY = twoColumnFields(8, y, 96, [
+          const cardRows: Array<[string, any]> = [
             ['Diagnosis', c.diagnosis || patient.primaryDiagnosis],
             ['LVEF', c.ef !== undefined ? `${c.ef}%` : c.echo?.ef !== undefined ? `${c.echo.ef}%` : ''],
             ['Coronary Angiography', c.coronaryAngiography],
             ['Stents / Devices', c.stentsDevices || c.stents],
             ['Antiplatelets', c.antiplatelets],
             ['Anticoagulation', c.anticoagulation],
-          ]);
-
+          ];
           const icu: any = (patient as any).icu || {};
-          const icuY = twoColumnFields(106, y, 96, [
+          const icuRows: Array<[string, any]> = [
             ['Ventilator', icu.ventilator || (patient as any).ventilator?.mode],
             ['Sedation', icu.sedation],
             ['Vasopressors', icu.vasopressors],
             ['Neurological Status', icu.neurologicalStatus || icu.gcs],
             ['SOFA', icu.sofa],
             ['APACHE II', icu.apacheII],
-          ]);
+          ];
+          const continued = ensureSpace('Cardiology',
+            10 + Math.max(measureTwoColumn(96, cardRows), measureTwoColumn(96, icuRows)) + 3);
+          if (!continued) {
+            sectionTitle('Cardiology', 8, y, 96, 'cardiology');
+            sectionTitle('ICU', 106, y, 96, 'icu');
+            y += 10;
+          }
+
+          const cardY = twoColumnFields(8, y, 96, cardRows);
+
+          const icuY = twoColumnFields(106, y, 96, icuRows);
 
           y = Math.max(cardY, icuY) + 3;
         }
 
         if (has('progress')) {
-          const continued = ensureSpace('Progress Notes (Latest)', 40);
+          const notes: any[] = (patient as any).progressNotes || [];
+          const notesRows: string[][] = notes.map(n => [
+            `${val(n.date)} ${val(n.time)}`,
+            compact(n.author, 22),
+            compact(n.assessment || n.plan || n.events || n.note, 105),
+          ]);
+          const continued = ensureSpace('Progress Notes (Latest)',
+            10 + measureTableOrEmpty([31, 38, 125], notesRows, 6.2, 5) + 3);
           if (!continued) {
             sectionTitle('Progress Notes (Latest)', 8, y, 194, 'progress');
             y += 10;
           }
-          const notes: any[] = (patient as any).progressNotes || [];
-          y = tableOrEmpty(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notes.map(n => [
-            `${val(n.date)} ${val(n.time)}`,
-            compact(n.author, 22),
-            compact(n.assessment || n.plan || n.events || n.note, 105),
-          ]), 'progress notes', 6.2, 5) + 3;
+          y = tableOrEmpty(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notesRows, 'progress notes', 6.2, 5) + 3;
         }
 
         if (has('calculators') || has('timeline') || has('overview')) {
