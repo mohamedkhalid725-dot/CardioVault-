@@ -14,6 +14,8 @@ export type ClinicalAction =
   | 'edit_physician_plan'
   | 'create_medication_order'
   | 'modify_medication_order'
+  | 'propose_medication'
+  | 'approve_medication_proposal'
   | 'order_investigation'
   | 'review_investigation'
   | 'clinical_documentation'
@@ -38,7 +40,12 @@ export interface ActionContext {
   unitId?: string;
   patientId?: string;
   targetRole?: ClinicalRole;
+  /** Role of the member being managed (used to block touching department_admin). */
+  targetUserRole?: ClinicalRole;
 }
+
+/** Single master account allowed to hold/grant department_admin. Mirrors workspaceAccess MASTER_ACCOUNT_EMAIL. */
+export const MASTER_ADMIN_EMAIL = 'mohamedkhalid725@gmail.com';
 
 export const PRESET_USERS: UserProfile[] = [];
 
@@ -108,9 +115,10 @@ export const AuthorizationService = {
   resolveUserForFirebaseAuth(firebaseUser: { uid: string; email?: string | null; displayName?: string | null }): UserProfile {
     const users = this.getUsers();
     const cleanEmail = (firebaseUser.email || '').trim().toLowerCase();
+    const isMaster = cleanEmail === MASTER_ADMIN_EMAIL;
 
-    // Check if owner
-    if (cleanEmail === 'mohamedkhalid725@gmail.com') {
+    // Check if owner — ONLY the master email ever resolves to department_admin.
+    if (isMaster) {
       const ownerProfile: UserProfile = {
         userId: firebaseUser.uid,
         name: firebaseUser.displayName || 'Dr. Mohamed Khalid',
@@ -127,10 +135,20 @@ export const AuthorizationService = {
       return ownerProfile;
     }
 
-    // Check if existing user by email or uid
+    // Check if existing user by email or uid.
+    // Never auto-elevate: a stored department_admin role is only honoured for
+    // the master email; any other account holding it (stale/legacy data) is
+    // demoted to resident until the master re-grants a proper role.
     const existing = users.find(u => (cleanEmail && u.email.toLowerCase() === cleanEmail) || u.userId === firebaseUser.uid);
     if (existing) {
-      const updated: UserProfile = normalizeUserProfile({ ...existing, userId: firebaseUser.uid, name: firebaseUser.displayName || existing.name });
+      const stored = normalizeUserProfile(existing);
+      const safeRole: UserProfile['role'] =
+        stored.role === 'department_admin' && !isMaster ? 'resident' : stored.role;
+      if (safeRole !== stored.role) {
+        const repaired = users.map(u => (u.userId === stored.userId || (cleanEmail && u.email.toLowerCase() === cleanEmail)) ? { ...u, role: safeRole } : u);
+        this.saveUsers(repaired);
+      }
+      const updated: UserProfile = normalizeUserProfile({ ...existing, role: safeRole, userId: firebaseUser.uid, name: firebaseUser.displayName || existing.name });
       this.setCurrentUser(updated);
       return updated;
     }
@@ -253,16 +271,27 @@ export const AuthorizationService = {
       }
     }
 
-    // 3. Unit Scope Check
+    // 3. Unit Scope Check — ONLY department_admin sees all units implicitly.
+    // Consultant/specialist/resident/nurse/viewer must hold the unit (or a
+    // valid temporary assignment / active break-glass override).
     if (context.unitId) {
       const isUnitAssigned = user.assignedUnitIds.includes(context.unitId);
       const isTempAssigned = this.hasValidTemporaryUnit(user, context.unitId);
       const isBreakGlass = !!this.hasActiveBreakGlass(context.unitId, context.patientId);
-      const isAdminOrConsultant = user.role === 'department_admin' || user.role === 'consultant';
+      const isAdmin = user.role === 'department_admin';
 
-      if (!isUnitAssigned && !isTempAssigned && !isBreakGlass && !isAdminOrConsultant) {
+      if (!isUnitAssigned && !isTempAssigned && !isBreakGlass && !isAdmin) {
         return false;
       }
+    }
+
+    // 3b. department_admin grant guard: only the master account may grant
+    // department_admin (or touch an existing admin). Mirrors workspaceAccess.
+    if ((action === 'assign_role' || action === 'manage_users') && context.targetRole === 'department_admin') {
+      return user.email.trim().toLowerCase() === MASTER_ADMIN_EMAIL;
+    }
+    if ((action === 'assign_role' || action === 'assign_unit' || action === 'manage_users') && context.targetUserRole === 'department_admin') {
+      return user.email.trim().toLowerCase() === MASTER_ADMIN_EMAIL;
     }
 
     // 4. Role-specific rules
@@ -273,8 +302,10 @@ export const AuthorizationService = {
 
       case 'nurse':
         // Nurse permissions:
-        // ALLOW: Vitals, I/O, Nursing Note, Medication Administration, Device, Task, Handover, View
-        // DENY: Edit physician diagnosis, Edit physician plan, Modify/Order medication, Manage users, Change roles/units, Modify audit logs
+        // ALLOW: Vitals, I/O, Nursing Note, Medication Administration, Device,
+        //   Task, Handover, View, PROPOSE medication (goes to doctor approval queue).
+        // DENY: direct medication orders (create/modify → must propose),
+        //   physician diagnosis/plan, user management, audit modification.
         switch (action) {
           case 'view_unit':
           case 'view_patient':
@@ -286,7 +317,9 @@ export const AuthorizationService = {
           case 'manage_tasks':
           case 'shift_handover':
           case 'export_pdf':
+          case 'propose_medication':
             return true;
+          case 'approve_medication_proposal':
           case 'edit_physician_diagnosis':
           case 'edit_physician_plan':
           case 'create_medication_order':
@@ -302,25 +335,49 @@ export const AuthorizationService = {
         }
 
       case 'resident':
-        // Resident permissions:
-        // ALLOW: Clinical documentation, Vitals, Labs, ABG, ECG, investigations, medications, infusions, procedures, progress notes, consultations, tasks, handover, admission/transfer/discharge
-        // DENY: User/security administration
+        // Resident = daily clinical work inside own units. Can approve nurse
+        // medication proposals. CANNOT manage members (no assign_role/assign_unit).
         switch (action) {
           case 'manage_users':
           case 'assign_role':
           case 'assign_unit':
           case 'manage_department_settings':
             return false;
+          case 'approve_medication_proposal':
+            return true;
           default:
             return true;
         }
 
-      case 'consultant':
       case 'specialist':
-        // Consultant / Specialist:
-        // Broad clinical access within department. Administrative user management is reserved for Department Admin.
+        // Specialist = resident + can close consults / review critical results.
+        // Still NO member management (reserved for consultant-in-own-units + admin).
         if (action === 'manage_users' || action === 'assign_role' || action === 'assign_unit' || action === 'manage_department_settings') {
           return false;
+        }
+        return true;
+
+      case 'consultant':
+        // Consultant = specialist + member management INSIDE OWN ASSIGNED UNITS:
+        // may accept members, set their role (never department_admin), and
+        // assign/remove unit membership — only for units the consultant holds.
+        // Cannot grant units they don't have; cannot touch department_admin.
+        if (action === 'manage_department_settings') {
+          return false;
+        }
+        if (action === 'manage_users' && !context.unitId) {
+          return false;
+        }
+        if (action === 'assign_role' || action === 'assign_unit') {
+          if (context.targetRole === 'department_admin') return false;
+          if (context.targetUserRole === 'department_admin') return false;
+          if (!context.unitId) return false;
+          if (!user.assignedUnitIds.includes(context.unitId)) return false;
+          return true;
+        }
+        if (action === 'manage_users') {
+          if (!context.unitId) return false;
+          return user.assignedUnitIds.includes(context.unitId);
         }
         return true;
 
@@ -337,9 +394,11 @@ export const AuthorizationService = {
 
   /**
    * Helper to filter list of units according to user scope.
+   * ONLY department_admin sees all units; consultant and all other roles see
+   * only assigned units (+ valid temporary assignment / break-glass).
    */
   filterAuthorizedUnits<T extends { id: string }>(units: T[], user: UserProfile): T[] {
-    if (user.role === 'department_admin' || user.role === 'consultant') {
+    if (user.role === 'department_admin') {
       return units;
     }
     return units.filter(unit => {
@@ -352,9 +411,11 @@ export const AuthorizationService = {
 
   /**
    * Helper to filter list of patients according to user scope.
+   * ONLY department_admin sees all patients; all other roles (including
+   * consultant) are scoped to assigned units (+ temp / break-glass).
    */
   filterAuthorizedPatients<T extends { unitId: string; id: string }>(patients: T[], user: UserProfile): T[] {
-    if (user.role === 'department_admin' || user.role === 'consultant') {
+    if (user.role === 'department_admin') {
       return patients;
     }
     return patients.filter(patient => {

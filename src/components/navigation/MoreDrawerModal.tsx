@@ -107,8 +107,8 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-sm h-full flex flex-col border-l border-slate-200 dark:border-slate-800 shadow-2xl">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-sm h-dvh flex flex-col border-l border-slate-200 dark:border-slate-800 shadow-2xl">
+        <div className="p-4 safe-modal-header border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-slate-900 dark:text-white text-base">Department Hub</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">Cardiology Department • More Tools</p>
@@ -152,7 +152,7 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
           })}
         </div>
 
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+        <div className="p-3 safe-modal-footer border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>Role: <strong className="text-cyan-500 uppercase">{currentUser.role.replace('_', ' ')}</strong></span>
             <span>CardioVault v2.1</span>
