@@ -163,6 +163,9 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       const pale = [232, 245, 248];
       const white = [255, 255, 255];
       let page = 1;
+      // Arabic names render as a canvas image below the baseline, so the
+      // banner grows and the following lines shift down. Latin path untouched.
+      const hasArabicName = /[\u0600-\u06FF]/.test(String(patient.fullName || ''));
 
       const fill = (c: number[]) => doc.setFillColor(c[0], c[1], c[2]);
       const draw = (c: number[]) => doc.setDrawColor(c[0], c[1], c[2]);
@@ -228,9 +231,14 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       };
 
       const patientBanner = () => {
+        const bannerH = hasArabicName ? 28 : 25;
+        const nameY = hasArabicName ? 44 : 45;
+        const nameSize = hasArabicName ? 12 : 13;
+        const mrnY = hasArabicName ? 52.5 : 51;
+        const admissionY = hasArabicName ? 57.5 : 56;
         fill([246, 251, 252]);
         draw(line);
-        doc.roundedRect(8, 35, 194, 25, 2.5, 2.5, 'FD');
+        doc.roundedRect(8, 35, 194, bannerH, 2.5, 2.5, 'FD');
 
         fill([218, 239, 243]);
         doc.circle(21, 47.5, 7.5, 'F');
@@ -239,9 +247,9 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.roundedRect(17.5, 48, 7, 4.5, 1.5, 1.5, 'F');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(13);
+        doc.setFontSize(nameSize);
         text(navy);
-        doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', 33, 45);
+        doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', 33, nameY);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
@@ -249,12 +257,12 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.text(
           `MRN: ${val(patient.mrn)}   •   Age/Sex: ${val(patient.age)} / ${val(patient.sex)}   •   Unit: ${val(unit?.name)}   •   Bed: ${val(bed?.bedNumber)}`,
           33,
-          51
+          mrnY
         );
         doc.text(
           `Admission: ${val(patient.admissionDate)} ${val(patient.admissionTime)}   •   Status: ${val(patient.status, 'Active')}`,
           33,
-          56
+          admissionY
         );
 
         fill(teal);
@@ -420,7 +428,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         header();
         patientBanner();
 
-        let y = 65;
+        let y = hasArabicName ? 68 : 65;
 
         if (has('overview')) {
           sectionTitle('Patient Information', 8, y, 194, 'patient');
@@ -524,7 +532,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         header();
         patientBanner();
 
-        let y = 65;
+        let y = hasArabicName ? 68 : 65;
 
         if (has('medications')) {
           sectionTitle('Medications (Current)', 8, y, 112, 'meds');
@@ -632,7 +640,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           page = doc.getNumberOfPages();
           header();
           patientBanner();
-          sectionTitle(title + ' • Continued', 8, 65, 194, 'notes');
+          sectionTitle(title + ' • Continued', 8, hasArabicName ? 68 : 65, 194, 'notes');
           table(8, 75, widths, headers, chunk, 6.2, chunk.length);
         }
       };
