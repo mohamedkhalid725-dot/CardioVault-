@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardPlus, X, Mic, Square, Loader2, Sparkles } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { VoiceRecorder } from 'capacitor-voice-recorder';
-import { uploadClinicalMedia } from '../../services/mediaStorage';
 import { Patient, ProgressNote } from '../../types/clinical';
 import { useApp } from '../../context/AppContext';
 import { AITechnicalDetails, transcribeMedicalVoice } from '../../services/aiLogic';
+import { withVoiceTimeout, requestVoiceConsent } from '../../services/voicePipeline';
 import { AIDataWarning } from './AIDataWarning';
 
 interface Props { patient: Patient; onClose: () => void; }
@@ -82,13 +82,14 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const startRecording = async () => {
     if (recording || recordingBusy) return;
     setRecordingBusy(true);
+    if (!requestVoiceConsent()) { setRecordingBusy(false); return; }
     try {
       if (Capacitor.isNativePlatform()) {
-        const capability = await VoiceRecorder.canDeviceVoiceRecord();
+        const capability = await withVoiceTimeout(VoiceRecorder.canDeviceVoiceRecord(), 'recorder check');
         if (!capability.value) throw new Error('Voice recording is not supported on this device.');
-        const permission = await VoiceRecorder.requestAudioRecordingPermission();
+        const permission = await withVoiceTimeout(VoiceRecorder.requestAudioRecordingPermission(), 'microphone permission');
         if (!permission.value) throw new Error('Microphone permission was denied.');
-        await VoiceRecorder.startRecording();
+        await withVoiceTimeout(VoiceRecorder.startRecording(), 'recorder start');
         startTimer();
         setRecording(true);
         showToast('Voice recording started.', 'info');
@@ -99,7 +100,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
         throw new Error('Audio recording is not supported in this browser.');
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await withVoiceTimeout(navigator.mediaDevices.getUserMedia({ audio: true }), 'microphone access');
       const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
       const mimeType = preferredTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -170,7 +171,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
     if (!audioBlob || aiBusy) return;
     setAiBusy(true);
     try {
-      const result = await transcribeMedicalVoice(audioBlob);
+      const result = await withVoiceTimeout(transcribeMedicalVoice(audioBlob), 'voice transcription', 45000);
       setAiDraft(result.medicalEnglish || result.transcription || '');
       showToast('AI transcription is ready for review. Nothing was saved automatically.','success');
     } catch (error:any) {
@@ -185,8 +186,8 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const save = async () => {
     if (saving || recording) return;
     const value = (aiDraft.trim() || text.trim());
-    if (!value && !audioBlob) {
-      showToast('Add a note or record a voice note first.', 'error');
+    if (!value) {
+      showToast(audioBlob ? 'Transcribe the recording first. Audio is not stored.' : 'Add a note or record a voice note first.', 'error');
       return;
     }
 
@@ -194,16 +195,6 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
     try {
       const now = new Date();
       const id = `quick-${Date.now()}`;
-      let savedAudioUrl: string | undefined;
-      let audioStoragePath: string | undefined;
-
-      if (audioBlob) {
-        const extension = audioBlob.type.includes('aac') ? 'aac' : audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
-        const path = `patients/${patient.id}/quick-records/${id}.${extension}`;
-        const uploaded = await uploadClinicalMedia(audioBlob, path);
-        savedAudioUrl = uploaded.url;
-        if (uploaded.cloud) audioStoragePath = path;
-      }
 
       const note: ProgressNote = {
         id,
@@ -214,10 +205,7 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
         subjective: '',
         objective: '',
         assessment: value,
-        plan: value || 'Audio clinical record',
-        audioUrl: savedAudioUrl,
-        audioStoragePath,
-        audioDurationSeconds: duration,
+        plan: value || 'Clinical record',
         updatedAt: now.toISOString(),
       };
 
