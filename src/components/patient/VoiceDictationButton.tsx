@@ -1,6 +1,7 @@
 import React,{useEffect,useId,useRef,useState}from'react';
 import{Loader2,Mic,Square,X,Sparkles}from'lucide-react';
 import{Capacitor}from'@capacitor/core';
+import{FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import{VoiceRecorder}from'capacitor-voice-recorder';
 import{AI_MODEL,AI_TEST_DATA_ONLY}from'../../config/aiConfig';
 import{transcribeMedicalVoice}from'../../services/aiLogic';
@@ -22,6 +23,9 @@ const base64ToBlob=(base64:string,mimeType:string)=>{const clean=base64.includes
 let activeRecorderId:string|null=null;
 const claim=(id:string)=>{if(activeRecorderId&&activeRecorderId!==id)return false;activeRecorderId=id;return true;};
 const release=(id:string)=>{if(activeRecorderId===id)activeRecorderId=null;};
+// Cloud (Firebase AI) denial detector: SafeAIError carries
+// details.category==='auth_app_check'; match the message too for wrapped errors.
+const isAuthAppCheckError=(e:any)=>e?.details?.category==='auth_app_check'||/app.?check|not signed in|sign in again|AI access was denied/i.test(String(e?.message||''));
 
 export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false,fieldLabel='clinical field',useLive=false})=>{
  const id=useId();const{showToast,currentPatient}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);
@@ -64,6 +68,8 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
  const handlePointerUp=()=>clearPressTimer();
  const handleContextMenu=(e:React.MouseEvent)=>{if(!Capacitor.isNativePlatform())return;e.preventDefault();clearPressTimer();void startImpl(true);};
  const stop=async()=>{
+  // Set when the cloud denial below falls back to a fresh on-device live session.
+  let fellBackToLive=false;
   if(!recording||busy)return;setBusy(true);setError('');
   // Layer 1 result: stop live recognition, then polish (layer 2). The
   // transcription is always kept so a polish failure loses nothing.
@@ -77,12 +83,36 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
     const recorder=webRecorderRef.current;if(!recorder)throw new Error('The browser recorder is not available.');blob=await new Promise<Blob>((resolve,reject)=>{recorder.onstop=()=>{try{streamRef.current?.getTracks().forEach(t=>t.stop());resolve(new Blob(chunksRef.current,{type:recorder.mimeType||'audio/webm'}));}catch(e){reject(e);}};recorder.stop();});
     webRecorderRef.current=null;
    }
+   // Native sign-in pre-check: cloud transcription needs a valid Firebase
+   // session. A missing session throws into the catch below, which falls
+   // back to on-device recognition instead of a dead-end error.
+   if(Capacitor.isNativePlatform()){
+    let signedIn=false;
+    try{const current=await withVoiceTimeout(FirebaseAuthentication.getCurrentUser(),'sign-in check',8000);signedIn=!!current?.user?.uid;}catch{signedIn=false;}
+    if(!signedIn)throw new Error('You are not signed in. Please sign in again, then retry voice transcription.');
+   }
    setRecording(false);setBusy(true);const result=await withVoiceTimeout(transcribeMedicalVoice(blob),'voice transcription',45000);setDraft(result.medicalEnglish||result.transcription||'');setTranscription(result.transcription||'');setFallback(result.model!==AI_MODEL);setPipelineUsed(false);setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');
   }catch(e:any){
+   // Cloud denied this device (sign-in/App Check): fall back to on-device
+   // live recognition automatically. The physician speaks again into the
+   // system popup; the local-only recorder audio is discarded, nothing
+   // clinical is lost (nothing was transcribed yet).
+   if(isAuthAppCheckError(e)&&Capacitor.isNativePlatform()){
+    try{
+     const session=await startLiveRecognition();liveSessionRef.current=session;fellBackToLive=true;
+     setRecording(true);setBusy(false);setError('');
+     showToast('Cloud transcription was blocked on this device (sign-in or App Check). On-device recognition started — speak in the voice popup, then tap the mic to stop.','info');
+     return;
+    }catch(liveError:any){
+     const liveMsg=String(e?.message||'AI voice transcription failed.')+' On-device fallback also failed ('+String((liveError as any)?.message||'unknown error')+').';
+     setError(liveMsg);showToast(liveMsg,'error');
+    }
+   }else{
    const retry=Number(e?.details?.retryAfterSeconds||0);if(e?.details?.httpStatus===429&&retry>0)setCooldown(retry);
    const msg=e?.details?.httpStatus===429&&retry>0?'AI limit reached, try again in ~'+retry+' seconds':String(e?.message||'AI voice transcription failed.');
    setError(msg);showToast(msg,'error');
-  }finally{setRecording(false);setBusy(false);release(id);}
+   }
+  }finally{if(fellBackToLive){setBusy(false);}else{setRecording(false);setBusy(false);release(id);}}
  };
  const apply=()=>{const clean=draft.trim();if(!clean)return;const base=value.trimEnd();const combined=base?base+'\\n'+clean:clean;onApply(combined);setOpen(false);setDraft('');setTranscription('');showToast('AI draft inserted. Review the field and save it yourself.','success');};
   // Safety net (B-D): one tap inserts the untouched transcription when the polished draft is wrong.

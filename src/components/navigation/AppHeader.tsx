@@ -63,7 +63,7 @@ export const AppHeader: React.FC = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-40 safe-top bg-white/95 dark:bg-[#0B111E]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-3 sm:px-4 py-2.5">
+      <header className="sticky top-0 z-40 safe-top animate-cardiovault-header-glow bg-white/95 dark:bg-[#0B111E]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-3 sm:px-4 py-2.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             <button onClick={() => setCurrentView('home')} className="flex items-center gap-2.5 text-left"><CardioLogo size="sm" showText={true} showSubtitle={false} /></button>

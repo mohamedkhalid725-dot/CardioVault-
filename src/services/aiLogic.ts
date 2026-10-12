@@ -1,6 +1,23 @@
+// OWNER FIREBASE-CONSOLE CHECKLIST (native voice uses the SAME Firebase AI
+// engine as web — these console steps are manual and cannot be done in code):
+// 1. Firebase console → Project settings → register the ANDROID app with the
+//    exact applicationId/package name + the SHA-256 of the signing cert.
+//    Add BOTH the debug keystore SHA-256 (field/debug APKs) and the release
+//    keystore SHA-256 (signed release APK/AAB).
+// 2. Firebase console → App Check → Apps → select the Android app → enforce
+//    Play Integrity as the provider. For debug/field APKs: run the app once,
+//    copy the "App Check debug token" from logcat, and register it under
+//    App Check → Manage debug tokens. Rebuild/reinstall after console changes.
+// 3. Google Cloud console → Credentials → the API key used by the app →
+//    Application restrictions → add the Android app (package name + SHA-1).
+//    Enable Play Integrity API for the project (Play Console link if asked).
+// 4. Firebase console → App Check → APIs → enforce Firebase AI Logic only
+//    AFTER steps 1-3 verify green; otherwise native calls are rejected while
+//    web (reCAPTCHA Enterprise) keeps working.
 import { FirebaseAppCheck } from '@capacitor-firebase/app-check';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { Capacitor } from '@capacitor/core';
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, CustomProvider } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { getRemoteConfig, fetchAndActivate, getString } from 'firebase/remote-config';
 import { firebaseApp } from './webFirebase';
@@ -12,6 +29,16 @@ export { AI_DATA_WARNING_PLACEHOLDER };
 let appCheckPromise: Promise<void> | null = null;
 let aiRequestInFlight: Promise<GeneratedAIResponse> | null = null;
 const requestTimes: number[] = [];
+// Watchdog for native pre-flight awaits (VA-1 spirit): the native voice
+// start chain must never hang forever, and neither may this session check.
+const NATIVE_AI_PREFLIGHT_TIMEOUT_MS = 15000;
+function withNativeAIPreflightTimeout<T>(work: Promise<T>, stage: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`AI pre-flight timed out at ${stage}. Please try again.`)), NATIVE_AI_PREFLIGHT_TIMEOUT_MS);
+  });
+  return Promise.race([work.finally(() => { if (timer !== undefined) clearTimeout(timer); }), timeout]);
+}
 export async function initializeCardioVaultAppCheck(): Promise<void> {
   if (!appCheckPromise) {
     appCheckPromise = (async () => {
@@ -20,6 +47,31 @@ export async function initializeCardioVaultAppCheck(): Promise<void> {
           debugToken: import.meta.env.VITE_AI_APPCHECK_DEBUG === 'true',
           isTokenAutoRefreshEnabled: true,
         });
+        // Bridge the NATIVE (Play Integrity / debug) App Check token into
+        // the Firebase JS SDK so firebase/ai (getAI) attaches
+        // X-Firebase-AppCheck on native. The JS SDK cannot see the native
+        // token on its own; without this bridge every native AI call goes
+        // out with no App Check header and is rejected once enforcement is
+        // on — while web keeps working via reCAPTCHA Enterprise below.
+        try {
+          initializeAppCheck(firebaseApp, {
+            provider: new CustomProvider({
+              getToken: async () => {
+                const { token, expireTimeMillis } = await FirebaseAppCheck.getToken();
+                if (!token) throw new Error('Firebase App Check did not return a token on this device.');
+                // CustomProvider requires expireTimeMillis; the native SDK
+                // normally supplies it, otherwise assume a 1-hour lifetime.
+                return { token, expireTimeMillis: expireTimeMillis || Date.now() + 60 * 60 * 1000 };
+              },
+            }),
+            isTokenAutoRefreshEnabled: true,
+          });
+        } catch (error: any) {
+          // initializeAppCheck throws already-initialized when called with
+          // different options; the memo above prevents this in practice, but
+          // a raced double-init must reuse the existing instance, not fail.
+          if (!String(error?.message || error?.code || '').toLowerCase().includes('already')) throw error;
+        }
         return;
       }
       const siteKey = String(import.meta.env.VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY || '').trim();
@@ -159,6 +211,54 @@ export interface GeneratedAIResponse {
   model: string;
 }
 
+// SAME-ENGINE native pre-flight (native only, web untouched): sign-in lives
+// in the native SDK (@capacitor-firebase/authentication), which the Firebase
+// JS SDK cannot see. Confirm that native session exists and is fresh BEFORE
+// getAI, so failures surface as actionable messages (not-signed-in vs
+// App Check) instead of a generic access-denied dead end.
+async function ensureNativeAISession(): Promise<void> {
+  let nativeUser: any = null;
+  try {
+    const current = await withNativeAIPreflightTimeout(FirebaseAuthentication.getCurrentUser(), 'native auth session');
+    nativeUser = current?.user || null;
+  } catch {
+    nativeUser = null;
+  }
+  if (!nativeUser?.uid) {
+    throw new SafeAIError('You are not signed in. Please sign in again, then retry voice transcription.', {
+      category: 'auth_app_check',
+      code: 'NATIVE_NOT_SIGNED_IN',
+      httpStatus: 401,
+      model: AI_MODEL,
+      retryAfterSeconds: null,
+    });
+  }
+  try {
+    await withNativeAIPreflightTimeout(FirebaseAuthentication.getIdToken({ forceRefresh: false }), 'native auth token refresh');
+  } catch {
+    throw new SafeAIError('Your sign-in session expired on this device. Please sign out and sign in again, then retry.', {
+      category: 'auth_app_check',
+      code: 'NATIVE_TOKEN_REFRESH',
+      httpStatus: 401,
+      model: AI_MODEL,
+      retryAfterSeconds: null,
+    });
+  }
+  try {
+    const { token } = await withNativeAIPreflightTimeout(FirebaseAppCheck.getToken(), 'native App Check token');
+    if (!token) throw new Error('empty App Check token');
+  } catch (error) {
+    if (error instanceof SafeAIError) throw error;
+    throw new SafeAIError('App Check failed on this device (Play Integrity / debug token). The owner must register this build in the Firebase console, then try again.', {
+      category: 'auth_app_check',
+      code: 'NATIVE_APPCHECK_TOKEN',
+      httpStatus: 403,
+      model: AI_MODEL,
+      retryAfterSeconds: null,
+    });
+  }
+}
+
 async function generateOnce(parts: any[], modelName: string): Promise<GeneratedAIResponse> {
   try {
     const result = await getModel(modelName).generateContent(parts);
@@ -182,8 +282,10 @@ async function generateOnce(parts: any[], modelName: string): Promise<GeneratedA
 async function generateInternal(parts: any[]): Promise<GeneratedAIResponse> {
   try {
     await initializeCardioVaultAppCheck();
+    if (Capacitor.isNativePlatform()) await ensureNativeAISession();
     assertClientRateLimit();
   } catch (error) {
+    if (error instanceof SafeAIError) throw error;
     throw friendlyAIError(error, AI_MODEL);
   }
 

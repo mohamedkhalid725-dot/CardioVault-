@@ -130,3 +130,34 @@
 .animate-cardiovault-soft-pulse {
   animation: cardiovault-soft-pulse 2s ease-in-out infinite;
 }
+
+/* Subtle always-on glow pulse for the sticky app header bar.
+   Box-shadow only (no layout/paint-heavy props), low opacity, ~3s loop.
+   Single cyan tint reads tastefully on both light and dark surfaces. */
+@keyframes cardiovault-header-glow {
+  0%, 100% { box-shadow: 0 0 12px rgba(6, 182, 214, 0.10); }
+  50% { box-shadow: 0 0 22px rgba(6, 182, 214, 0.22); }
+}
+.animate-cardiovault-header-glow {
+  animation: cardiovault-header-glow 3s ease-in-out infinite;
+}
+
+/* Wave shimmer for the Home "Today at a glance" gradient title.
+   Animates background-position over a 200%+ gradient; base gradient
+   colors stay defined in the component markup. */
+@keyframes cardiovault-wavy-text {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-cardiovault-wavy-text {
+  background-size: 200% auto;
+  animation: cardiovault-wavy-text 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-cardiovault-header-glow,
+  .animate-cardiovault-wavy-text {
+    animation: none;
+  }
+}
