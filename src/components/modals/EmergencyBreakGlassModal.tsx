@@ -102,7 +102,7 @@ export const EmergencyBreakGlassModal: React.FC<EmergencyBreakGlassModalProps> =
             >
               {units.map(u => (
                 <option key={u.id} value={u.id}>
-                  {u.name} ({u.type})
+                  {u.name} ({u.type||'—'})
                 </option>
               ))}
             </select>

@@ -163,6 +163,9 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       const pale = [232, 245, 248];
       const white = [255, 255, 255];
       let page = 1;
+      // Arabic names render as a canvas image below the baseline, so the
+      // banner grows and the following lines shift down. Latin path untouched.
+      const hasArabicName = /[\u0600-\u06FF]/.test(String(patient.fullName || ''));
 
       const fill = (c: number[]) => doc.setFillColor(c[0], c[1], c[2]);
       const draw = (c: number[]) => doc.setDrawColor(c[0], c[1], c[2]);
@@ -174,10 +177,10 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         draw(white);
         doc.setLineWidth(0.8);
         doc.line(11, 16, 14, 16);
-        doc.line(14, 16, 15.8, 12);
-        doc.line(15.8, 12, 18, 20);
-        doc.line(18, 20, 20.2, 14);
-        doc.line(20.2, 14, 22, 16);
+        doc.line(14, 16, 16, 12);
+        doc.line(16, 12, 18, 20);
+        doc.line(18, 20, 20, 14);
+        doc.line(20, 14, 22, 16);
         doc.line(22, 16, 24, 16);
       };
 
@@ -191,7 +194,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         text(white);
         doc.text('Cardio', 31, 15);
         text(cyan);
-        doc.text('Vault', 58, 15);
+        doc.text('Vault', 31 + doc.getTextWidth('Cardio') + 2, 15);
 
         doc.setFontSize(8.2);
         text(white);
@@ -228,9 +231,14 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       };
 
       const patientBanner = () => {
+        const bannerH = hasArabicName ? 28 : 25;
+        const nameY = hasArabicName ? 44 : 45;
+        const nameSize = hasArabicName ? 12 : 13;
+        const mrnY = hasArabicName ? 52.5 : 51;
+        const admissionY = hasArabicName ? 57.5 : 56;
         fill([246, 251, 252]);
         draw(line);
-        doc.roundedRect(8, 35, 194, 25, 2.5, 2.5, 'FD');
+        doc.roundedRect(8, 35, 194, bannerH, 2.5, 2.5, 'FD');
 
         fill([218, 239, 243]);
         doc.circle(21, 47.5, 7.5, 'F');
@@ -239,9 +247,9 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.roundedRect(17.5, 48, 7, 4.5, 1.5, 1.5, 'F');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(13);
+        doc.setFontSize(nameSize);
         text(navy);
-        doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', 33, 45);
+        doc.text(compact(patient.fullName, 34) || 'Unnamed Patient', 33, nameY);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
@@ -249,12 +257,12 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.text(
           `MRN: ${val(patient.mrn)}   •   Age/Sex: ${val(patient.age)} / ${val(patient.sex)}   •   Unit: ${val(unit?.name)}   •   Bed: ${val(bed?.bedNumber)}`,
           33,
-          51
+          mrnY
         );
         doc.text(
           `Admission: ${val(patient.admissionDate)} ${val(patient.admissionTime)}   •   Status: ${val(patient.status, 'Active')}`,
           33,
-          56
+          admissionY
         );
 
         fill(teal);
@@ -327,7 +335,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       ) => {
         const half = (w - 4) / 2;
         let yy = y;
-        for (let i = 0; i < Math.min(rows.length, 6); i += 2) {
+        for (let i = 0; i < rows.length; i += 2) {
           const pair = rows.slice(i, i + 2);
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(10.5);
@@ -416,11 +424,33 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         return yy;
       };
 
+      // Empty tables render a caption instead of a lonely header row.
+      // Header fill stays pale with navy text on every table() path.
+      const tableOrEmpty = (
+        x: number,
+        y: number,
+        widths: number[],
+        headers: string[],
+        rows: string[][],
+        label: string,
+        rowH = 6.2,
+        maxRows = 6
+      ) => {
+        if (!rows.length) {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(8.5);
+          text(muted);
+          doc.text(`No ${label} recorded.`, x + 1, y + 5);
+          return y + 9;
+        }
+        return table(x, y, widths, headers, rows, rowH, maxRows);
+      };
+
       const drawFirstPage = async () => {
         header();
         patientBanner();
 
-        let y = 65;
+        let y = hasArabicName ? 68 : 65;
 
         if (has('overview')) {
           sectionTitle('Patient Information', 8, y, 194, 'patient');
@@ -457,7 +487,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           y += 10;
 
           const v: any = (patient as any).vitalsHistory?.[0] || {};
-          twoColumnFields(8, y, 96, [
+          const vitalsY = twoColumnFields(8, y, 96, [
             ['BP', v.sbp ? `${v.sbp}/${val(v.dbp)} mmHg` : ''],
             ['HR', v.hr ? `${v.hr} bpm` : ''],
             ['RR', v.rr ? `${v.rr}/min` : ''],
@@ -467,22 +497,23 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           ]);
 
           const lab: any = (patient as any).labs?.[0] || {};
-          table(106, y, [26, 24, 24, 22], ['Test', 'Result', 'Test', 'Result'], [
+          const labsY = table(106, y, [26, 24, 24, 22], ['Test', 'Result', 'Test', 'Result'], [
             ['Hb', val(lab.hb), 'WBC', val(lab.wbc)],
             ['Platelets', val(lab.platelets), 'Cr', val(lab.creatinine)],
             ['Na', val(lab.na), 'K', val(lab.k)],
             ['Troponin', val(lab.troponin), 'INR', val(lab.inr)],
           ], 6.2, 4);
 
-          y += 36;
+          y = Math.max(vitalsY, labsY) + 3;
         }
 
         if (has('ecg')) {
           sectionTitle('ECG (Latest)', 8, y, 96, 'ecg');
           const e: any = (patient as any).ecgRecords?.[0] || {};
           y += 10;
-          paragraphBox(8, y, 96, 38, 'Interpretation', e.finalImpression || e.interpretation?.join(' • '), 160);
+          const interpH = paragraphBox(8, y, 96, 38, 'Interpretation', e.finalImpression || e.interpretation?.join(' • '), 160);
 
+          let ecgRightH = 38;
           const ecgUrl = (e.imageUrls || [])[0];
           if (ecgUrl) {
             const data = await imageData(ecgUrl);
@@ -490,15 +521,15 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
               try {
                 doc.addImage(data, 'JPEG', 108, y, 94, 38, undefined, 'FAST');
               } catch {
-                paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
+                ecgRightH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
               }
             } else {
-              paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
+              ecgRightH = paragraphBox(108, y, 94, 38, 'ECG Image', 'Attached ECG image available in the patient record.', 130);
             }
           } else {
-            paragraphBox(108, y, 94, 38, 'ECG Details', `HR ${val(e.heartRate)} • Rhythm ${val(e.rhythm)} • Axis ${val(e.axis)} • QTc ${val(e.qtc)}`, 130);
+            ecgRightH = paragraphBox(108, y, 94, 38, 'ECG Details', `HR ${val(e.heartRate)} • Rhythm ${val(e.rhythm)} • Axis ${val(e.axis)} • QTc ${val(e.qtc)}`, 130);
           }
-          y += 42;
+          y = Math.max(interpH, ecgRightH) + 3;
         }
 
         if (has('cardiology')) {
@@ -506,7 +537,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           y += 10;
           const echo: any = (patient as any).cardiology?.echo || {};
           twoColumnFields(8, y, 194, [
-            ['LVEF', echo.ef ? `${echo.ef}%` : ''],
+            ['LVEF', echo.ef !== undefined ? `${echo.ef}%` : ''],
             ['LV Function', echo.lvFunction],
             ['RWMA', echo.rwma],
             ['RV Function', echo.rvFunction],
@@ -524,53 +555,78 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         header();
         patientBanner();
 
-        let y = 65;
+        let y = hasArabicName ? 68 : 65;
+
+        // Page-break guard for flowing list sections: when the block would
+        // run into the fixed footer, continue on a fresh bannered page.
+        const ensureSpace = (title: string, h: number) => {
+          if (y + h > 268) {
+            doc.addPage();
+            page = doc.getNumberOfPages();
+            header();
+            patientBanner();
+            y = hasArabicName ? 68 : 65;
+            sectionTitle(title + ' Continued', 8, y, 194, 'notes');
+            y += 10;
+            return true;
+          }
+          return false;
+        };
 
         if (has('medications')) {
-          sectionTitle('Medications (Current)', 8, y, 112, 'meds');
-          sectionTitle('Infusions (Current)', 122, y, 80, 'infusions');
-          y += 10;
+          const continued = ensureSpace('Medications (Current)', 50);
+          if (!continued) {
+            sectionTitle('Medications (Current)', 8, y, 112, 'meds');
+            sectionTitle('Infusions (Current)', 122, y, 80, 'infusions');
+            y += 10;
+          }
 
           const meds: any[] = ((patient as any).medications || []).filter((m: any) => m.status !== 'Discontinued');
-          table(8, y, [40, 23, 22, 27], ['Drug', 'Dose', 'Route', 'Frequency'], meds.map(m => [
+          const medsY = tableOrEmpty(8, y, [40, 23, 22, 27], ['Drug', 'Dose', 'Route', 'Frequency'], meds.map(m => [
             val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency),
-          ]), 6.2, 6);
+          ]), 'medications', 6.2, 6);
 
           const infusions: any[] = (patient as any).infusions || (patient as any).activeInfusions || [];
-          table(122, y, [30, 25, 25], ['Drug', 'Rate', 'Indication'], infusions.map(i => [
+          const infY = tableOrEmpty(122, y, [30, 25, 25], ['Drug', 'Rate', 'Indication'], infusions.map(i => [
             val(i.name || i.drug), val(i.rate || i.dose), compact(i.indication, 22),
-          ]), 6.2, 6);
+          ]), 'infusions', 6.2, 6);
 
-          y += 50;
+          y = Math.max(medsY, infY) + 3;
         }
 
         if (has('procedures')) {
-          sectionTitle('Procedures & Interventions', 8, y, 112, 'procedures');
-          sectionTitle('Lines & Devices', 122, y, 80, 'devices');
-          y += 10;
+          const continued = ensureSpace('Procedures & Interventions', 43);
+          if (!continued) {
+            sectionTitle('Procedures & Interventions', 8, y, 112, 'procedures');
+            sectionTitle('Lines & Devices', 122, y, 80, 'devices');
+            y += 10;
+          }
 
           const procedures: any[] = (patient as any).procedures || [];
-          table(8, y, [25, 45, 42], ['Date', 'Procedure', 'Details'], procedures.map(p => [
+          const procY = tableOrEmpty(8, y, [25, 45, 42], ['Date', 'Procedure', 'Details'], procedures.map(p => [
             val(p.date), val(p.procedure || p.name || p.surgeryName), compact(p.outcome || p.findings || p.indication, 40),
-          ]), 6.2, 5);
+          ]), 'procedures', 6.2, 5);
 
           const devices: any[] = (patient as any).devices || (patient as any).lines || [];
-          table(122, y, [28, 25, 27], ['Device', 'Site', 'Date'], devices.map(d => [
+          const devY = tableOrEmpty(122, y, [28, 25, 27], ['Device', 'Site', 'Date'], devices.map(d => [
             val(d.device || d.name || d.type), val(d.site), val(d.date),
-          ]), 6.2, 5);
+          ]), 'lines & devices', 6.2, 5);
 
-          y += 43;
+          y = Math.max(procY, devY) + 3;
         }
 
         if (has('cardiology')) {
-          sectionTitle('Cardiology', 8, y, 96, 'cardiology');
-          sectionTitle('ICU', 106, y, 96, 'icu');
-          y += 10;
+          const continued = ensureSpace('Cardiology', 42);
+          if (!continued) {
+            sectionTitle('Cardiology', 8, y, 96, 'cardiology');
+            sectionTitle('ICU', 106, y, 96, 'icu');
+            y += 10;
+          }
 
           const c: any = (patient as any).cardiology || {};
-          twoColumnFields(8, y, 96, [
+          const cardY = twoColumnFields(8, y, 96, [
             ['Diagnosis', c.diagnosis || patient.primaryDiagnosis],
-            ['LVEF', c.ef ? `${c.ef}%` : c.echo?.ef ? `${c.echo.ef}%` : ''],
+            ['LVEF', c.ef !== undefined ? `${c.ef}%` : c.echo?.ef !== undefined ? `${c.echo.ef}%` : ''],
             ['Coronary Angiography', c.coronaryAngiography],
             ['Stents / Devices', c.stentsDevices || c.stents],
             ['Antiplatelets', c.antiplatelets],
@@ -578,7 +634,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           ]);
 
           const icu: any = (patient as any).icu || {};
-          twoColumnFields(106, y, 96, [
+          const icuY = twoColumnFields(106, y, 96, [
             ['Ventilator', icu.ventilator || (patient as any).ventilator?.mode],
             ['Sedation', icu.sedation],
             ['Vasopressors', icu.vasopressors],
@@ -587,19 +643,21 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
             ['APACHE II', icu.apacheII],
           ]);
 
-          y += 42;
+          y = Math.max(cardY, icuY) + 3;
         }
 
         if (has('progress')) {
-          sectionTitle('Progress Notes (Latest)', 8, y, 194, 'progress');
-          y += 10;
+          const continued = ensureSpace('Progress Notes (Latest)', 40);
+          if (!continued) {
+            sectionTitle('Progress Notes (Latest)', 8, y, 194, 'progress');
+            y += 10;
+          }
           const notes: any[] = (patient as any).progressNotes || [];
-          table(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notes.map(n => [
+          y = tableOrEmpty(8, y, [31, 38, 125], ['Date & Time', 'Author', 'Note'], notes.map(n => [
             `${val(n.date)} ${val(n.time)}`,
             compact(n.author, 22),
             compact(n.assessment || n.plan || n.events || n.note, 105),
-          ]), 6.2, 5);
-          y += 40;
+          ]), 'progress notes', 6.2, 5) + 3;
         }
 
         if (has('calculators') || has('timeline') || has('overview')) {
@@ -632,7 +690,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           page = doc.getNumberOfPages();
           header();
           patientBanner();
-          sectionTitle(title + ' • Continued', 8, 65, 194, 'notes');
+          sectionTitle(title + ' • Continued', 8, hasArabicName ? 68 : 65, 194, 'notes');
           table(8, 75, widths, headers, chunk, 6.2, chunk.length);
         }
       };
