@@ -382,6 +382,18 @@ jobs:
           CARDIOVAULT_RELEASE_KEY_ALIAS: ${{ secrets.CARDIOVAULT_RELEASE_KEY_ALIAS }}
           CARDIOVAULT_RELEASE_KEY_PASSWORD: ${{ secrets.CARDIOVAULT_RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
+      - name: Rebuild web bundle for debug APK with App Check debug provider
+        # Debug APKs are android:debuggable, so Play Integrity attestation can
+        # never pass for them. Field/debug builds therefore use the App Check
+        # debug provider (VITE_AI_APPCHECK_DEBUG=true); the release bundle
+        # above was already built with 'false' and is unaffected. The release
+        # guard asserts above still enforce 'false' for release.
+        env:
+          VITE_AI_APPCHECK_DEBUG: 'true'
+          VITE_CARDIOVAULT_PREVIEW: 'false'
+        run: |
+          npm run build
+          npx cap sync android
       - name: Build debug APK
         working-directory: android
         env:
