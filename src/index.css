@@ -50,6 +50,34 @@
   padding-bottom: calc(5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
+/* Global safe-area helpers for sticky headers, drawers, and modal chrome.
+   Capacitor exposes --safe-area-inset-* CSS vars (SystemBars insetsHandling
+   is css); env(safe-area-inset-*) is the web fallback. Unlayered on purpose
+   so these beat Tailwind padding utilities when combined (e.g. p-4). */
+.safe-top {
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+}
+
+.safe-modal-inset {
+  padding-top: max(1rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  padding-right: max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
+  padding-bottom: max(1rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-left: max(1rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
+}
+
+.safe-modal-header {
+  padding-top: calc(1rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+}
+
+.safe-modal-footer {
+  padding-bottom: calc(0.75rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+.safe-overlay-edges {
+  padding-top: max(0.75rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  padding-bottom: max(0.75rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
 @media print {
   body { background: white !important; color: black !important; }
   header, nav, .no-print { display: none !important; }
@@ -73,3 +101,24 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+
+/* Boot splash heartbeat (lub-dub pulse) for the CardioVault logo. */
+@keyframes cardiovault-heartbeat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.12); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.12); }
+  56% { transform: scale(1); }
+}
+.animate-cardiovault-heartbeat {
+  animation: cardiovault-heartbeat 1.6s ease-in-out infinite;
+}
+
+/* Indeterminate loading bar for the boot splash. */
+@keyframes cardiovault-loading {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+.animate-cardiovault-loading {
+  animation: cardiovault-loading 1.2s ease-in-out infinite;
+}
