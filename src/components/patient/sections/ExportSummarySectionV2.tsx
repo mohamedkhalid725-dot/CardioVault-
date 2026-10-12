@@ -753,17 +753,23 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
 
         if (has('calculators') || has('timeline') || has('overview')) {
-          sectionTitle('Plan & Follow Up', 8, y, 112, 'plan');
-          sectionTitle('Additional Notes', 122, y, 80, 'notes');
-          y += 10;
-
           const latest: any = (patient as any).progressNotes?.[0] || {};
-          paragraphBox(8, y, 112, 34, 'Current Plan', latest.plan || 'Continue monitoring, investigations and treatment according to the active clinical plan.', 170);
-
+          const planValue = latest.plan || 'Continue monitoring, investigations and treatment according to the active clinical plan.';
           const timeline = ((patient as any).auditTrail || []).slice(0, 3).map((e: any) =>
             `${new Date(e.timestamp).toLocaleDateString()} — ${e.action}`
           ).join(' • ');
-          paragraphBox(122, y, 80, 34, 'Record Note', timeline || 'This report contains selected clinical data from the patient file.', 100);
+          const noteValue = timeline || 'This report contains selected clinical data from the patient file.';
+          const continued = ensureSpace('Plan & Follow Up',
+            10 + Math.max(measureParagraph(112, 34, planValue), measureParagraph(80, 34, noteValue)));
+          if (!continued) {
+            sectionTitle('Plan & Follow Up', 8, y, 112, 'plan');
+            sectionTitle('Additional Notes', 122, y, 80, 'notes');
+            y += 10;
+          }
+
+          paragraphBox(8, y, 112, 34, 'Current Plan', planValue, 170);
+
+          paragraphBox(122, y, 80, 34, 'Record Note', noteValue, 100);
         }
 
         footer();
