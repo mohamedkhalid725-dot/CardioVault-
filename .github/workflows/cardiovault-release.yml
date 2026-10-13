@@ -93,6 +93,9 @@ jobs:
 
       - name: Deploy Firestore rules
         if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        # Fast path: rules are live and untouched by app releases, so a
+        # service-account permission failure must not block the signed APK.
+        continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
