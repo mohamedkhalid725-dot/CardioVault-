@@ -86,6 +86,14 @@ const bedLabel = (b: any) => {
   return s.replace(/^bed\s+/i, '') || NP;
 };
 
+// MRN values are stored as "MRN-xxx" — strip a leading "MRN" so callers can
+// safely prefix their own ("MRN 754854", never "MRN MRN-754854").
+const mrnLabel = (m: any) => {
+  const s = val(m, '');
+  if (!s) return NP;
+  return s.replace(/^mrn[\s\-:]*/i, '').trim() || NP;
+};
+
 // Vitals-like numbers: 0/empty/non-numeric all render as missing, so the PDF
 // never prints a clinically misleading "0 kg / 0 cm".
 const posNum = (v: any) => {
@@ -259,7 +267,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.setFontSize(9.5);
         text(white);
         doc.text(
-          `${compact(patient.fullName, 32) || 'Unnamed Patient'}  •  ${[posNum(patient.age), val(patient.sex, '')].filter(Boolean).join(' / ') || NP}  •  MRN ${val(patient.mrn)}`,
+          `${compact(patient.fullName, 32) || 'Unnamed Patient'}   •   ${[posNum(patient.age), val(patient.sex, '')].filter(Boolean).join(' / ') || NP}   •   MRN ${mrnLabel(patient.mrn)}`,
           textX, 25.5
         );
         doc.setFont('helvetica', 'normal');

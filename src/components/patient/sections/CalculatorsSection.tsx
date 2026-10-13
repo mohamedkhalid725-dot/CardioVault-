@@ -13,10 +13,13 @@ import {
   AlertTriangle,
   Info,
   CheckCircle2,
+  Plus,
+  Trash2,
 } from 'lucide-react';
-import { Patient } from '../../../types/clinical';
+import { Patient, CalculatorResult } from '../../../types/clinical';
 import { MedicalCalculators } from '../../../services/calculators';
 import { useApp } from '../../../context/AppContext';
+import { useIsPreviousViewer } from '../PreviousAdmissionViewer';
 
 interface CalculatorsSectionProps {
   patient?: Patient;
@@ -25,8 +28,51 @@ interface CalculatorsSectionProps {
 type CategoryType = 'Cardiology' | 'ICU' | 'ABG' | 'Hemodynamics' | 'Renal' | 'Infusion';
 
 export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient }) => {
-  const { showToast } = useApp();
+  const { showToast, updatePatient } = useApp();
+  const isPreviousViewer = useIsPreviousViewer();
   const [activeCategory, setActiveCategory] = useState<CategoryType>('Cardiology');
+  const [showSaved, setShowSaved] = useState(false);
+
+  const savedResults = patient?.calculatorResults || [];
+
+  const riskFromText = (text: string): CalculatorResult['riskLevel'] => {
+    if (/critical/i.test(text)) return 'Critical';
+    if (/very high/i.test(text)) return 'Very High';
+    if (/high/i.test(text)) return 'High';
+    if (/intermediate|moderate/i.test(text)) return 'Intermediate';
+    if (/low/i.test(text)) return 'Low';
+    return 'Normal';
+  };
+
+  const saveCalc = (calculatorId: string, name: string, score: number | string, interpretation: string, inputsSummary?: string) => {
+    if (!patient || isPreviousViewer) return;
+    const interp = interpretation.trim() || 'Saved clinical score';
+    const result: CalculatorResult = {
+      id: `calc-${Date.now()}`,
+      calculatorId,
+      name,
+      timestamp: new Date().toISOString(),
+      score,
+      riskLevel: riskFromText(interp),
+      interpretation: interp,
+      summary: inputsSummary?.trim() ? `${name}: ${String(score)} (${inputsSummary.trim()})` : `${name}: ${String(score)}`,
+    };
+    updatePatient(patient.id, { calculatorResults: [...savedResults, result] });
+    showToast(`${name} saved to the patient file.`, 'success');
+  };
+
+  const deleteCalc = (id: string) => {
+    if (!patient || isPreviousViewer) return;
+    if (!window.confirm('Delete this saved calculator result?')) return;
+    updatePatient(patient.id, { calculatorResults: savedResults.filter((r) => r.id !== id) });
+    showToast('Saved result deleted.', 'info');
+  };
+
+  const formatWhen = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  };
 
   // --- Cardiology State ---
   const [chaAge, setChaAge] = useState<number>(patient?.age || 58);
@@ -239,6 +285,53 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
         </div>
       </div>
 
+      {/* Saved results — visible in the same place */}
+      <div className="bg-white dark:bg-[#111C2E] border border-cyan-500/20 rounded-2xl p-4 shadow-sm">
+        <button
+          onClick={() => setShowSaved((v) => !v)}
+          className="w-full flex items-center justify-between gap-2 text-left"
+        >
+          <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-cyan-500" />
+            Saved in this patient file ({savedResults.length})
+          </span>
+          <span className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400">
+            {showSaved ? 'Hide' : savedResults.length ? 'View' : 'No saved results yet'}
+          </span>
+        </button>
+        {!showSaved && savedResults.length === 0 && (
+          <p className="text-[11px] text-slate-400 mt-2">
+            Fill in any calculator below, then press its <b>Add to patient file</b> button — the result will appear here.
+          </p>
+        )}
+        {showSaved && (
+          <div className="space-y-2 mt-3">
+            {savedResults.length === 0 ? (
+              <p className="text-[11px] text-slate-400">Nothing saved yet.</p>
+            ) : (
+              [...savedResults].reverse().map((r) => (
+                <div key={r.id} className="flex items-start justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">
+                      {r.name}: {String(r.score)}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      {formatWhen(r.timestamp)} • {r.riskLevel}
+                    </div>
+                    {r.interpretation && <p className="text-[11px] text-slate-500 mt-0.5">{r.interpretation}</p>}
+                  </div>
+                  {!isPreviousViewer && (
+                    <button onClick={() => deleteCalc(r.id)} className="p-1.5 text-rose-500 shrink-0" aria-label="Delete saved result">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Category Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto no-scrollbar">
         {[
@@ -341,6 +434,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
               <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-tight">
                 {chaResult.recommendation}
               </p>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'cha2ds2-vasc',
+                      'CHA2DS2-VASc',
+                      chaResult.score,
+                      `${chaResult.risk} risk, ${chaResult.strokeRisk} annual stroke rate. ${chaResult.recommendation}`,
+                      `Age ${chaAge}, ${chaSex}${chaChf ? ', CHF' : ''}${chaHtn ? ', HTN' : ''}${chaStroke ? ', prior stroke/TIA' : ''}${chaVascular ? ', vascular disease' : ''}${chaDiabetes ? ', diabetes' : ''}`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
 
@@ -400,6 +509,21 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
               <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-tight">
                 {hasResult.advice}
               </p>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'has-bled',
+                      'HAS-BLED',
+                      hasResult.score,
+                      `${hasResult.riskLevel}, ${hasResult.bleedingRate}. ${hasResult.advice}`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
 
@@ -456,6 +580,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
                 <span className="font-bold text-cyan-600 dark:text-cyan-400">{heartResult.risk} Risk (MACE: {heartResult.maceRate})</span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">{heartResult.management}</p>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'heart-score',
+                      'HEART Score',
+                      heartResult.score,
+                      `${heartResult.risk} risk, MACE ${heartResult.maceRate}. ${heartResult.management}`,
+                      `History ${heartHistory}, ECG ${heartEcg}, Age ${heartAge}, Risk ${heartRiskFactors}, Trop ${heartTroponin}`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
 
@@ -500,6 +640,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
               <p className="text-[11px] text-slate-700 dark:text-slate-300 font-medium">
                 Clinical Status: {qtcResult.status}
               </p>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'qtc-calc',
+                      'QTc',
+                      `Bazett ${qtcResult.bazett} / Fridericia ${qtcResult.fridericia} ms`,
+                      qtcResult.status,
+                      `QT ${qtMs} ms, HR ${qtHr} bpm`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500 text-white text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -579,6 +735,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Formula: Sum of PaO2/FiO2, Platelets, Bilirubin, MAP/vasopressors, GCS, and Creatinine.
               </p>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'sofa-score',
+                      'SOFA Score',
+                      sofaResult.score,
+                      `Est. ICU mortality ${sofaResult.mortality}`,
+                      `PaO2 ${sofaPao2}, FiO2 ${sofaFio2}%, Plt ${sofaPlt}, Bili ${sofaBili}, MAP ${sofaMap}, GCS ${sofaGcs}, Cr ${sofaCr}`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
 
@@ -645,6 +817,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
               <p className="text-[11px] text-slate-700 dark:text-slate-300">
                 {ventResult.dpRisk} • {ventResult.rsbiRisk}
               </p>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'vent-mechanics',
+                      'Ventilator Mechanics',
+                      `DP ${ventResult.drivingPressure}, Cstat ${ventResult.cstat}, RSBI ${ventResult.rsbi}`,
+                      `${ventResult.dpRisk}. ${ventResult.rsbiRisk}`,
+                      `Vt ${ventVt} mL, Pplat ${ventPplat}, PEEP ${ventPeep}, RR ${ventRr}`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 text-white text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -776,6 +964,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
               {abgResult.primaryDisorder}. {abgResult.compensation}. Delta Ratio: {abgResult.deltaRatio} ({abgResult.deltaInterpretation}).
               Oxygenation P/F Ratio: {abgResult.pfRatio}.
             </p>
+            {!isPreviousViewer && patient && (
+              <button
+                onClick={() =>
+                  saveCalc(
+                    'winter-abg',
+                    'Systematic ABG',
+                    abgResult.primaryDisorder,
+                    `${abgResult.compensation} Delta ratio ${abgResult.deltaRatio} (${abgResult.deltaInterpretation}). P/F ${abgResult.pfRatio}`,
+                    `pH ${abgPh}, PaCO2 ${abgPco2}, HCO3 ${abgHco3}, Na ${abgNa}, Cl ${abgCl}`
+                  )
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-[11px] font-bold"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add to patient file
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -872,6 +1076,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
               <span className="text-base font-bold text-rose-600 dark:text-rose-400">{hemoResult.shockIndex}</span>
             </div>
           </div>
+          {!isPreviousViewer && patient && (
+            <button
+              onClick={() =>
+                saveCalc(
+                  'map-hemodynamics',
+                  'Hemodynamics',
+                  `MAP ${hemoResult.map} mmHg`,
+                  `CI ${hemoResult.ci}, SVR ${hemoResult.svr}, Shock index ${hemoResult.shockIndex}`,
+                  `SBP ${hemoSbp}, DBP ${hemoDbp}, HR ${hemoHr}, CVP ${hemoCvp}, CO ${hemoCo}`
+                )
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 text-white text-[11px] font-bold"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add to patient file
+            </button>
+          )}
         </div>
       )}
 
@@ -932,6 +1152,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
                 <span className="text-cyan-700 dark:text-cyan-400 font-bold">{crclResult.stage}</span>
               </div>
               <p className="text-[11px] text-slate-500">Formula: ((140 - Age) * Weight) / (72 * Cr) (* 0.85 if female)</p>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'crcl-calc',
+                      'Creatinine Clearance',
+                      `${crclResult.crcl} mL/min`,
+                      crclResult.stage,
+                      `Age ${renalAge}, Wt ${renalWt} kg, Cr ${renalCr}`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
 
@@ -975,6 +1211,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
                 <span className="font-bold">FENa (Prerenal vs ATN):</span>
                 <span className="font-bold text-cyan-600 dark:text-cyan-400">{fenaResult.fena}% ({fenaResult.etiology})</span>
               </div>
+              {!isPreviousViewer && patient && (
+                <button
+                  onClick={() =>
+                    saveCalc(
+                      'corrected-na-ca',
+                      'Electrolytes & FENa',
+                      `Na ${electrolyteResult.correctedNa} (Katz), FENa ${fenaResult.fena}%`,
+                      `${fenaResult.etiology}. Corrected Na (Hillier) ${electrolyteResult.hillierNa}`,
+                      `Na ${naMeasured}, Glucose ${glucoseMeasured}, Ca ${caMeasured}, Alb ${albMeasured}`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 text-[11px] font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to patient file
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1054,6 +1306,22 @@ export const CalculatorsSection: React.FC<CalculatorsSectionProps> = ({ patient 
                 <span className="text-[11px] text-slate-500 block">
                   (Concentration: {infusionResult.concentrationMcgMl} mcg/mL)
                 </span>
+                {!isPreviousViewer && patient && (
+                  <button
+                    onClick={() =>
+                      saveCalc(
+                        'infusion-rate',
+                        'Vasopressor Infusion',
+                        `${infusionResult.rateMlHr} mL/hr`,
+                        `Concentration ${infusionResult.concentrationMcgMl} mcg/mL`,
+                        `${infusionDrug}, ${infusionWeight} kg, target ${infusionTargetDose} mcg/kg/min`
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-[11px] font-bold mt-2"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add to patient file
+                  </button>
+                )}
               </div>
             </div>
           </div>

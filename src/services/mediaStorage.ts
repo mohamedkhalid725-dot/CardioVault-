@@ -38,7 +38,9 @@ export async function optimizeClinicalImage(file: File): Promise<File> {
   const mustNormalize = /image\/(heic|heif)/i.test(type) || /\.(heic|heif)$/i.test(name);
   if (!mustNormalize && file.size <= 900 * 1024) return file;
 
-  const maxDimension = 2048;
+  // Smaller uploads: 1600px / JPEG 0.75 keeps ECG lines readable
+  // while making mobile uploads much smaller/faster. (ضغط أقوى لرفع أسرع)
+  const maxDimension = 1600;
   let sourceWidth = 0;
   let sourceHeight = 0;
   let draw: ((ctx: CanvasRenderingContext2D, width: number, height: number) => void) | undefined;
@@ -81,7 +83,7 @@ export async function optimizeClinicalImage(file: File): Promise<File> {
     draw(ctx, width, height);
 
     const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(result => result ? resolve(result) : reject(new Error('Could not compress image.')), 'image/jpeg', 0.82);
+      canvas.toBlob(result => result ? resolve(result) : reject(new Error('Could not compress image.')), 'image/jpeg', 0.75);
     });
     if (blob.size >= file.size) return file;
     return new File([blob], file.name.replace(/\.[^.]+$/i, '.jpg'), { type: 'image/jpeg', lastModified: Date.now() });
@@ -148,7 +150,8 @@ function parseMediaId(value: string): string | null {
 
 export async function uploadClinicalMedia(
   file: Blob,
-  path: string
+  path: string,
+  onProgress?: (fraction: number) => void
 ): Promise<{ url: string; cloud: boolean; storagePath?: string }> {
   if (!file || file.size <= 0) throw new Error('The selected file is empty.');
 
@@ -178,7 +181,21 @@ export async function uploadClinicalMedia(
 
   for (let index = 0; index < chunks; index++) {
     const data = base64.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE);
-    await writeDoc(`${prefix}/chunks/${index}`, { index, data }, false);
+    // Retry transient chunk writes (3 attempts, backoff). (إعادة المحاولة عند فشل الشبكة)
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await writeDoc(`${prefix}/chunks/${index}`, { index, data }, false);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 400 * 2 ** (attempt - 1)));
+      }
+    }
+    if (lastError) throw lastError;
+    // Upload progress 0..1 for UI progress bar. (نسبة تقدم الرفع)
+    try { onProgress?.(chunks > 0 ? (index + 1) / chunks : 1); } catch {}
   }
 
   return {
