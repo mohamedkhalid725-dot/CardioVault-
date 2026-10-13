@@ -28,6 +28,61 @@ const DEFAULT_MODEL = 'gemini-3.6-flash'; // SAME as web AI_MODEL (src/config/ai
 const MAX_AUDIO_BYTES = 15 * 1024 * 1024;
 const RETRY_DELAYS_MS = [800, 2000];
 
+// Secret hygiene: strip whitespace and any invisible/formatting characters
+// that copy-paste into the Cloudflare dashboard can smuggle in (e.g. U+200F
+// RIGHT-TO-LEFT MARK, zero-width space, newlines). Exported for unit tests.
+export const cleanApiKey = (value: unknown): string =>
+  String(value ?? '').trim().replace(/[^A-Za-z0-9_-]/g, '');
+export const cleanProjectId = (value: unknown): string =>
+  String(value ?? '').trim().replace(/[^a-z0-9-]/gi, '');
+
+// TEMPORARY - remove after diagnosis
+// Builds one diagnostic line for a non-2xx Gemini response. It may include
+// only: upstream HTTP status, error.status, a 200-char error.message with
+// base64-like runs redacted, model, mime type, audio byte length, and the
+// integer lengths of key/pid raw and cleaned. NEVER the key, audio bytes,
+// transcripts, or response text.
+const DIAG_BASE64_RUN = /[A-Za-z0-9+/=_-]{40,}/g;
+export function geminiFailureDiagLine(input: {
+  upStatus: number;
+  body: string;
+  model: string;
+  mimeType: string;
+  audioBytes: number;
+  keyLen: number;
+  keyCleanLen: number;
+  pidRawLen: number;
+  pidCleanLen: number;
+}): string {
+  let errStatus = 'unknown';
+  let errMessage = '';
+  try {
+    const parsed = JSON.parse(input.body) as {
+      error?: { status?: unknown; message?: unknown };
+    };
+    if (typeof parsed?.error?.status === 'string') errStatus = parsed.error.status;
+    if (typeof parsed?.error?.message === 'string') errMessage = parsed.error.message;
+  } catch {
+    errMessage = '';
+  }
+  // Redact base64-like runs first, then truncate, so a long token can never
+  // survive truncation. Model/mime/status must match a safe charset or are
+  // replaced with "invalid".
+  const msg = errMessage.replace(DIAG_BASE64_RUN, '[redacted]').slice(0, 200);
+  const safe = (value: string, re: RegExp, max: number): string =>
+    re.test(value) ? value.slice(0, max) : 'invalid';
+  return (
+    `voice-proxy gemini-diag up_status=${input.upStatus}` +
+    ` err_status=${safe(errStatus, /^[A-Za-z_]{1,40}$/, 40)}` +
+    ` msg="${msg}"` +
+    ` model=${safe(input.model, /^[A-Za-z0-9._-]{1,60}$/, 60)}` +
+    ` mime=${safe(input.mimeType, /^[A-Za-z0-9/;=+._-]{1,60}$/, 60)}` +
+    ` bytes=${input.audioBytes}` +
+    ` key_len=${input.keyLen} key_clean_len=${input.keyCleanLen}` +
+    ` pid_raw_len=${input.pidRawLen} pid_clean_len=${input.pidCleanLen}`
+  );
+}
+
 function json(data: unknown, status: number, origin: string | null, env: Env): Response {
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (origin && isAllowedOrigin(origin, env.ALLOWED_ORIGINS ?? '')) {
@@ -139,8 +194,10 @@ export default {
       return json({ error: 'origin_not_allowed' }, 403, origin, env);
     }
 
-    const projectId = (env.FIREBASE_PROJECT_ID ?? '').trim();
-    const apiKey = (env.GEMINI_API_KEY ?? '').trim();
+    const pidRaw = (env.FIREBASE_PROJECT_ID ?? '').trim();
+    const keyRaw = (env.GEMINI_API_KEY ?? '').trim();
+    const projectId = cleanProjectId(pidRaw);
+    const apiKey = cleanApiKey(keyRaw);
     if (!projectId || !apiKey) {
       done(500, 'proxy_not_configured', 'none');
       return json({ error: 'proxy_not_configured' }, 500, origin, env);
@@ -195,6 +252,20 @@ export default {
     const model = (env.GEMINI_MODEL ?? '').trim() || DEFAULT_MODEL;
     const gemini = await callGemini({ apiKey, model, audioBase64, mimeType, prompt });
     if (gemini.status < 200 || gemini.status >= 300) {
+      // TEMPORARY - remove after diagnosis
+      console.log(
+        geminiFailureDiagLine({
+          upStatus: gemini.status,
+          body: gemini.body,
+          model,
+          mimeType,
+          audioBytes,
+          keyLen: keyRaw.length,
+          keyCleanLen: apiKey.length,
+          pidRawLen: pidRaw.length,
+          pidCleanLen: projectId.length,
+        }),
+      );
       done(gemini.status || 502, 'gemini_error', uidHash);
       if (gemini.status === 429) return json({ error: 'quota_exceeded_retry_later' }, 429, origin, env);
       return json({ error: 'ai_unavailable_retry_later' }, 502, origin, env);

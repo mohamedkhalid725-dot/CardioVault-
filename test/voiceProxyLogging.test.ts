@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
-import worker from '../voice-proxy/src/index.ts';
+import worker, { cleanApiKey, cleanProjectId, geminiFailureDiagLine } from '../voice-proxy/src/index.ts';
 import { mapVerifyError, verifyFirebaseIdToken } from '../voice-proxy/src/auth.ts';
 
 const PROJECT = 'ccu-notebook-test';
@@ -124,4 +124,66 @@ test('reason mapping covers jwks and unknown errors', () => {
   assert.equal(mapVerifyError({ code: 'ERR_JWKS_NO_MATCHING_KEY' }).reason, 'bad_signature');
   assert.equal(mapVerifyError(new Error('boom')).reason, 'unknown_verify_error');
   assert.equal(mapVerifyError({ code: 'ERR_JWT_CLAIM_VALIDATION_FAILED', message: 'x' }).reason, 'unknown_verify_error');
+});
+
+test('secret cleaning strips invisible characters', () => {
+  assert.equal(cleanProjectId('ccu-notebook\u200f'), 'ccu-notebook'); // RLM
+  assert.equal(cleanProjectId('\u200bccu-notebook\n'), 'ccu-notebook'); // ZWSP + newline
+  assert.equal(cleanProjectId('ccu-notebook-test'), 'ccu-notebook-test');
+  assert.equal(cleanApiKey('abc-DEF_123\u200f\n'), 'abc-DEF_123');
+  assert.equal(cleanApiKey(' \t AIza-9_x \u200b '), 'AIza-9_x');
+});
+
+test('gemini failure diag line leaks no key, audio, or response text', () => {
+  const KEY = 'AIzaSyFAKEKEYfakeKEYfakeKEYfakeKEYfake1234';
+  const AUDIO = 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5eg';
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.SECRETPAYLOAD.SIGNATURE';
+  const body = JSON.stringify({
+    error: {
+      code: 400,
+      status: 'INVALID_ARGUMENT',
+      message: `Request contains an invalid argument: ${AUDIO} and key ${KEY}`,
+      details: [{ transcript: TOKEN }],
+    },
+  });
+  const line = geminiFailureDiagLine({
+    upStatus: 400,
+    body,
+    model: 'gemini-3.6-flash',
+    mimeType: 'audio/aac',
+    audioBytes: 12345,
+    keyLen: 45,
+    keyCleanLen: 43,
+    pidRawLen: 12,
+    pidCleanLen: 12,
+  });
+  assert.ok(line.includes('up_status=400'));
+  assert.ok(line.includes('err_status=INVALID_ARGUMENT'));
+  assert.ok(line.includes('[redacted]'));
+  assert.ok(!line.includes(AUDIO));
+  assert.ok(!line.includes(KEY));
+  assert.ok(!line.includes(KEY.slice(0, 20)));
+  assert.ok(!line.includes(TOKEN));
+  assert.ok(line.includes('key_len=45'));
+  assert.ok(line.includes('key_clean_len=43'));
+  assert.ok(line.includes('pid_raw_len=12'));
+  assert.ok(line.includes('pid_clean_len=12'));
+});
+
+test('gemini diag line reports unparseable body as unknown without echoing it', () => {
+  const RAW = 'AUDIO_BYTES_' + 'A'.repeat(80);
+  const line = geminiFailureDiagLine({
+    upStatus: 502,
+    body: RAW,
+    model: 'gemini-3.6-flash',
+    mimeType: 'weird type!',
+    audioBytes: 7,
+    keyLen: 5,
+    keyCleanLen: 5,
+    pidRawLen: 5,
+    pidCleanLen: 5,
+  });
+  assert.ok(line.includes('err_status=unknown'));
+  assert.ok(line.includes('mime=invalid'));
+  assert.ok(!line.includes(RAW));
 });
