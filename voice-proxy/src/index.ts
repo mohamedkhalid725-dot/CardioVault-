@@ -199,7 +199,12 @@ export default {
     const projectId = cleanProjectId(pidRaw);
     const apiKey = cleanApiKey(keyRaw);
     if (!projectId || !apiKey) {
-      done(500, 'proxy_not_configured', 'none');
+      // TEMPORARY - remove after diagnosis: name which secret is empty at
+      // runtime. Secret NAMES only — never values, keys, or audio data.
+      const missing: string[] = [];
+      if (!projectId) missing.push('missing_config:firebase_project_id');
+      if (!apiKey) missing.push('missing_config:gemini_api_key');
+      done(500, `proxy_not_configured:${missing.join('+')}`, 'none');
       return json({ error: 'proxy_not_configured' }, 500, origin, env);
     }
 

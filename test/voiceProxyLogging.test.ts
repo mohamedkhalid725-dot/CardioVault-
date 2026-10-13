@@ -130,8 +130,43 @@ test('secret cleaning strips invisible characters', () => {
   assert.equal(cleanProjectId('ccu-notebook\u200f'), 'ccu-notebook'); // RLM
   assert.equal(cleanProjectId('\u200bccu-notebook\n'), 'ccu-notebook'); // ZWSP + newline
   assert.equal(cleanProjectId('ccu-notebook-test'), 'ccu-notebook-test');
+  assert.equal(cleanProjectId('ccu-notebook'), 'ccu-notebook');
   assert.equal(cleanApiKey('abc-DEF_123\u200f\n'), 'abc-DEF_123');
   assert.equal(cleanApiKey(' \t AIza-9_x \u200b '), 'AIza-9_x');
+  const fullKey = `AIza${'A'.repeat(35)}`; // fake 39-char key, real charset
+  assert.equal(fullKey.length, 39);
+  assert.equal(cleanApiKey(fullKey), fullKey);
+});
+
+test('missing config logs WHICH secret is empty, never its value', async () => {
+  const lines = await captureLogs(async () => {
+    const resNoKey = await worker.fetch(
+      new Request('https://worker/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      }),
+      { FIREBASE_PROJECT_ID: PROJECT },
+    );
+    assert.equal(resNoKey.status, 500);
+    assert.ok((await resNoKey.text()).includes('proxy_not_configured'));
+    const resNoPid = await worker.fetch(
+      new Request('https://worker/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      }),
+      { GEMINI_API_KEY: 'fake-key-value' },
+    );
+    assert.equal(resNoPid.status, 500);
+  });
+  assert.equal(lines.length, 2);
+  assert.ok(lines[0].includes('missing_config:gemini_api_key'));
+  assert.ok(lines[1].includes('missing_config:firebase_project_id'));
+  for (const line of lines) {
+    assert.ok(!line.includes(PROJECT));
+    assert.ok(!line.includes('fake-key-value'));
+  }
 });
 
 test('gemini failure diag line leaks no key, audio, or response text', () => {
