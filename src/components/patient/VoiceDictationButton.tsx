@@ -6,6 +6,7 @@ import{VoiceRecorder}from'capacitor-voice-recorder';
 import{AI_MODEL,AI_TEST_DATA_ONLY}from'../../config/aiConfig';
 import{transcribeMedicalVoice}from'../../services/aiLogic';
 import{withVoiceTimeout,requestVoiceConsent}from'../../services/voicePipeline';
+import{VoiceProxyError,isAndroidProxyPath,transcribeViaProxy}from'../../services/voiceProxy';
 import{useApp}from'../../context/AppContext';
 import{useIsPreviousViewer}from'./PreviousAdmissionViewer';
 
@@ -28,10 +29,15 @@ const release=(id:string)=>{if(activeRecorderId===id)activeRecorderId=null;};
 const isAuthAppCheckError=(e:any)=>e?.details?.category==='auth_app_check'||/app.?check|not signed in|sign in again|AI access was denied/i.test(String(e?.message||''));
 
 export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false,fieldLabel='clinical field'})=>{
- const id=useId();const{showToast}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);
- const nativeRecordingRef=useRef(false);const webRecorderRef=useRef<MediaRecorder|null>(null);const chunksRef=useRef<Blob[]>([]);const streamRef=useRef<MediaStream|null>(null);
+ const id=useId();const{showToast}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);const[warnings,setWarnings]=useState<string[]>([]);const[uncertain,setUncertain]=useState<string[]>([]);const[audioUrl,setAudioUrl]=useState('');const[elapsedSec,setElapsedSec]=useState(0);
+ const nativeRecordingRef=useRef(false);const webRecorderRef=useRef<MediaRecorder|null>(null);const chunksRef=useRef<Blob[]>([]);const streamRef=useRef<MediaStream|null>(null);const startedAtRef=useRef(0);const timerRef=useRef<number|null>(null);const audioUrlRef=useRef('');
+ const RECORDING_MAX_SEC=180;
+ const fmtElapsed=(s:number)=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+ const clearTimer=()=>{if(timerRef.current!==null){window.clearInterval(timerRef.current);timerRef.current=null;}};
+ const setAudioObjectUrl=(blob:Blob)=>{if(audioUrlRef.current)URL.revokeObjectURL(audioUrlRef.current);const url=URL.createObjectURL(blob);audioUrlRef.current=url;setAudioUrl(url);};
+ const clearAudioObjectUrl=()=>{if(audioUrlRef.current)URL.revokeObjectURL(audioUrlRef.current);audioUrlRef.current='';setAudioUrl('');};
  useEffect(()=>{if(cooldown<=0)return;const t=window.setInterval(()=>setCooldown(v=>Math.max(0,v-1)),1000);return()=>window.clearInterval(t);},[cooldown]);
- useEffect(()=>()=>{webRecorderRef.current?.stream.getTracks().forEach(t=>t.stop());streamRef.current?.getTracks().forEach(t=>t.stop());release(id);},[id]);
+ useEffect(()=>()=>{webRecorderRef.current?.stream.getTracks().forEach(t=>t.stop());streamRef.current?.getTracks().forEach(t=>t.stop());if(timerRef.current!==null)window.clearInterval(timerRef.current);if(audioUrlRef.current)URL.revokeObjectURL(audioUrlRef.current);release(id);},[id]);
  const isPreviousViewer=useIsPreviousViewer();
  if(isPreviousViewer)return null;
  const start=async()=>{
@@ -43,7 +49,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
    if(Capacitor.isNativePlatform()){
     const capability=await withVoiceTimeout(VoiceRecorder.canDeviceVoiceRecord(),'recorder check');if(!capability.value)throw new Error('Voice recording is not supported on this device.');
     const permission=await withVoiceTimeout(VoiceRecorder.requestAudioRecordingPermission(),'microphone permission');if(!permission.value)throw new Error('Microphone permission was denied.');
-    await withVoiceTimeout(VoiceRecorder.startRecording(),'recorder start');nativeRecordingRef.current=true;setRecording(true);showToast('Voice recording started. Tap the mic again to stop.','info');return;
+    await withVoiceTimeout(VoiceRecorder.startRecording(),'recorder start');nativeRecordingRef.current=true;setRecording(true);startedAtRef.current=Date.now();setElapsedSec(0);clearTimer();timerRef.current=window.setInterval(()=>{const s=Math.floor((Date.now()-startedAtRef.current)/1000);setElapsedSec(s);if(s>=RECORDING_MAX_SEC)void stop();},500);showToast('Voice recording started. Tap the mic again to stop.','info');return;
    }
    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined')throw new Error('Audio recording is not supported in this browser.');
    const stream=await withVoiceTimeout(navigator.mediaDevices.getUserMedia({audio:true}),'microphone access');streamRef.current=stream;
@@ -53,7 +59,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
   finally{setBusy(false);}
  };
  const stop=async()=>{
-  if(!recording||busy)return;setBusy(true);setError('');
+  if(!recording||busy)return;setBusy(true);setError('');clearTimer();
   try{
    let blob:Blob;
    if(nativeRecordingRef.current){
@@ -69,8 +75,19 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
     try{const current=await withVoiceTimeout(FirebaseAuthentication.getCurrentUser(),'sign-in check',8000);signedIn=!!current?.user?.uid;}catch{signedIn=false;}
     if(!signedIn)throw new Error('You are not signed in. Please sign in again, then retry voice transcription.');
    }
-   setRecording(false);setBusy(true);const result=await withVoiceTimeout(transcribeMedicalVoice(blob),'voice transcription',45000);setDraft(result.medicalEnglish||result.transcription||'');setTranscription(result.transcription||'');setFallback(result.model!==AI_MODEL);setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');
+   setRecording(false);setBusy(true);setAudioObjectUrl(blob);
+   // Android-only proxy path: Firebase AI Logic cannot satisfy App Check in
+   // the APK WebView, so native Android uploads through the backend proxy.
+   // Web keeps transcribeMedicalVoice exactly as before.
+   if(isAndroidProxyPath()){
+    const proxy=await withVoiceTimeout(transcribeViaProxy(blob,fieldLabel),'proxy transcription',60000);
+    setDraft(proxy.clean_english||'');setTranscription(proxy.raw_transcript||'');setWarnings(proxy.warnings);setUncertain(proxy.uncertain);setFallback(false);setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');
+   }else{
+    const result=await withVoiceTimeout(transcribeMedicalVoice(blob),'voice transcription',45000);setDraft(result.medicalEnglish||result.transcription||'');setTranscription(result.transcription||'');setWarnings([]);setUncertain([]);setFallback(result.model!==AI_MODEL);setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');
+   }
   }catch(e:any){
+   if(e instanceof VoiceProxyError){const msg=String(e.message||'Voice transcription failed.');setError(msg);showToast(msg,'error');
+   }else{
    // Recorder-only: no live-popup fallback. Cloud denials (sign-in /
    // App Check, e.g. missing debug token on field builds) surface as a
    // clear error so the physician knows exactly what to fix.
@@ -78,7 +95,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
    let msg=e?.details?.httpStatus===429&&retry>0?'AI limit reached, try again in ~'+retry+' seconds':String(e?.message||'AI voice transcription failed.');
    if(isAuthAppCheckError(e))msg+=' (Cloud blocked this device — check sign-in and the App Check debug token.)';
    setError(msg);showToast(msg,'error');
-  }finally{setRecording(false);setBusy(false);release(id);}
+  }}finally{setRecording(false);setBusy(false);release(id);}
  };
  const apply=()=>{const clean=draft.trim();if(!clean)return;const base=value.trimEnd();const combined=base?base+'\n'+clean:clean;onApply(combined);setOpen(false);setDraft('');setTranscription('');showToast('AI draft inserted. Review the field and save it yourself.','success');};
   // Safety net (B-D): one tap inserts the untouched transcription when the polished draft is wrong.
@@ -87,6 +104,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
   <button type="button" onClick={()=>{recording?void stop():void start();}} disabled={disabled||busy||cooldown>0} title={cooldown>0?'AI limit reached, try again in ~'+cooldown+' seconds':'Voice dictation for '+fieldLabel} className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed">
    {busy?<Loader2 className="w-4 h-4 animate-spin"/>:recording?<Square className="w-4 h-4"/>:<Mic className="w-4 h-4"/>}
   </button>
+  {recording&&<span className="ml-2 text-[10px] font-bold text-cyan-600 dark:text-cyan-300 tabular-nums">{fmtElapsed(elapsedSec)} / {fmtElapsed(RECORDING_MAX_SEC)}</span>}
   {cooldown>0&&<span className="ml-2 text-[10px] font-bold text-amber-600 dark:text-amber-300">AI limit reached, try again in ~{cooldown} seconds</span>}
   {error&&<span className="ml-2 text-[10px] text-rose-600 dark:text-rose-300">{error}</span>}
   {open&&<div className="fixed inset-0 z-[140] bg-black/60 flex items-center justify-center p-3"><div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-2xl border border-slate-200 dark:border-slate-800">
