@@ -2,7 +2,8 @@
 
 Android-only backend: verifies the doctor's Firebase Auth ID token,
 then sends the recorded audio to Gemini with a server-side key and
-returns `{ raw_transcript, clean_english, uncertain, warnings }`.
+returns `{ raw_transcript, clean_english, uncertain, warnings, model_used }`.
+(`model_used` names the Gemini model that produced the result.)
 
 The web app does NOT use this proxy (it uses Firebase AI Logic directly).
 
@@ -18,6 +19,13 @@ The web app does NOT use this proxy (it uses Firebase AI Logic directly).
    (Keep secrets OUT of wrangler.toml [vars]: a plain var shadows — and on
    deploy even deletes — a secret of the same name. GEMINI_MODEL and extra
    origins are configured as vars in wrangler.toml instead.)
+   PowerShell tip for long secrets (avoids invisible characters from paste):
+   `Get-Clipboard | npx.cmd wrangler secret put GEMINI_API_KEY`
+3b. Optional fallback model: if the primary model still fails with 429/500/503
+   after its retries, the worker tries `GEMINI_FALLBACK_MODEL` once (plus one
+   short retry) within an overall ~25 s budget. Set it as a plain [vars] entry
+   in `wrangler.toml` (empty/unset = feature off). Never create a secret with
+   that name.
 4. Deploy:
    `npx wrangler deploy`
 5. Copy the worker URL (`https://cardiovault-voice-proxy.<you>.workers.dev`)

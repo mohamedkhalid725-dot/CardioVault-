@@ -12,6 +12,11 @@ GEMINI_MODEL = "gemini-3.6-flash"
 # The worker always allows *.web.app, *.firebaseapp.com, https://localhost
 # and http://localhost (Capacitor Android origins). To add more, edit
 # ALLOWED_ORIGINS here and redeploy (do NOT set it as a secret).
+# OPTIONAL fallback model: tried ONCE when the primary model still fails
+# with 429/500/503 after its retries. Empty by default (behavior unchanged).
+# Plain var only — never set a secret with this name (plain vars shadow
+# secrets of the same name).
+GEMINI_FALLBACK_MODEL = ""
 
 # Rate-limit store: create it manually, then paste the id below.
 #   wrangler kv:namespace create VOICE_RL
