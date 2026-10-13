@@ -195,6 +195,25 @@ jobs:
           keytool -printcert -jarfile app/build/outputs/apk/release/app-release.apk | grep -E 'Owner:|SHA1:|SHA256:'
           echo '--- INTERNET permission ---'
           grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          APK_SIZE_BYTES=$(stat -c%s app/build/outputs/apk/release/app-release.apk)
+          APK_SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $APK_SIZE_BYTES/1024/1024}")
+          echo "APK size: ${APK_SIZE_MB} MB (${APK_SIZE_BYTES} bytes)"
+          AAB_SIZE_BYTES=$(stat -c%s app/build/outputs/bundle/release/app-release.aab)
+          AAB_SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $AAB_SIZE_BYTES/1024/1024}")
+          echo "AAB size: ${AAB_SIZE_MB} MB (${AAB_SIZE_BYTES} bytes)"
+          if [ "$APK_SIZE_BYTES" -lt 6291456 ]; then
+            echo "APK size gate FAILED: ${APK_SIZE_MB} MB < 6 MB minimum (web assets likely missing from bundle)."
+            exit 1
+          fi
+          if ! command -v unzip >/dev/null 2>&1; then
+            echo 'APK content check FAILED: unzip is not available on this runner.'
+            exit 1
+          fi
+          if ! unzip -l app/build/outputs/apk/release/app-release.apk | grep -q 'assets/public/index.html'; then
+            echo 'APK content check FAILED: assets/public/index.html not found in APK (web app missing from bundle).'
+            exit 1
+          fi
+          echo 'APK content check: assets/public/index.html present.'
           echo 'Production release verification: OK'
 
       - name: Upload Production APK
