@@ -4,18 +4,17 @@ main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
 [vars]
-# Firebase project id used to check the ID token aud/iss claims.
-FIREBASE_PROJECT_ID = ""
-# Gemini model. MUST default to the same model the web app uses
-# (src/config/aiConfig.ts AI_MODEL = 'gemini-3.6-flash').
+# Gemini model default (SAME as the web app: src/config/aiConfig.ts AI_MODEL).
+# To use another model, edit this value and redeploy (do NOT set it as a
+# secret: plain vars shadow secrets of the same name).
 GEMINI_MODEL = "gemini-3.6-flash"
 # Comma-separated extra origins allowed to call POST /transcribe.
 # The worker always allows *.web.app, *.firebaseapp.com, https://localhost
-# and http://localhost (Capacitor Android origins).
-ALLOWED_ORIGINS = ""
+# and http://localhost (Capacitor Android origins). To add more, edit
+# ALLOWED_ORIGINS here and redeploy (do NOT set it as a secret).
 
 # Rate-limit store: create it manually, then paste the id below.
 #   wrangler kv:namespace create VOICE_RL
 [[kv_namespaces]]
 binding = "VOICE_RL"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "c37da0ebd5b948c785f26193256dafd2"

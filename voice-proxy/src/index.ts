@@ -32,7 +32,8 @@ function json(data: unknown, status: number, origin: string | null, env: Env): R
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Vary', 'Origin');
   }
-  return new Response(JSON.stringify(data), { status, headers });
+  // 204 (CORS preflight) must carry no body — the runtime rejects one.
+  return new Response(status === 204 ? null : JSON.stringify(data), { status, headers });
 }
 
 function sleep(ms: number): Promise<void> {
