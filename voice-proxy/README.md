@@ -15,9 +15,9 @@ The web app does NOT use this proxy (it uses Firebase AI Logic directly).
 3. Set the secrets (never commit these values anywhere):
    `npx wrangler secret put GEMINI_API_KEY`
    `npx wrangler secret put FIREBASE_PROJECT_ID`
-   Optional overrides (defaults already in `wrangler.toml`):
-   `npx wrangler secret put GEMINI_MODEL`
-   `npx wrangler secret put ALLOWED_ORIGINS`
+   (Keep secrets OUT of wrangler.toml [vars]: a plain var shadows — and on
+   deploy even deletes — a secret of the same name. GEMINI_MODEL and extra
+   origins are configured as vars in wrangler.toml instead.)
 4. Deploy:
    `npx wrangler deploy`
 5. Copy the worker URL (`https://cardiovault-voice-proxy.<you>.workers.dev`)
