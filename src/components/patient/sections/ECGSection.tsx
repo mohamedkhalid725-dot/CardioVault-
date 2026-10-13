@@ -85,7 +85,7 @@ export const ECGSection: React.FC<Props> = ({ patient }) => {
       showToast(`${urls.length} ECG image${urls.length === 1 ? '' : 's'} uploaded and saved to cloud.`, 'success');
     } catch (error) {
       console.error('ECG image upload failed:', error);
-      const message = error instanceof Error ? error.message : String(error); showToast(message.slice(0, 220), 'error');
+      showToast('Image upload failed. Check connection and try again.', 'error');
     } finally {
       setUploadingImages(false);
       e.target.value = '';

@@ -51,7 +51,7 @@ export const EmergencyBreakGlassModal: React.FC<EmergencyBreakGlassModalProps> =
       if (onSuccess) onSuccess();
       onClose();
     } catch (e: any) {
-      showToast(`Emergency override failed: ${e?.message || 'Unknown error'}`, 'error');
+      showToast('Emergency override failed. Please try again.', 'error');
     }
   };
 

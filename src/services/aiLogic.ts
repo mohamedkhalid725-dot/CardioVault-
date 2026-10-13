@@ -198,7 +198,7 @@ function classifyAIError(error: unknown, model: string): AITechnicalDetails {
 
 function friendlyAIError(error: unknown, model: string): SafeAIError {
   const details = classifyAIError(error, model);
-  if (details.category === 'auth_app_check') return new SafeAIError('AI access was denied. Please check App Check and sign-in, then try again.', details);
+  if (details.category === 'auth_app_check') return new SafeAIError('AI access was denied. Please sign in again, then try again.', details);
   if (details.category === 'quota') return new SafeAIError('AI is temporarily rate-limited. Please wait a little and try again.', details);
   if (details.category === 'busy') return new SafeAIError('The AI service is temporarily unavailable. Please try again in a moment.', details);
   if (details.category === 'safety_filter') return new SafeAIError('The AI request was blocked by a safety filter. Please try again with test data.', details);
@@ -249,7 +249,7 @@ async function ensureNativeAISession(): Promise<void> {
     if (!token) throw new Error('empty App Check token');
   } catch (error) {
     if (error instanceof SafeAIError) throw error;
-    throw new SafeAIError('App Check failed on this device (Play Integrity / debug token). The owner must register this build in the Firebase console, then try again.', {
+    throw new SafeAIError('Sign-in check failed on this device. Please sign in again.', {
       category: 'auth_app_check',
       code: 'NATIVE_APPCHECK_TOKEN',
       httpStatus: 403,
@@ -456,7 +456,7 @@ export async function analyzeLabImage(file: Blob): Promise<{ panel: string; resu
 export async function transcribeMedicalVoice(audio: Blob): Promise<{ transcription: string; medicalEnglish: string; notes: string[]; model: string }> {
   const mimeType = audio.type || 'audio/webm';
   const supported = ['audio/aac','audio/flac','audio/mp3','audio/m4a','audio/mpeg','audio/mpga','audio/mp4','audio/opus','audio/pcm','audio/wav','audio/webm'];
-  if (!supported.some((x) => mimeType.toLowerCase().startsWith(x))) throw new Error('Unsupported audio format: ' + mimeType);
+  if (!supported.some((x) => mimeType.toLowerCase().startsWith(x))) throw new Error('This audio format is not supported.');
   if (audio.size > 15 * 1024 * 1024) throw new Error('The voice recording is too large. Please record a shorter note.');
   const data = await blobToBase64(audio);
   const prompt = [

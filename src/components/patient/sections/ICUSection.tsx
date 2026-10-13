@@ -162,7 +162,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
       setIsEditingVent(false);
       showToast(editingRecordId ? 'Ventilator record updated.' : 'Respiratory support record saved.', 'success');
     } catch (error: any) {
-      showToast(String(error?.message || 'Ventilator record could not be saved.'), 'error');
+      showToast('Ventilator record could not be saved. Please try again.', 'error');
     } finally {
       setSavingVent(false);
     }
@@ -196,7 +196,7 @@ export const ICUSection: React.FC<ICUSectionProps> = ({ patient }) => {
       setShowAddABGModal(false);
       showToast('New ABG panel recorded.', 'success');
     } catch (error: any) {
-      showToast(String(error?.message || 'ABG could not be saved.'), 'error');
+      showToast('ABG could not be saved. Please try again.', 'error');
     } finally {
       setSavingABG(false);
     }

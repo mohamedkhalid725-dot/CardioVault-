@@ -181,7 +181,7 @@ export const ImagingSection: React.FC<ImagingSectionProps> = ({ patient }) => {
       showToast(`${urls.length} scan image${urls.length === 1 ? '' : 's'} uploaded and saved to cloud.`, 'success');
     } catch (error) {
       console.error('Scan image upload failed:', error);
-      const message = error instanceof Error ? error.message : String(error); showToast(message.slice(0, 220), 'error');
+      showToast('Image upload failed. Check connection and try again.', 'error');
     } finally {
       setUploadingImages(false);
       setActiveStudyForUpload(null);
