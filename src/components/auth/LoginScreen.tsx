@@ -19,7 +19,7 @@ export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,show
       await loginWithGoogle();
     }catch(error:any){
       console.error('Google Sign-In error:',error);
-      showToast(`Google Sign-In failed: ${String(error?.message||error?.code||'Unknown error')}`,'error');
+      showToast('Could not sign in with Google. Please try again.','error');
     }finally{
       setBusy(false);
     }
@@ -40,7 +40,7 @@ export const LoginScreen:React.FC=()=>{const{loginWithGoogle,loginWithEmail,show
     }catch(error:any){
       console.error('Email authentication error:',error);
       const code=String(error?.code||'');
-      const message=code.includes('email-already-in-use')?'This email already has an account. Use Sign In instead.':code.includes('invalid-credential')||code.includes('wrong-password')||code.includes('invalid-login-credentials')?'Incorrect email or password.':code.includes('user-not-found')?'No account exists for this email. Choose Create Account first.':code.includes('operation-not-allowed')?'Email/Password sign-in is not enabled in Firebase yet.':code.includes('weak-password')?'Password is too weak. Use at least 6 characters.':String(error?.message||'Unable to authenticate with email.');
+      const message=code.includes('email-already-in-use')?'This email already has an account. Use Sign In instead.':code.includes('invalid-credential')||code.includes('wrong-password')||code.includes('invalid-login-credentials')?'Incorrect email or password.':code.includes('user-not-found')?'No account exists for this email. Choose Create Account first.':code.includes('operation-not-allowed')?'Email/Password sign-in is not enabled in Firebase yet.':code.includes('weak-password')?'Password is too weak. Use at least 6 characters.':'Unable to authenticate. Check your details and try again.';
       setEmailError(message);showToast(message,'error');
     }finally{
       setBusy(false);

@@ -19,7 +19,7 @@ export const ClinicalAudioPlayer: React.FC<Props> = ({ url, storagePath, duratio
     void resolveClinicalMediaUrl(url, storagePath).then((resolved) => {
       if (active) setPlayableUrl(resolved);
     }).catch((reason: any) => {
-      if (active) setError(String(reason?.message || 'This voice recording could not be loaded.'));
+      if (active) setError('This voice recording could not be loaded.');
     });
     return () => { active = false; };
   }, [url, storagePath]);

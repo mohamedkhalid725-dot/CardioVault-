@@ -207,6 +207,44 @@ export function serializeReadableExamination(examination: unknown): string {
   return lines.length ? lines.join('\n') : 'Not documented';
 }
 
+export interface RuleBasedSummary {
+  summary: string;
+  keyPoints: string[];
+  model: string;
+}
+
+// Release v2.0.0 (no-AI): deterministic on-device summary built ONLY from
+// documented facts via buildPatientSummaryInput. Same shape as the former AI
+// result ({summary, keyPoints, model}) so the review-before-save flow is
+// unchanged. "Not documented" stays unknown — never converted into a finding.
+export function buildRuleBasedSummary(patient: PatientSummarySource): RuleBasedSummary {
+  const input = buildPatientSummaryInput(patient);
+  const conditions = buildAdditionalConditions(patient);
+  const sentences: string[] = [];
+  const keyPoints: string[] = [];
+  if (input.age !== 'Not documented') sentences.push(`${input.age}-year-old patient.`);
+  const known: string[] = [];
+  if (input.diabeticStatus === 'Yes') known.push('diabetes');
+  if (input.hypertensiveStatus === 'Yes') known.push('hypertension');
+  if (known.length) {
+    sentences.push(`Known ${known.join(' and ')}.`);
+    keyPoints.push(`Known: ${known.join(', ')}.`);
+  }
+  if (input.chiefComplaint !== 'Not documented') {
+    sentences.push(`Chief complaint: ${input.chiefComplaint}.`);
+    keyPoints.push(`Chief complaint: ${input.chiefComplaint}.`);
+  }
+  if (input.history !== 'Not documented') sentences.push(`History: ${input.history}.`);
+  if (conditions.length) keyPoints.push(`Recorded conditions: ${conditions.join(', ')}.`);
+  if (input.examination !== 'Not documented') {
+    sentences.push(`Examination: ${input.examination}.`);
+  } else {
+    sentences.push('Examination not documented.');
+  }
+  const summary = sentences.length ? sentences.join(' ') : 'No clinical facts documented yet.';
+  return { summary, keyPoints, model: 'local-rules-v1' };
+}
+
 export function buildPatientSummaryInput(
   patient: PatientSummarySource,
 ): PatientSummaryInput {

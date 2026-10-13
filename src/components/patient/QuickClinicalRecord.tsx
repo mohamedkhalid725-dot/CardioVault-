@@ -1,193 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardPlus, X, Mic, Square, Loader2, Sparkles } from 'lucide-react';
-import { Capacitor } from '@capacitor/core';
-import { VoiceRecorder } from 'capacitor-voice-recorder';
+import React, { useState } from 'react';
+import { ClipboardPlus, X, Loader2 } from 'lucide-react';
 import { Patient, ProgressNote } from '../../types/clinical';
 import { useApp } from '../../context/AppContext';
-import { AITechnicalDetails, transcribeMedicalVoice } from '../../services/aiLogic';
-import { withVoiceTimeout, requestVoiceConsent } from '../../services/voicePipeline';
-import { AIDataWarning } from './AIDataWarning';
 
 interface Props { patient: Patient; onClose: () => void; }
 
-const base64ToBlob = (base64: string, mimeType: string): Blob => {
-  const clean = base64.includes(',') ? base64.split(',').pop() || '' : base64;
-  const bytes = Uint8Array.from(atob(clean), (char) => char.charCodeAt(0));
-  return new Blob([bytes], { type: mimeType || 'audio/aac' });
-};
-
+// Release v2.0.0 (no-AI): text-only quick record. Voice recording and AI
+// transcription were removed entirely (deferred to a future version).
 export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
   const { updatePatient, showToast, auth } = useApp();
   const [text, setText] = useState('');
   const [type, setType] = useState('Quick Clinical Record');
-  const [recording, setRecording] = useState(false);
-  const [recordingBusy, setRecordingBusy] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [audioUrl, setAudioUrl] = useState('');
-  const [duration, setDuration] = useState(0);
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiCooldownSeconds, setAiCooldownSeconds] = useState(0);
-  const [aiDraft, setAiDraft] = useState('');
-  const [voiceError, setVoiceError] = useState<{ message: string; technical: AITechnicalDetails } | null>(null);
-  const shownVoiceErrorsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (aiCooldownSeconds <= 0) return;
-    const timer = window.setInterval(() => setAiCooldownSeconds((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearInterval(timer);
-  }, [aiCooldownSeconds]);
-
-  const reportVoiceError = (error: any, fallback: string) => {
-    const technical: AITechnicalDetails = error?.details || {
-      category: 'unknown',
-      code: 'CLIENT_ERROR',
-      httpStatus: null,
-      model: '—',
-    };
-    const message = String(error?.message || fallback);
-    const key = technical.code + ':' + technical.category + ':' + technical.httpStatus + ':' + technical.model;
-    if (shownVoiceErrorsRef.current.has(key)) return;
-    shownVoiceErrorsRef.current.add(key);
-    setVoiceError({ message, technical });
-  };
-
-  const webRecorderRef = useRef<MediaRecorder | null>(null);
-  const webChunksRef = useRef<Blob[]>([]);
-  const startedRef = useRef(0);
-  const timerRef = useRef<number | null>(null);
-
-  useEffect(() => () => {
-    if (timerRef.current !== null) window.clearInterval(timerRef.current);
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    webRecorderRef.current?.stream.getTracks().forEach((track) => track.stop());
-  }, [audioUrl]);
-
-  const startTimer = () => {
-    startedRef.current = Date.now();
-    setDuration(0);
-    if (timerRef.current !== null) window.clearInterval(timerRef.current);
-    timerRef.current = window.setInterval(() => {
-      setDuration(Math.round((Date.now() - startedRef.current) / 1000));
-    }, 500);
-  };
-
-  const stopTimer = () => {
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  const startRecording = async () => {
-    if (recording || recordingBusy) return;
-    setRecordingBusy(true);
-    if (!requestVoiceConsent()) { setRecordingBusy(false); return; }
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const capability = await withVoiceTimeout(VoiceRecorder.canDeviceVoiceRecord(), 'recorder check');
-        if (!capability.value) throw new Error('Voice recording is not supported on this device.');
-        const permission = await withVoiceTimeout(VoiceRecorder.requestAudioRecordingPermission(), 'microphone permission');
-        if (!permission.value) throw new Error('Microphone permission was denied.');
-        await withVoiceTimeout(VoiceRecorder.startRecording(), 'recorder start');
-        startTimer();
-        setRecording(true);
-        showToast('Voice recording started.', 'info');
-        return;
-      }
-
-      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-        throw new Error('Audio recording is not supported in this browser.');
-      }
-
-      const stream = await withVoiceTimeout(navigator.mediaDevices.getUserMedia({ audio: true }), 'microphone access');
-      const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
-      const mimeType = preferredTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      webChunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) webChunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(webChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        setAudioBlob(blob);
-        setAudioUrl(URL.createObjectURL(blob));
-        setDuration(Math.max(1, Math.round((Date.now() - startedRef.current) / 1000)));
-      };
-      webRecorderRef.current = recorder;
-      recorder.start();
-      startTimer();
-      setRecording(true);
-      showToast('Voice recording started.', 'info');
-    } catch (error: any) {
-      console.error('Voice recording start failed:', error);
-      reportVoiceError(error, 'Unable to start voice recording.');
-      stopTimer();
-    } finally {
-      setRecordingBusy(false);
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!recording || recordingBusy) return;
-    setRecordingBusy(true);
-    stopTimer();
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const result: any = await VoiceRecorder.stopRecording();
-        const value = result?.value || result;
-        const mimeType = String(value?.mimeType || 'audio/aac');
-        const base64 = String(value?.recordDataBase64 || '');
-        if (!base64) throw new Error('The recorder returned no audio data.');
-        const blob = base64ToBlob(base64, mimeType);
-        setAudioBlob(blob);
-        setAudioUrl(URL.createObjectURL(blob));
-        setDuration(Math.max(1, Math.round(Number(value?.msDuration || 0) / 1000)) || Math.max(1, Math.round((Date.now() - startedRef.current) / 1000)));
-      } else {
-        webRecorderRef.current?.stop();
-        webRecorderRef.current = null;
-      }
-      setRecording(false);
-      showToast('Voice recording ready to save.', 'success');
-    } catch (error: any) {
-      console.error('Voice recording stop failed:', error);
-      setRecording(false);
-      reportVoiceError(error, 'Unable to stop voice recording.');
-    } finally {
-      setRecordingBusy(false);
-    }
-  };
-
-  const clearRecording = () => {
-    if (recording) void stopRecording();
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioBlob(null);
-    setAudioUrl('');
-    setDuration(0);
-  };
-
-  const transcribeWithAI = async () => {
-    if (!audioBlob || aiBusy) return;
-    setAiBusy(true);
-    try {
-      const result = await withVoiceTimeout(transcribeMedicalVoice(audioBlob), 'voice transcription', 45000);
-      setAiDraft(result.medicalEnglish || result.transcription || '');
-      showToast('AI transcription is ready for review. Nothing was saved automatically.','success');
-    } catch (error:any) {
-      const retryAfter = Number(error?.details?.retryAfterSeconds || 0);
-      if (error?.details?.httpStatus === 429 && retryAfter > 0) setAiCooldownSeconds(retryAfter);
-      reportVoiceError(error, 'AI voice transcription failed.');
-    } finally {
-      setAiBusy(false);
-    }
-  };
 
   const save = async () => {
-    if (saving || recording) return;
-    const value = (aiDraft.trim() || text.trim());
+    if (saving) return;
+    const value = text.trim();
     if (!value) {
-      showToast(audioBlob ? 'Transcribe the recording first. Audio is not stored.' : 'Add a note or record a voice note first.', 'error');
+      showToast('Write the note first.', 'error');
       return;
     }
 
@@ -214,11 +44,10 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
       });
 
       showToast('Clinical record saved successfully.', 'success');
-      clearRecording();
       onClose();
     } catch (error: any) {
       console.error('Quick clinical record save failed:', error);
-      reportVoiceError(error, 'Clinical record could not be saved.');
+      showToast('Clinical record could not be saved. Please try again.', 'error');
     } finally {
       setSaving(false);
     }
@@ -234,69 +63,21 @@ export const QuickClinicalRecord: React.FC<Props> = ({ patient, onClose }) => {
             </h2>
             <p className="text-[11px] text-slate-400">Saved as a dated Progress Note and shown in the patient timeline.</p>
           </div>
-          <button type="button" onClick={onClose} disabled={saving || recording} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><X className="w-4 h-4" /></button>
+          <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><X className="w-4 h-4" /></button>
         </div>
 
         <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">
           Record type
-          <select value={type} onChange={(event) => setType(event.target.value)} disabled={saving || recording} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2.5 text-sm">
+          <select value={type} onChange={(event) => setType(event.target.value)} disabled={saving} className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2.5 text-sm">
             <option>Quick Clinical Record</option><option>Rounding Update</option><option>Clinical Event</option><option>Consultation Update</option><option>Important Observation</option>
           </select>
         </label>
 
-        <AIDataWarning compact />
-        {voiceError && (
-          <div role="alert" className="mt-3 rounded-2xl border border-rose-300 bg-rose-50 dark:bg-rose-950/30 dark:border-rose-800 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-xs font-extrabold text-rose-700 dark:text-rose-300">Voice / AI error</div>
-                <div className="mt-1 text-xs leading-5 text-rose-700 dark:text-rose-200 break-words">{voiceError.message}</div>
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-[11px] font-bold text-rose-700 dark:text-rose-300">Technical details</summary>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-rose-800 dark:text-rose-200">
-                    <div><span className="font-bold">Category</span><div>{voiceError.technical.category}</div></div>
-                    <div><span className="font-bold">Code</span><div>{voiceError.technical.code}</div></div>
-                    <div><span className="font-bold">HTTP status</span><div>{voiceError.technical.httpStatus ?? '—'}</div></div>
-                    <div><span className="font-bold">Model</span><div className="break-all">{voiceError.technical.model}</div></div>
-                  </div>
-                </details>
-              </div>
-              <button type="button" onClick={() => setVoiceError(null)} className="shrink-0 p-1 rounded-lg text-rose-600 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40" aria-label="Dismiss error">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-        <div className="mt-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Voice note</div>
-              <div className="text-[10px] text-slate-400">{recording ? `Recording… ${duration}s` : audioBlob ? `Recorded ${duration}s` : 'Optional audio recording'}</div>
-            </div>
-            <div className="flex gap-2">
-              {!recording ? (
-                <button type="button" onClick={() => void startRecording()} disabled={recordingBusy || saving} className="px-3 py-2 rounded-xl bg-cyan-500 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-40">
-                  {recordingBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />} Record
-                </button>
-              ) : (
-                <button type="button" onClick={() => void stopRecording()} disabled={recordingBusy} className="px-3 py-2 rounded-xl bg-rose-500 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-40">
-                  {recordingBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />} Stop
-                </button>
-              )}
-              {audioBlob && <button type="button" onClick={clearRecording} disabled={saving || recordingBusy} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:opacity-40">Clear</button>}
-            </div>
-          </div>
-          {audioUrl && <audio controls src={audioUrl} className="w-full mt-3" />}
-          {audioBlob && <button type="button" onClick={() => void transcribeWithAI()} disabled={aiBusy || saving || recording || aiCooldownSeconds > 0} className="mt-3 px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-50">{aiBusy?<Loader2 className="w-4 h-4 animate-spin"/>:<Sparkles className="w-4 h-4"/>}{aiBusy?"Transcribing…":aiCooldownSeconds>0?`AI limit reached, try again in ~${aiCooldownSeconds} seconds`:"Convert to Medical English"}</button>}
-        </div>
-
-        {aiDraft && <div className="mt-3 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-3"><div className="text-[10px] font-bold text-violet-600 dark:text-violet-300 mb-1">AI draft — review/edit before saving</div><textarea value={aiDraft} onChange={e=>setAiDraft(e.target.value)} disabled={saving || recording} className="w-full min-h-[130px] rounded-xl bg-white dark:bg-slate-900 px-3 py-2 text-sm border border-violet-500/20"/></div>}
-
-        <textarea autoFocus value={text} onChange={(event) => setText(event.target.value)} disabled={saving || recording} placeholder="Document the important clinical event, observation, response, or update…" className="mt-3 w-full min-h-[170px] resize-y rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3 text-sm outline-none focus:border-cyan-500 text-slate-900 dark:text-white" />
+        <textarea autoFocus value={text} onChange={(event) => setText(event.target.value)} disabled={saving} placeholder="Document the important clinical event, observation, response, or update…" className="mt-3 w-full min-h-[170px] resize-y rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3 text-sm outline-none focus:border-cyan-500 text-slate-900 dark:text-white" />
 
         <div className="flex justify-end gap-2 mt-4">
-          <button type="button" onClick={onClose} disabled={saving || recording} className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 disabled:opacity-40">Cancel</button>
-          <button type="button" disabled={saving || recordingBusy || recording || (!text.trim() && !audioBlob)} onClick={() => void save()} className="px-5 py-2.5 rounded-xl bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-2">
+          <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 disabled:opacity-40">Cancel</button>
+          <button type="button" disabled={saving || !text.trim()} onClick={() => void save()} className="px-5 py-2.5 rounded-xl bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />} {saving ? 'Saving…' : 'Save Record'}
           </button>
         </div>

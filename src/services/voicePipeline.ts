@@ -198,7 +198,7 @@ export async function polishToMedicalEnglish(transcription: string, fieldLabel: 
   if (cached) return cached;
   const apiKey = String(import.meta.env.VITE_GROQ_API_KEY || '').trim();
   if (!apiKey) {
-    throw new Error('Voice polish is not configured. Add VITE_GROQ_API_KEY and try again.');
+    throw new Error('Voice polish is not available on this build.');
   }
   const response = await fetch(GROQ_ENDPOINT, {
     method: 'POST',
@@ -211,7 +211,7 @@ export async function polishToMedicalEnglish(transcription: string, fieldLabel: 
     }),
   });
   if (response.status === 429) throw new Error('Voice polish limit reached. Please wait a little and try again.');
-  if (!response.ok) throw new Error(`Voice polish failed (HTTP ${response.status}).`);
+  if (!response.ok) throw new Error('Voice polish failed. Please try again.');
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const raw = String(data?.choices?.[0]?.message?.content || '').trim();
   const start = raw.indexOf('{');

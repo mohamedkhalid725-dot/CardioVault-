@@ -164,6 +164,20 @@ jobs:
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
+      - name: Set app version for Android builds
+        working-directory: android
+        run: |
+          cat >> app/build.gradle <<'GRADLE'
+          android {
+              defaultConfig {
+                  versionCode 20
+                  versionName "2.0.0"
+              }
+          }
+          GRADLE
+          echo 'App version pinned:'
+          grep -E 'version(Code|Name)' app/build.gradle | tail -4
+
       - name: Build signed Release APK and AAB
         working-directory: android
         env:
