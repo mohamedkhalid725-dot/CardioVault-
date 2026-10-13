@@ -32,7 +32,7 @@ const RETRY_DELAYS_MS = [800, 2000];
 // that copy-paste into the Cloudflare dashboard can smuggle in (e.g. U+200F
 // RIGHT-TO-LEFT MARK, zero-width space, newlines). Exported for unit tests.
 export const cleanApiKey = (value: unknown): string =>
-  String(value ?? '').trim().replace(/[^A-Za-z0-9_-]/g, '');
+  String(value ?? '').trim().replace(/[^A-Za-z0-9._-]/g, '');
 export const cleanProjectId = (value: unknown): string =>
   String(value ?? '').trim().replace(/[^a-z0-9-]/gi, '');
 
@@ -200,11 +200,12 @@ export default {
     const apiKey = cleanApiKey(keyRaw);
     if (!projectId || !apiKey) {
       // TEMPORARY - remove after diagnosis: name which secret is empty at
-      // runtime. Secret NAMES only — never values, keys, or audio data.
+      // runtime, plus key lengths as integers (lengths only — never the key
+      // or any part of it). Secret NAMES only — never values, keys, or audio data.
       const missing: string[] = [];
       if (!projectId) missing.push('missing_config:firebase_project_id');
       if (!apiKey) missing.push('missing_config:gemini_api_key');
-      done(500, `proxy_not_configured:${missing.join('+')}`, 'none');
+      done(500, `proxy_not_configured:${missing.join('+')} key_raw_len=${keyRaw.length} key_clean_len=${apiKey.length}`, 'none');
       return json({ error: 'proxy_not_configured' }, 500, origin, env);
     }
 

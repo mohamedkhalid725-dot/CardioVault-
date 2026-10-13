@@ -136,6 +136,11 @@ test('secret cleaning strips invisible characters', () => {
   const fullKey = `AIza${'A'.repeat(35)}`; // fake 39-char key, real charset
   assert.equal(fullKey.length, 39);
   assert.equal(cleanApiKey(fullKey), fullKey);
+  const dottedKey = `AQ.${'B'.repeat(36)}`; // fake AQ.-style key containing a dot
+  assert.equal(cleanApiKey(dottedKey), dottedKey);
+  assert.notEqual(cleanApiKey(dottedKey).length, 0);
+  assert.equal(cleanApiKey('‏‌صمغ'), ''); // only RLM + ZWJ + Arabic letters
+  assert.equal(cleanApiKey('‏'), ''); // only invisible chars
 });
 
 test('missing config logs WHICH secret is empty, never its value', async () => {
@@ -166,6 +171,8 @@ test('missing config logs WHICH secret is empty, never its value', async () => {
   for (const line of lines) {
     assert.ok(!line.includes(PROJECT));
     assert.ok(!line.includes('fake-key-value'));
+    assert.ok(!line.includes('fake-key'));
+    assert.ok(/key_raw_len=\d+ key_clean_len=\d+/.test(line));
   }
 });
 
