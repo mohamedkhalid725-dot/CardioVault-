@@ -1,0 +1,21 @@
+# CardioVault voice proxy (Cloudflare Worker). Android-only; web uses Firebase AI Logic.
+name = "cardiovault-voice-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Firebase project id used to check the ID token aud/iss claims.
+FIREBASE_PROJECT_ID = ""
+# Gemini model. MUST default to the same model the web app uses
+# (src/config/aiConfig.ts AI_MODEL = 'gemini-3.6-flash').
+GEMINI_MODEL = "gemini-3.6-flash"
+# Comma-separated extra origins allowed to call POST /transcribe.
+# The worker always allows *.web.app, *.firebaseapp.com, https://localhost
+# and http://localhost (Capacitor Android origins).
+ALLOWED_ORIGINS = ""
+
+# Rate-limit store: create it manually, then paste the id below.
+#   wrangler kv:namespace create VOICE_RL
+[[kv_namespaces]]
+binding = "VOICE_RL"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"

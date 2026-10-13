@@ -1,0 +1,19 @@
+{
+  "name": "cardiovault-voice-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker proxy: verifies Firebase Auth ID tokens and relays Android voice audio to Gemini. Android-only; web uses Firebase AI Logic directly.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test ../test/voiceProxyAuth.test.ts ../test/voiceProxyNumbers.test.ts ../test/voiceProxyPrompt.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "jose": "^6.2.12"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261012.1",
+    "typescript": "~5.8.2",
+    "wrangler": "^4.149.0"
+  }
+}
