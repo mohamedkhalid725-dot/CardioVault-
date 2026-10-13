@@ -6,6 +6,7 @@ import {
   canRetry,
   createMemoryQueueStore,
   enqueueItem,
+  isAutoRetryable,
   markForRetry,
   queueKey,
 } from '../src/services/voiceQueue.ts';
@@ -64,6 +65,25 @@ test('failed item can retry with backoff until attempts run out', () => {
 test('backoff grows with attempts', () => {
   assert.ok(backoffMs(1) > backoffMs(0));
   assert.ok(backoffMs(4) >= backoffMs(3));
+});
+
+test('auto-retry only covers transient failures, never auth errors', () => {
+  const store = createMemoryQueueStore();
+  const base = {
+    patientId: 'p1',
+    fieldId: 'f',
+    fieldLabel: 'F',
+    mimeType: 'audio/aac',
+    audioBase64: 'AAA=',
+  };
+  const pending = enqueueItem(store, base);
+  assert.equal(isAutoRetryable(pending), true);
+  const authFail = { ...pending, state: 'failed' as const, lastError: 'sign_in_again' };
+  assert.equal(isAutoRetryable(authFail), false);
+  const netFail = { ...pending, state: 'failed' as const, lastError: 'saved_will_retry' };
+  assert.equal(isAutoRetryable(netFail), true);
+  const exhausted = { ...netFail, attempts: VOICE_QUEUE_MAX_ATTEMPTS };
+  assert.equal(isAutoRetryable(exhausted), false);
 });
 
 test('queue key combines patient and field', () => {

@@ -72,31 +72,48 @@ export async function transcribeViaProxy(audio: Blob, fieldName: string): Promis
     .replace(/\/+$/, '');
   if (!baseUrl) throw new VoiceProxyError('proxy_not_configured', proxyErrorMessage('proxy_not_configured'));
 
-  let idToken = '';
-  try {
-    const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: false });
-    idToken = String(token || '');
-  } catch {
-    throw new VoiceProxyError('sign_in_again', proxyErrorMessage('sign_in_again'));
-  }
-  if (!idToken) throw new VoiceProxyError('sign_in_again', proxyErrorMessage('sign_in_again'));
-
   const audioBase64 = await blobToBase64(audio);
   if (!audioBase64) throw new VoiceProxyError('unintelligible', proxyErrorMessage('unintelligible'));
 
+  // One attempt: fresh-token flag controls Firebase token refresh.
+  const attempt = async (forceRefresh: boolean): Promise<Response> => {
+    let idToken = '';
+    try {
+      const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh });
+      idToken = String(token || '');
+    } catch {
+      throw new VoiceProxyError('sign_in_again', proxyErrorMessage('sign_in_again'));
+    }
+    if (!idToken) throw new VoiceProxyError('sign_in_again', proxyErrorMessage('sign_in_again'));
+    try {
+      return await fetch(`${baseUrl}/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          audioBase64,
+          mimeType: audio.type || 'audio/aac',
+          fieldName: fieldName || 'clinical field',
+        }),
+      });
+    } catch {
+      throw new VoiceProxyError('saved_will_retry', proxyErrorMessage('saved_will_retry'));
+    }
+  };
+
+  // On 401, retry ONCE with a force-refreshed token (stale cached token is
+  // the common transient cause) before failing.
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/transcribe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({
-        audioBase64,
-        mimeType: audio.type || 'audio/aac',
-        fieldName: fieldName || 'clinical field',
-      }),
-    });
-  } catch {
-    throw new VoiceProxyError('saved_will_retry', proxyErrorMessage('saved_will_retry'));
+    res = await attempt(false);
+    if (res.status === 401) res = await attempt(true);
+  } catch (error) {
+    if (error instanceof VoiceProxyError && error.code === 'sign_in_again') {
+      try {
+        res = await attempt(true);
+      } catch (retryError) {
+        throw retryError;
+      }
+    } else throw error;
   }
   if (res.status === 401) throw new VoiceProxyError('sign_in_again', proxyErrorMessage('sign_in_again'));
   if (res.status === 429) throw new VoiceProxyError('quota_will_retry', proxyErrorMessage('quota_will_retry'));

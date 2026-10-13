@@ -7,7 +7,7 @@ import{AI_MODEL,AI_TEST_DATA_ONLY}from'../../config/aiConfig';
 import{transcribeMedicalVoice}from'../../services/aiLogic';
 import{withVoiceTimeout,requestVoiceConsent}from'../../services/voicePipeline';
 import{VoiceProxyError,isAndroidProxyPath,proxyErrorMessage,transcribeViaProxy}from'../../services/voiceProxy';
-import{VOICE_QUEUE_MAX_ATTEMPTS,backoffMs,blobToBase64String,canRetry,idbListItems,idbPutItem,idbRemoveItem,isRetryableCode,markForRetry}from'../../services/voiceQueue';
+import{VOICE_QUEUE_MAX_ATTEMPTS,backoffMs,blobToBase64String,canRetry,idbListItems,idbPutItem,idbRemoveItem,isAutoRetryable,isRetryableCode,markForRetry}from'../../services/voiceQueue';
 import type{VoiceQueueItem}from'../../services/voiceQueue';
 import{useApp}from'../../context/AppContext';
 import{useIsPreviousViewer}from'./PreviousAdmissionViewer';
@@ -33,7 +33,7 @@ const release=(id:string)=>{if(activeRecorderId===id)activeRecorderId=null;};
 const isAuthAppCheckError=(e:any)=>e?.details?.category==='auth_app_check'||/app.?check|not signed in|sign in again|AI access was denied/i.test(String(e?.message||''));
 
 export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false,fieldLabel='clinical field',patientId,fieldId})=>{
- const id=useId();const{showToast}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);const[warnings,setWarnings]=useState<string[]>([]);const[uncertain,setUncertain]=useState<string[]>([]);const[audioUrl,setAudioUrl]=useState('');const[elapsedSec,setElapsedSec]=useState(0);const[currentItemId,setCurrentItemId]=useState<string|null>(null);const[queueFailed,setQueueFailed]=useState('');
+ const id=useId();const{showToast}=useApp();const[recording,setRecording]=useState(false);const[busy,setBusy]=useState(false);const[cooldown,setCooldown]=useState(0);const[error,setError]=useState('');const[draft,setDraft]=useState('');const[transcription,setTranscription]=useState('');const[fallback,setFallback]=useState(false);const[open,setOpen]=useState(false);const[warnings,setWarnings]=useState<string[]>([]);const[uncertain,setUncertain]=useState<string[]>([]);const[audioUrl,setAudioUrl]=useState('');const[elapsedSec,setElapsedSec]=useState(0);const[currentItemId,setCurrentItemId]=useState<string|null>(null);const[queueFailed,setQueueFailed]=useState('');const[queueFailedCode,setQueueFailedCode]=useState('');
  const nativeRecordingRef=useRef(false);const webRecorderRef=useRef<MediaRecorder|null>(null);const chunksRef=useRef<Blob[]>([]);const streamRef=useRef<MediaStream|null>(null);const startedAtRef=useRef(0);const timerRef=useRef<number|null>(null);const audioUrlRef=useRef('');
  const RECORDING_MAX_SEC=180;
  const fmtElapsed=(s:number)=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
@@ -50,9 +50,19 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
    return proxy;
   }catch(q){if(base)await idbPutItem({...base,state:'failed',lastError:q instanceof VoiceProxyError?q.code:'proxy_failed'}).catch(()=>{});throw q;}
  };
- const openProxyDraft=(proxy:{clean_english:string;raw_transcript:string;warnings:string[];uncertain:string[]})=>{setDraft(proxy.clean_english||'');setTranscription(proxy.raw_transcript||'');setWarnings(proxy.warnings);setUncertain(proxy.uncertain);setFallback(false);setQueueFailed('');setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');};
+ const openProxyDraft=(proxy:{clean_english:string;raw_transcript:string;warnings:string[];uncertain:string[]})=>{setDraft(proxy.clean_english||'');setTranscription(proxy.raw_transcript||'');setWarnings(proxy.warnings);setUncertain(proxy.uncertain);setFallback(false);setQueueFailed('');setQueueFailedCode('');setOpen(true);showToast('AI draft is ready. Review it before inserting.','success');};
  // Local audio is deleted only when the doctor approves or discards the draft.
- const dismissModal=()=>{setOpen(false);setDraft('');setTranscription('');setWarnings([]);setUncertain([]);setQueueFailed('');clearAudioObjectUrl();if(currentItemId){const idToRemove=currentItemId;setCurrentItemId(null);void idbRemoveItem(idToRemove).catch(()=>{});}};
+ const dismissModal=()=>{setOpen(false);setDraft('');setTranscription('');setWarnings([]);setUncertain([]);setQueueFailed('');setQueueFailedCode('');clearAudioObjectUrl();if(currentItemId){const idToRemove=currentItemId;setCurrentItemId(null);void idbRemoveItem(idToRemove).catch(()=>{});}};
+ // Records a proxy failure: manual Retry stays only for transient errors and
+ // for sign-in (the doctor may have just signed in again). Everything else —
+ // and anything past the attempt cap — shows a final message with no Retry.
+ // The recording always stays saved in the queue until approve/discard.
+ const noteProxyFailure=(code:string,message:string,attempts:number):string=>{
+  const canManual=(isRetryableCode(code)||code==='sign_in_again')&&attempts<VOICE_QUEUE_MAX_ATTEMPTS;
+  if(canManual){setQueueFailed(message);setQueueFailedCode(code);}
+  else{setQueueFailed('');setQueueFailedCode('');}
+  return attempts>=VOICE_QUEUE_MAX_ATTEMPTS?`${message} Tried ${attempts} times — no retries left. Please re-record.`:message;
+ };
  const runQueueItem=async(item:VoiceQueueItem)=>{
   if(busy||recording)return;setBusy(true);setError('');
   try{
@@ -62,12 +72,12 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
    openProxyDraft(proxy);
   }catch(e:any){
    if(e instanceof VoiceProxyError){
-    if(isRetryableCode(e.code))setQueueFailed(String(e.message));
-    setError(String(e.message||'Voice transcription failed.'));showToast(String(e.message||'Voice transcription failed.'),'error');
+    const final=noteProxyFailure(e.code,String(e.message||'Voice transcription failed.'),(item.attempts||0)+1);
+    setError(final);showToast(final,'error');
    }else{const msg=String(e?.message||'Voice transcription failed.');setError(msg);showToast(msg,'error');}
   }finally{setBusy(false);}
  };
- const retryNow=()=>{void (async()=>{try{const items=await idbListItems();const found=items.find(i=>i.id===currentItemId);if(found&&(found.state==='failed'||found.state==='pending'))await runQueueItem(found);}catch{/* storage unavailable */}})();};
+ const retryNow=()=>{void (async()=>{try{const items=await idbListItems();const found=items.find(i=>i.id===currentItemId);if(!found||found.attempts>=VOICE_QUEUE_MAX_ATTEMPTS)return;if(found.state==='failed'||found.state==='pending')await runQueueItem(found);}catch{/* storage unavailable */}})();};
  // Highlights [?word?] markers and uncertain tokens in review text.
  const highlightDraft=(text:string):React.ReactNode=>{
   let k=0;
@@ -118,7 +128,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
     if(busy||recording||open)return;
     try{
      const items=await idbListItems();
-     const cand=items.filter(i=>i.patientId===(patientId??'unknown-patient')&&i.fieldId===(fieldId??fieldLabel)&&((i.state==='failed'&&canRetry(i))||(i.state==='pending'&&i.attempts<VOICE_QUEUE_MAX_ATTEMPTS)));
+     const cand=items.filter(i=>i.patientId===(patientId??'unknown-patient')&&i.fieldId===(fieldId??fieldLabel)&&isAutoRetryable(i));
      if(!cand.length)return;
      const oldest=cand.sort((a,b)=>a.createdAt-b.createdAt)[0];
      await new Promise(r=>setTimeout(r,backoffMs(oldest.attempts)));
@@ -191,7 +201,7 @@ export const VoiceDictationButton:React.FC<Props>=({value,onApply,disabled=false
      const proxy=await uploadAttempt(blob,fieldLabel,base);
      openProxyDraft(proxy);
     }catch(q:any){
-     if(q instanceof VoiceProxyError&&isRetryableCode(q.code))setQueueFailed(String(q.message));
+     if(q instanceof VoiceProxyError){q.message=noteProxyFailure(q.code,String(q.message||'Voice transcription failed.'),base?base.attempts:1);}
      throw q;
     }
    }else{

@@ -45,6 +45,16 @@ export function canRetry(item: VoiceQueueItem): boolean {
   return item.state === 'failed' && item.attempts < VOICE_QUEUE_MAX_ATTEMPTS;
 }
 
+// Auto-retry (on reconnect) is limited to transient failures: pending items
+// and failures caused by network/quota errors. Auth and request errors
+// (401/400/413) NEVER auto-retry — they need the doctor to act first, and
+// manual Retry stays available for the sign-in case.
+export function isAutoRetryable(item: VoiceQueueItem): boolean {
+  if (item.attempts >= VOICE_QUEUE_MAX_ATTEMPTS) return false;
+  if (item.state === 'pending') return true;
+  return item.state === 'failed' && isRetryableCode(item.lastError ?? '');
+}
+
 export function markForRetry(item: VoiceQueueItem): VoiceQueueItem {
   return { ...item, state: 'pending', attempts: item.attempts + 1, lastError: undefined };
 }

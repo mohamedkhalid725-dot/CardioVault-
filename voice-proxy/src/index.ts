@@ -1,8 +1,10 @@
 // Cloudflare Worker: Android-only voice → medical English proxy.
 // Web never calls this (it uses Firebase AI Logic directly).
-// Privacy: NEVER log audio, transcripts, or patient data — only the
-// HTTP status and the uid hash.
-import { verifyFirebaseIdToken } from './auth.ts';
+// Privacy: NEVER log audio, transcripts, patient data, tokens, claims,
+// names, or keys. One line per request: status, failure-category reason,
+// duration, and uid hash. A jose code may be appended only if it matches
+// /^ERR_[A-Z_]+$/. Client responses stay generic.
+import { VerifyError, verifyFirebaseIdToken } from './auth.ts';
 import { isAllowedOrigin } from './cors.ts';
 import { CARDIO_GLOSSARY } from './glossary.ts';
 import { numberPostCheck } from './numbers.ts';
@@ -117,21 +119,30 @@ function parseGeminiResult(body: string): {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const started = Date.now();
+    const CODE_RE = /^ERR_[A-Z_]+$/;
+    const done = (status: number, reason: string, uidHash: string, code = ''): void => {
+      const suffix = CODE_RE.test(code) ? ` ${code}` : '';
+      console.log(`voice-proxy ${status} ${reason} ${Date.now() - started}ms ${uidHash}${suffix}`);
+    };
     const origin = request.headers.get('Origin');
     if (request.method === 'OPTIONS') {
       return json({}, 204, origin, env);
     }
     const url = new URL(request.url);
     if (request.method !== 'POST' || url.pathname !== '/transcribe') {
+      done(404, 'not_found', 'none');
       return json({ error: 'not_found' }, 404, origin, env);
     }
     if (origin && !isAllowedOrigin(origin, env.ALLOWED_ORIGINS ?? '')) {
+      done(403, 'origin_not_allowed', 'none');
       return json({ error: 'origin_not_allowed' }, 403, origin, env);
     }
 
     const projectId = (env.FIREBASE_PROJECT_ID ?? '').trim();
     const apiKey = (env.GEMINI_API_KEY ?? '').trim();
     if (!projectId || !apiKey) {
+      done(500, 'proxy_not_configured', 'none');
       return json({ error: 'proxy_not_configured' }, 500, origin, env);
     }
 
@@ -140,7 +151,10 @@ export default {
     let uid = '';
     try {
       uid = (await verifyFirebaseIdToken(idToken, projectId)).uid;
-    } catch {
+    } catch (error) {
+      const reason = error instanceof VerifyError ? error.reason : 'unknown_verify_error';
+      const code = error instanceof VerifyError ? error.code : '';
+      done(401, reason, 'none', code);
       return json({ error: 'unauthorized_sign_in_again' }, 401, origin, env);
     }
     const uidHash = await hashUid(uid);
@@ -149,7 +163,7 @@ export default {
       const key = rateLimitKey(uidHash);
       const count = Number((await env.VOICE_RL.get(key)) ?? 0);
       if (Number.isFinite(count) && count >= RATE_LIMIT_PER_HOUR) {
-        console.log(`voice-proxy 429 ${uidHash}`);
+        done(429, 'rate_limited', uidHash);
         return json({ error: 'quota_exceeded_retry_later' }, 429, origin, env);
       }
       await env.VOICE_RL.put(key, String((Number.isFinite(count) ? count : 0) + 1), {
@@ -161,6 +175,7 @@ export default {
     try {
       body = (await request.json()) as typeof body;
     } catch {
+      done(400, 'invalid_request', uidHash);
       return json({ error: 'invalid_request' }, 400, origin, env);
     }
     const audioBase64 = typeof body.audioBase64 === 'string' ? body.audioBase64 : '';
@@ -171,6 +186,8 @@ export default {
         : 'clinical field';
     const audioBytes = Math.floor(audioBase64.length * 3 / 4);
     if (!audioBase64 || audioBytes > MAX_AUDIO_BYTES) {
+      const tooLarge = !!audioBase64;
+      done(tooLarge ? 413 : 400, tooLarge ? 'audio_too_large' : 'invalid_request', uidHash);
       return json({ error: audioBase64 ? 'audio_too_large' : 'invalid_request' }, audioBase64 ? 413 : 400, origin, env);
     }
 
@@ -178,18 +195,18 @@ export default {
     const model = (env.GEMINI_MODEL ?? '').trim() || DEFAULT_MODEL;
     const gemini = await callGemini({ apiKey, model, audioBase64, mimeType, prompt });
     if (gemini.status < 200 || gemini.status >= 300) {
-      console.log(`voice-proxy ${gemini.status || 'network'} ${uidHash}`);
+      done(gemini.status || 502, 'gemini_error', uidHash);
       if (gemini.status === 429) return json({ error: 'quota_exceeded_retry_later' }, 429, origin, env);
       return json({ error: 'ai_unavailable_retry_later' }, 502, origin, env);
     }
     const parsed = parseGeminiResult(gemini.body);
     if (!parsed) {
-      console.log(`voice-proxy 502 ${uidHash}`);
+      done(502, 'gemini_error', uidHash);
       return json({ error: 'ai_unavailable_retry_later' }, 502, origin, env);
     }
     const warnings = numberPostCheck(parsed.raw_transcript, parsed.clean_english);
     if (!parsed.raw_transcript && !parsed.clean_english) warnings.push('unintelligible_audio');
-    console.log(`voice-proxy 200 ${uidHash}`);
+    done(200, 'ok', uidHash);
     return json({ ...parsed, warnings }, 200, origin, env);
   },
 };
