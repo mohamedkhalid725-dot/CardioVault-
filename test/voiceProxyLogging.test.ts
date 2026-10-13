@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
-import worker, { cleanApiKey, cleanProjectId, geminiFailureDiagLine } from '../voice-proxy/src/index.ts';
+import worker, { callGeminiWithFallback, cleanApiKey, cleanProjectId, geminiFailureDiagLine } from '../voice-proxy/src/index.ts';
 import { mapVerifyError, verifyFirebaseIdToken } from '../voice-proxy/src/auth.ts';
 
 const PROJECT = 'ccu-notebook-test';
@@ -172,11 +172,13 @@ test('missing config logs WHICH secret is empty, never its value', async () => {
     assert.ok(!line.includes(PROJECT));
     assert.ok(!line.includes('fake-key-value'));
     assert.ok(!line.includes('fake-key'));
-    assert.ok(/key_raw_len=\d+ key_clean_len=\d+/.test(line));
+    assert.ok(!line.includes('key_raw_len'));
+    assert.ok(!line.includes('key_clean_len'));
+    assert.ok(!line.includes('pid_'));
   }
 });
 
-test('gemini failure diag line leaks no key, audio, or response text', () => {
+test('gemini failure diag keeps fixed fields only, never message/key/audio', () => {
   const KEY = 'AIzaSyFAKEKEYfakeKEYfakeKEYfakeKEYfake1234';
   const AUDIO = 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5eg';
   const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.SECRETPAYLOAD.SIGNATURE';
@@ -194,25 +196,22 @@ test('gemini failure diag line leaks no key, audio, or response text', () => {
     model: 'gemini-3.6-flash',
     mimeType: 'audio/aac',
     audioBytes: 12345,
-    keyLen: 45,
-    keyCleanLen: 43,
-    pidRawLen: 12,
-    pidCleanLen: 12,
   });
   assert.ok(line.includes('up_status=400'));
   assert.ok(line.includes('err_status=INVALID_ARGUMENT'));
-  assert.ok(line.includes('[redacted]'));
+  assert.ok(line.includes('model=gemini-3.6-flash'));
+  assert.ok(line.includes('mime=audio/aac'));
+  assert.ok(line.includes('bytes=12345'));
+  assert.ok(!line.includes('msg='));
   assert.ok(!line.includes(AUDIO));
   assert.ok(!line.includes(KEY));
   assert.ok(!line.includes(KEY.slice(0, 20)));
   assert.ok(!line.includes(TOKEN));
-  assert.ok(line.includes('key_len=45'));
-  assert.ok(line.includes('key_clean_len=43'));
-  assert.ok(line.includes('pid_raw_len=12'));
-  assert.ok(line.includes('pid_clean_len=12'));
+  assert.ok(!line.includes('key_len'));
+  assert.ok(!line.includes('pid_'));
 });
 
-test('gemini diag line reports unparseable body as unknown without echoing it', () => {
+test('gemini diag maps unknown statuses and unsafe names without echoing', () => {
   const RAW = 'AUDIO_BYTES_' + 'A'.repeat(80);
   const line = geminiFailureDiagLine({
     upStatus: 502,
@@ -220,12 +219,100 @@ test('gemini diag line reports unparseable body as unknown without echoing it', 
     model: 'gemini-3.6-flash',
     mimeType: 'weird type!',
     audioBytes: 7,
-    keyLen: 5,
-    keyCleanLen: 5,
-    pidRawLen: 5,
-    pidCleanLen: 5,
   });
   assert.ok(line.includes('err_status=unknown'));
   assert.ok(line.includes('mime=invalid'));
   assert.ok(!line.includes(RAW));
+  const evil = geminiFailureDiagLine({
+    upStatus: 503,
+    body: JSON.stringify({ error: { status: 'WEIRD;STATUS', message: 'secret-stuff' } }),
+    model: 'gemini-3.6-flash',
+    mimeType: 'audio/aac',
+    audioBytes: 1,
+  });
+  assert.ok(evil.includes('err_status=unknown'));
+  assert.ok(!evil.includes('WEIRD'));
+  assert.ok(!evil.includes('secret-stuff'));
+});
+
+const FB_PRIMARY = 'gemini-3.6-flash';
+const FB_FALLBACK = 'gemini-3.5-flash-lite';
+const fbErrBody = (status: string): string =>
+  JSON.stringify({ error: { code: 503, status, message: 'busy' } });
+
+function stubFetch(
+  handler: (url: string, call: number) => Response,
+): { impl: (url: string, init: RequestInit) => Promise<Response>; urls: string[] } {
+  const urls: string[] = [];
+  let n = 0;
+  const impl = (url: string, _init: RequestInit): Promise<Response> => {
+    n += 1;
+    urls.push(url);
+    return Promise.resolve(handler(url, n));
+  };
+  return { impl, urls };
+}
+
+function fbOpts(overrides: {
+  fallbackModel?: string;
+  deadline?: number;
+  fetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
+}): Parameters<typeof callGeminiWithFallback>[0] {
+  return {
+    apiKey: 'fake-key',
+    model: FB_PRIMARY,
+    fallbackModel: overrides.fallbackModel ?? FB_FALLBACK,
+    audioBase64: 'AAA=',
+    mimeType: 'audio/aac',
+    prompt: 'p',
+    deadline: overrides.deadline ?? Date.now() + 25000,
+    fetchImpl: overrides.fetchImpl,
+  };
+}
+
+test('fallback model is tried ONCE after primary 503s', async () => {
+  const okBody = JSON.stringify({
+    candidates: [
+      { content: { parts: [{ text: '{"raw_transcript":"r","clean_english":"c","uncertain":[]}' }] } },
+    ],
+  });
+  const stub = stubFetch((_url, call) =>
+    call < 4 ? new Response(fbErrBody('UNAVAILABLE'), { status: 503 }) : new Response(okBody, { status: 200 }),
+  );
+  const res = await callGeminiWithFallback(fbOpts({ fetchImpl: stub.impl }));
+  assert.equal(res.status, 200);
+  assert.equal(res.modelUsed, FB_FALLBACK);
+  assert.equal(stub.urls.length, 4); // 3 primary attempts + 1 fallback
+  assert.ok(stub.urls[3].includes(encodeURIComponent(FB_FALLBACK)));
+});
+
+test('no fallback on 400/401, or when the var is empty', async () => {
+  for (const status of [400, 401]) {
+    const stub = stubFetch(() => new Response(fbErrBody('INVALID_ARGUMENT'), { status }));
+    const res = await callGeminiWithFallback(fbOpts({ fetchImpl: stub.impl }));
+    assert.equal(res.status, status);
+    assert.equal(res.modelUsed, FB_PRIMARY);
+    assert.equal(stub.urls.length, 1);
+  }
+  const stubEmpty = stubFetch(() => new Response(fbErrBody('UNAVAILABLE'), { status: 503 }));
+  const resEmpty = await callGeminiWithFallback(fbOpts({ fallbackModel: '', fetchImpl: stubEmpty.impl }));
+  assert.equal(resEmpty.status, 503);
+  assert.equal(resEmpty.modelUsed, FB_PRIMARY);
+  assert.equal(stubEmpty.urls.length, 3); // primary retries only, no fallback
+});
+
+test('total time budget is respected when upstream hangs', async () => {
+  const hanging = (_url: string, init: RequestInit): Promise<Response> =>
+    new Promise((_resolve, reject) => {
+      const signal = init.signal;
+      const abort = (): void => reject(new DOMException('aborted', 'AbortError'));
+      if (signal?.aborted) abort();
+      else signal?.addEventListener('abort', abort, { once: true });
+    });
+  const start = Date.now();
+  const res = await callGeminiWithFallback(fbOpts({ deadline: start + 400, fetchImpl: hanging }));
+  const elapsed = Date.now() - start;
+  assert.equal(res.status, 0);
+  assert.equal(res.modelUsed, FB_PRIMARY);
+  assert.ok(elapsed < 8000, `budget exceeded: ${elapsed}ms`);
 });

@@ -19,6 +19,7 @@ interface KvStore {
 interface Env {
   FIREBASE_PROJECT_ID?: string;
   GEMINI_MODEL?: string;
+  GEMINI_FALLBACK_MODEL?: string;
   GEMINI_API_KEY?: string;
   ALLOWED_ORIGINS?: string;
   VOICE_RL?: KvStore;
@@ -36,51 +37,52 @@ export const cleanApiKey = (value: unknown): string =>
 export const cleanProjectId = (value: unknown): string =>
   String(value ?? '').trim().replace(/[^a-z0-9-]/gi, '');
 
-// TEMPORARY - remove after diagnosis
-// Builds one diagnostic line for a non-2xx Gemini response. It may include
-// only: upstream HTTP status, error.status, a 200-char error.message with
-// base64-like runs redacted, model, mime type, audio byte length, and the
-// integer lengths of key/pid raw and cleaned. NEVER the key, audio bytes,
-// transcripts, or response text.
-const DIAG_BASE64_RUN = /[A-Za-z0-9+/=_-]{40,}/g;
+// Permanent diagnostic line for a non-2xx Gemini response. Fixed fields
+// only: upstream HTTP status, error.status from a fixed enum (anything else
+// is "unknown"), model name, mime type, and audio byte length. NEVER the
+// key, audio bytes, transcripts, messages, or response text.
+const GEMINI_ERR_STATUSES = new Set([
+  'INVALID_ARGUMENT',
+  'UNAUTHENTICATED',
+  'PERMISSION_DENIED',
+  'NOT_FOUND',
+  'RESOURCE_EXHAUSTED',
+  'INTERNAL',
+  'UNAVAILABLE',
+  'DEADLINE_EXCEEDED',
+  'UNKNOWN',
+]);
 export function geminiFailureDiagLine(input: {
   upStatus: number;
   body: string;
   model: string;
   mimeType: string;
   audioBytes: number;
-  keyLen: number;
-  keyCleanLen: number;
-  pidRawLen: number;
-  pidCleanLen: number;
 }): string {
   let errStatus = 'unknown';
-  let errMessage = '';
   try {
-    const parsed = JSON.parse(input.body) as {
-      error?: { status?: unknown; message?: unknown };
-    };
-    if (typeof parsed?.error?.status === 'string') errStatus = parsed.error.status;
-    if (typeof parsed?.error?.message === 'string') errMessage = parsed.error.message;
+    const parsed = JSON.parse(input.body) as { error?: { status?: unknown } };
+    const s = parsed?.error?.status;
+    if (typeof s === 'string' && GEMINI_ERR_STATUSES.has(s)) errStatus = s;
   } catch {
-    errMessage = '';
+    // keep 'unknown'; the body is never echoed
   }
-  // Redact base64-like runs first, then truncate, so a long token can never
-  // survive truncation. Model/mime/status must match a safe charset or are
-  // replaced with "invalid".
-  const msg = errMessage.replace(DIAG_BASE64_RUN, '[redacted]').slice(0, 200);
   const safe = (value: string, re: RegExp, max: number): string =>
     re.test(value) ? value.slice(0, max) : 'invalid';
+  const up = Number.isInteger(input.upStatus) ? input.upStatus : 0;
+  const bytes =
+    Number.isInteger(input.audioBytes) && input.audioBytes >= 0 ? input.audioBytes : 0;
   return (
-    `voice-proxy gemini-diag up_status=${input.upStatus}` +
-    ` err_status=${safe(errStatus, /^[A-Za-z_]{1,40}$/, 40)}` +
-    ` msg="${msg}"` +
+    `voice-proxy gemini-diag up_status=${up}` +
+    ` err_status=${errStatus}` +
     ` model=${safe(input.model, /^[A-Za-z0-9._-]{1,60}$/, 60)}` +
     ` mime=${safe(input.mimeType, /^[A-Za-z0-9/;=+._-]{1,60}$/, 60)}` +
-    ` bytes=${input.audioBytes}` +
-    ` key_len=${input.keyLen} key_clean_len=${input.keyCleanLen}` +
-    ` pid_raw_len=${input.pidRawLen} pid_clean_len=${input.pidCleanLen}`
+    ` bytes=${bytes}`
   );
+}
+
+export function safeModelName(value: string): string {
+  return /^[A-Za-z0-9._-]{1,60}$/.test(value) ? value.slice(0, 60) : 'invalid';
 }
 
 function json(data: unknown, status: number, origin: string | null, env: Env): Response {
@@ -97,20 +99,29 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callGemini(opts: {
+const TOTAL_BUDGET_MS = 25000; // overall upstream time budget per request
+
+type FetchImpl = (url: string, init: RequestInit) => Promise<Response>;
+const defaultFetch: FetchImpl = (url, init) => fetch(url, init);
+
+export interface GeminiCallOpts {
   apiKey: string;
   model: string;
+  fallbackModel: string;
   audioBase64: string;
   mimeType: string;
   prompt: string;
-}): Promise<{ status: number; body: string }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}:generateContent`;
-  const payload = {
+  deadline: number; // epoch ms; no new upstream attempt starts at/after this
+  fetchImpl?: FetchImpl; // injected by unit tests; production uses global fetch
+}
+
+function buildGeminiPayload(audioBase64: string, mimeType: string, prompt: string): string {
+  return JSON.stringify({
     contents: [
       {
         parts: [
-          { inline_data: { mime_type: opts.mimeType, data: opts.audioBase64 } },
-          { text: opts.prompt },
+          { inline_data: { mime_type: mimeType, data: audioBase64 } },
+          { text: prompt },
         ],
       },
     ],
@@ -119,27 +130,100 @@ async function callGemini(opts: {
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
     },
-  };
+  });
+}
+
+function geminiUrl(model: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+}
+
+// One upstream attempt with its own AbortController, bounded by the overall
+// deadline. Returns the Response; throws only on network/abort failures.
+async function fetchGeminiOnce(
+  url: string,
+  apiKey: string,
+  payload: string,
+  deadline: number,
+  fetchImpl: FetchImpl,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), Math.max(1, deadline - Date.now()));
+  try {
+    return await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: payload,
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callGeminiPrimary(opts: GeminiCallOpts): Promise<{ status: number; body: string }> {
+  const fetchImpl = opts.fetchImpl ?? defaultFetch;
+  const url = geminiUrl(opts.model);
+  const payload = buildGeminiPayload(opts.audioBase64, opts.mimeType, opts.prompt);
   let last = { status: 0, body: '' };
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-    if (attempt > 0) await sleep(RETRY_DELAYS_MS[attempt - 1]);
+    if (opts.deadline - Date.now() <= 0) break;
+    if (attempt > 0) {
+      await sleep(Math.min(RETRY_DELAYS_MS[attempt - 1], Math.max(1, opts.deadline - Date.now())));
+      if (opts.deadline - Date.now() <= 0) break;
+    }
     let res: Response;
     try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': opts.apiKey },
-        body: JSON.stringify(payload),
-      });
+      res = await fetchGeminiOnce(url, opts.apiKey, payload, opts.deadline, fetchImpl);
     } catch {
       last = { status: 0, body: '' };
       continue;
     }
-    const body = await res.text();
-    if (res.ok) return { status: res.status, body };
-    last = { status: res.status, body };
+    let text = '';
+    try {
+      text = await res.text();
+    } catch {
+      last = { status: 0, body: '' };
+      continue;
+    }
+    if (res.ok) return { status: res.status, body: text };
+    last = { status: res.status, body: text };
     if (res.status !== 429 && res.status !== 500 && res.status !== 503) break;
   }
   return last;
+}
+
+const FALLBACKABLE_STATUSES = new Set([429, 500, 503]);
+
+// Primary (with its retries) first; if it still fails with 429/500/503 and a
+// fallback model is configured, try the fallback ONCE within the budget.
+// Behavior is unchanged when the fallback is empty.
+export async function callGeminiWithFallback(
+  opts: GeminiCallOpts,
+): Promise<{ status: number; body: string; modelUsed: string }> {
+  const primary = await callGeminiPrimary(opts);
+  if (primary.status >= 200 && primary.status < 300) return { ...primary, modelUsed: opts.model };
+  const fallback = opts.fallbackModel.trim();
+  if (!fallback || !FALLBACKABLE_STATUSES.has(primary.status) || opts.deadline - Date.now() <= 0) {
+    return { ...primary, modelUsed: opts.model };
+  }
+  try {
+    const res = await fetchGeminiOnce(
+      geminiUrl(fallback),
+      opts.apiKey,
+      buildGeminiPayload(opts.audioBase64, opts.mimeType, opts.prompt),
+      opts.deadline,
+      opts.fetchImpl ?? defaultFetch,
+    );
+    let text = '';
+    try {
+      text = await res.text();
+    } catch {
+      return { ...primary, modelUsed: opts.model };
+    }
+    return { status: res.status, body: text, modelUsed: fallback };
+  } catch {
+    return { ...primary, modelUsed: opts.model };
+  }
 }
 
 function parseGeminiResult(body: string): {
@@ -176,9 +260,11 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const started = Date.now();
     const CODE_RE = /^ERR_[A-Z_]+$/;
+    let modelUsed = '';
     const done = (status: number, reason: string, uidHash: string, code = ''): void => {
       const suffix = CODE_RE.test(code) ? ` ${code}` : '';
-      console.log(`voice-proxy ${status} ${reason} ${Date.now() - started}ms ${uidHash}${suffix}`);
+      const modelSuffix = modelUsed ? ` model_used=${safeModelName(modelUsed)}` : '';
+      console.log(`voice-proxy ${status} ${reason} ${Date.now() - started}ms ${uidHash}${suffix}${modelSuffix}`);
     };
     const origin = request.headers.get('Origin');
     if (request.method === 'OPTIONS') {
@@ -199,13 +285,12 @@ export default {
     const projectId = cleanProjectId(pidRaw);
     const apiKey = cleanApiKey(keyRaw);
     if (!projectId || !apiKey) {
-      // TEMPORARY - remove after diagnosis: name which secret is empty at
-      // runtime, plus key lengths as integers (lengths only — never the key
-      // or any part of it). Secret NAMES only — never values, keys, or audio data.
+      // Names the secret that is empty at runtime. Secret NAMES only —
+      // never values, keys, or audio data.
       const missing: string[] = [];
       if (!projectId) missing.push('missing_config:firebase_project_id');
       if (!apiKey) missing.push('missing_config:gemini_api_key');
-      done(500, `proxy_not_configured:${missing.join('+')} key_raw_len=${keyRaw.length} key_clean_len=${apiKey.length}`, 'none');
+      done(500, `proxy_not_configured:${missing.join('+')}`, 'none');
       return json({ error: 'proxy_not_configured' }, 500, origin, env);
     }
 
@@ -256,20 +341,25 @@ export default {
 
     const prompt = buildTranscribePrompt(fieldName, CARDIO_GLOSSARY);
     const model = (env.GEMINI_MODEL ?? '').trim() || DEFAULT_MODEL;
-    const gemini = await callGemini({ apiKey, model, audioBase64, mimeType, prompt });
+    const fallbackModel = (env.GEMINI_FALLBACK_MODEL ?? '').trim();
+    const gemini = await callGeminiWithFallback({
+      apiKey,
+      model,
+      fallbackModel,
+      audioBase64,
+      mimeType,
+      prompt,
+      deadline: Date.now() + TOTAL_BUDGET_MS,
+    });
+    modelUsed = gemini.modelUsed;
     if (gemini.status < 200 || gemini.status >= 300) {
-      // TEMPORARY - remove after diagnosis
       console.log(
         geminiFailureDiagLine({
           upStatus: gemini.status,
           body: gemini.body,
-          model,
+          model: modelUsed,
           mimeType,
           audioBytes,
-          keyLen: keyRaw.length,
-          keyCleanLen: apiKey.length,
-          pidRawLen: pidRaw.length,
-          pidCleanLen: projectId.length,
         }),
       );
       done(gemini.status || 502, 'gemini_error', uidHash);
@@ -284,6 +374,6 @@ export default {
     const warnings = numberPostCheck(parsed.raw_transcript, parsed.clean_english);
     if (!parsed.raw_transcript && !parsed.clean_english) warnings.push('unintelligible_audio');
     done(200, 'ok', uidHash);
-    return json({ ...parsed, warnings }, 200, origin, env);
+    return json({ ...parsed, warnings, model_used: modelUsed }, 200, origin, env);
   },
 };
