@@ -78,6 +78,21 @@ const compact = (v: any, max = 90) => {
 
 const nonEmpty = (v: any) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length);
 
+// Bed numbers are stored as "Bed 1" — strip a leading "Bed" so callers can
+// safely prefix their own ("Bed 1", never "Bed Bed 1").
+const bedLabel = (b: any) => {
+  const s = val(b?.bedNumber, '');
+  if (!s) return NP;
+  return s.replace(/^bed\s+/i, '') || NP;
+};
+
+// Vitals-like numbers: 0/empty/non-numeric all render as missing, so the PDF
+// never prints a clinically misleading "0 kg / 0 cm".
+const posNum = (v: any) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? String(v) : '';
+};
+
 type Badge = { t: string; kind: 'rose' | 'amber' | 'navy' | 'green' };
 
 export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient }) => {
@@ -244,14 +259,14 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         doc.setFontSize(9.5);
         text(white);
         doc.text(
-          `${compact(patient.fullName, 32) || 'Unnamed Patient'}  •  ${val(patient.age)} / ${val(patient.sex)}  •  MRN ${val(patient.mrn)}`,
-          textX, 26.5
+          `${compact(patient.fullName, 32) || 'Unnamed Patient'}  •  ${[posNum(patient.age), val(patient.sex, '')].filter(Boolean).join(' / ') || NP}  •  MRN ${val(patient.mrn)}`,
+          textX, 25.5
         );
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         text([200, 214, 235]);
         doc.text(
-          `Bed ${val(bed?.bedNumber)}  •  Admitted ${val(patient.admissionDate)} ${val(patient.admissionTime)}  •  Generated ${generatedAt}`,
+          `Bed ${bedLabel(bed)}  •  Admitted ${val(patient.admissionDate)} ${val(patient.admissionTime)}  •  Generated ${generatedAt}`,
           textX, 30.5
         );
       };
@@ -466,7 +481,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           ['Full Name', patient.fullName || patient.name],
           ['MRN', patient.mrn],
           ['Age / Sex', `${val(patient.age)} / ${val(patient.sex)}`, discrepancies.filter(d => d.t.startsWith('Age'))],
-          ['Weight / Height', (nonEmpty(patient.weight) || nonEmpty(patient.height)) ? `${val(patient.weight)} kg / ${val(patient.height)} cm` : NP],
+          ['Weight / Height', (() => { const w = posNum(patient.weight); const h = posNum(patient.height); return !w && !h ? NP : `${w ? `${w} kg` : NP} / ${h ? `${h} cm` : NP}`; })()],
           ['Unit / Bed', `${val(unit?.name)} / ${val(bed?.bedNumber)}`],
           ['Status / Code Status', `${val(patient.status, 'Active')} / ${val(patient.codeStatus)}`],
         ]);
