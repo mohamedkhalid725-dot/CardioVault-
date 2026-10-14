@@ -3,7 +3,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.cardiovault.app',
+  appId: 'com.cardiovault.app2',
   appName: 'CardioVault',
   webDir: 'dist',
   server: {
