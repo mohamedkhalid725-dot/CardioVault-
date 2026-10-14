@@ -75,6 +75,42 @@
     },
     {
       "client_info": {
+        "mobilesdk_app_id": "1:963615758407:android:23c59dd6eb41d2f250b962",
+        "android_client_info": {
+          "package_name": "com.cardiovault.app2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwoEwTLG3yfY7gnd2LDk2sFm6oFKBqX7c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "963615758407-js3f2glp6prgob2suj8er3n5s55mp8qk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.cardiovault.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:963615758407:android:09287d881e4b566a50b962",
         "android_client_info": {
           "package_name": "com.ccunotebook.app"
@@ -126,12 +162,8 @@
           "client_type": 1,
           "android_info": {
             "package_name": "com.ccunotebook.app",
-            "certificate_hash": "672d141b148345e1feaafa1ce3fe998a04f589a3"
+            "certificate_hash": "672d141b141d141d141d141d141d141d141d141d1"
           }
-        },
-        {
-          "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
-          "client_type": 3
         }
       ],
       "api_key": [
