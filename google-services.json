@@ -82,6 +82,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "963615758407-o8mv7oapahkhkjaf0noth16icuao30ah.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cardiovault.app2",
+            "certificate_hash": "8e5cd0eca9c7b058bae4e3a05ccaae82fc8cac42"
+          }
+        },
+        {
           "client_id": "963615758407-4mqf4obq64h2ucpb7cdm8mc56mmj6qmg.apps.googleusercontent.com",
           "client_type": 3
         }
