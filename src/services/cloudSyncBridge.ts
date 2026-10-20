@@ -3,7 +3,7 @@ import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { StorageService, stripLegacyDemoData } from './storage';
 import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
-import { WorkspaceAccessState, MASTER_WORKSPACE_ID, ensureOwnerWorkspace, isMasterAccount } from './workspaceAccess';
+import { WorkspaceAccessState, ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId } from './workspaceAccess';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { webCurrentUser } from './webFirebase';
 import { webLoadCurrentUserFromCloud, webSyncCurrentUserNow } from './webCloudSyncBridge';
@@ -75,11 +75,12 @@ export function restoreLocalDataFromCloud(collection:'units'|'beds'|'patients',v
   } finally { suppressSync=previous; }
 }
 
-async function migrateLegacyOwnerData(uid:string,legacyUnits:any[],legacyBeds:any[],legacyPatients:any[]):Promise<WorkspaceAccessState>{if(!(await isMasterAccount()))throw new Error('Legacy data migration is restricted to the Master Account.');await FirebaseFirestore.setDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}`,data:{ownerUid:uid,ownerEmail:'mohamedkhalid725@gmail.com',schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString(),migratedFromLegacy:true},merge:true});const copy=async(collection:string,records:any[])=>{for(const record of records){if(!record?.id)continue;const safe=firestoreSafe(record)||{};await FirebaseFirestore.setDocument({reference:`${workspacePath(MASTER_WORKSPACE_ID,collection)}/${record.id}`,data:{...safe,id:record.id},merge:true});}};await copy('units',legacyUnits);await copy('beds',legacyBeds);await copy('patients',legacyPatients);const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state));return state;}
+async function migrateLegacyOwnerData(uid:string,legacyUnits:any[],legacyBeds:any[],legacyPatients:any[]):Promise<WorkspaceAccessState>{if(!(await isMasterAccount()))throw new Error('Legacy data migration is restricted to the Master Account.');const ownerWorkspace=await ensureOwnerWorkspace();if(!ownerWorkspace)throw new Error('The Master workspace could not be opened or created.');const workspaceId=ownerWorkspace.workspaceId;await FirebaseFirestore.setDocument({reference:`workspaces/${workspaceId}`,data:{ownerUid:uid,ownerEmail:'mohamedkhalid725@gmail.com',schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString(),migratedFromLegacy:true},merge:true});const copy=async(collection:string,records:any[])=>{for(const record of records){if(!record?.id)continue;const safe=firestoreSafe(record)||{};await FirebaseFirestore.setDocument({reference:`${workspacePath(workspaceId,collection)}/${record.id}`,data:{...safe,id:record.id},merge:true});}};await copy('units',legacyUnits);await copy('beds',legacyBeds);await copy('patients',legacyPatients);const state={workspaceId,role:'owner' as const,unitId:null,unitName:null};localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state));return state;}
 
 async function restoreMemberAccess(uid:string):Promise<WorkspaceAccessState|null>{
+  const workspaceId=getActiveWorkspaceId();
   try{
-    const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/members/${uid}`});
+    const result:any=await FirebaseFirestore.getDocument({reference:`workspaces/${workspaceId}/members/${uid}`});
     const data=readSnapshotData(result?.snapshot);
     if(!data?.unitId&&!Array.isArray(data?.unitIds)){
       recordCloudError(new Error('This Firebase account is not assigned to a CardioVault Unit. Redeem the Unit Access Code for this account first.'));
@@ -91,15 +92,15 @@ async function restoreMemberAccess(uid:string):Promise<WorkspaceAccessState|null
     // an active code on every login breaks accounts that were assigned directly by
     // the Department Admin and accounts whose original code was later rotated.
     let team:any=null;
-    try{team=readSnapshotData((await FirebaseFirestore.getDocument({reference:`workspaces/${MASTER_WORKSPACE_ID}/team/${uid}`})).snapshot);}catch{}
+    try{team=readSnapshotData((await FirebaseFirestore.getDocument({reference:`workspaces/${workspaceId}/team/${uid}`})).snapshot);}catch{}
     const unitIds:string[]=Array.from(new Set<string>((Array.isArray(team?.assignedUnitIds)&&team.assignedUnitIds.length?team.assignedUnitIds:(Array.isArray(data.unitIds)?data.unitIds:[data.unitId])).map(String)));
     if(!unitIds.length)return null;
     const unitNames:Record<string,string>={};
-    for(const unitId of unitIds){try{const unit:any=await FirebaseFirestore.getDocument({reference:`${workspacePath(MASTER_WORKSPACE_ID,'units')}/${unitId}`});unitNames[unitId]=String(readSnapshotData(unit?.snapshot)?.name||unitId);}catch{unitNames[unitId]=unitId;}}
+    for(const unitId of unitIds){try{const unit:any=await FirebaseFirestore.getDocument({reference:`${workspacePath(workspaceId,'units')}/${unitId}`});unitNames[unitId]=String(readSnapshotData(unit?.snapshot)?.name||unitId);}catch{unitNames[unitId]=unitId;}}
     const currentUnitId=String(data.unitId&&unitIds.includes(String(data.unitId))?data.unitId:unitIds[0]);
     const currentUnitName=unitNames[currentUnitId]||currentUnitId;
     const role=(team?.role||data.role)==='view_only'?'view_only':'clinical_editor';
-    const state:WorkspaceAccessState={workspaceId:MASTER_WORKSPACE_ID,role,unitId:currentUnitId,unitName:currentUnitName,unitIds,unitNames};
+    const state:WorkspaceAccessState={workspaceId,role,unitId:currentUnitId,unitName:currentUnitName,unitIds,unitNames};
     localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state));
     if(team?.userId||team?.uid){try{const profile:any={...team,userId:uid,assignedUnitIds:unitIds};localStorage.setItem('cardiovault_current_user_profile_v2',JSON.stringify(profile));}catch{}}
     return state;

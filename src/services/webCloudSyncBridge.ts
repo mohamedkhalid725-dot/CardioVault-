@@ -4,7 +4,7 @@ import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
-import { MASTER_WORKSPACE_ID, MASTER_ACCOUNT_EMAIL, type WorkspaceAccessState } from './workspaceAccess';
+import { MASTER_ACCOUNT_EMAIL, ensureOwnerWorkspace, getActiveWorkspaceId, type WorkspaceAccessState } from './workspaceAccess';
 
 const SCHEMA_VERSION=12;
 const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
@@ -48,11 +48,14 @@ function mergeClinicalMedia(localPatient:any, cloudPatient:any): any {
 async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   const user=webCurrentUser();
   if(user?.email?.toLowerCase()===MASTER_ACCOUNT_EMAIL.toLowerCase()){
-    await setDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}`),{ownerUid:uid,ownerEmail:MASTER_ACCOUNT_EMAIL,schemaVersion:SCHEMA_VERSION,createdAt:new Date().toISOString()},{merge:true});
-    const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};
-    localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(state)); return state;
+    // Master bootstrap stays pinned to the legacy master workspace.
+    const ownerState=await ensureOwnerWorkspace();
+    if(!ownerState)return null;
+    localStorage.setItem('cardiovault_active_workspace_access_v1',JSON.stringify(ownerState));
+    return ownerState;
   }
-  const member=await getDoc(webDoc(`workspaces/${MASTER_WORKSPACE_ID}/members/${uid}`));
+  const workspaceId=getActiveWorkspaceId();
+  const member=await getDoc(webDoc(`workspaces/${workspaceId}/members/${uid}`));
   if(!member.exists())return null;
   const m=member.data();
   if(m?.active===false||m?.forceReauth===true)return null;
@@ -67,7 +70,7 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   const unitNames:Record<string,string>={};
   await Promise.all(unitIds.map(async unitId=>{
     try{
-      const unit=await getDoc(webDoc(`${path(MASTER_WORKSPACE_ID,'units')}/${unitId}`));
+      const unit=await getDoc(webDoc(`${path(workspaceId,'units')}/${unitId}`));
       unitNames[unitId]=String(unit.data()?.name||unitId);
     }catch{
       unitNames[unitId]=unitId;
@@ -75,7 +78,7 @@ async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
   }));
   const currentUnitId=String(m?.unitId&&unitIds.includes(String(m.unitId))?m.unitId:unitIds[0]);
   const state:WorkspaceAccessState={
-    workspaceId:MASTER_WORKSPACE_ID,
+    workspaceId,
     role:m.role==='view_only'?'view_only':'clinical_editor',
     unitId:currentUnitId,
     unitName:unitNames[currentUnitId]||currentUnitId,

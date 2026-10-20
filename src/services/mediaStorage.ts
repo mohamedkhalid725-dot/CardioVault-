@@ -1,8 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { webCollection, webDoc, getDoc, getDocs, setDoc, deleteDoc } from './webFirebase';
+import { getActiveWorkspaceId } from './workspaceAccess';
 
-const MEDIA_WORKSPACE = 'cardiovault_master_workspace';
 const CHUNK_SIZE = 600_000;
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -164,7 +164,7 @@ export async function uploadClinicalMedia(
   const header = dataUrl.slice(0, comma);
   const base64 = dataUrl.slice(comma + 1);
   const mediaId = await sha256Hex(path);
-  const prefix = `workspaces/${MEDIA_WORKSPACE}/media/${mediaId}`;
+  const prefix = `workspaces/${getActiveWorkspaceId()}/media/${mediaId}`;
   const chunks = Math.ceil(base64.length / CHUNK_SIZE);
 
   await writeDoc(prefix, {
@@ -206,10 +206,10 @@ export async function uploadClinicalMedia(
 }
 
 async function loadFirestoreMedia(mediaId: string): Promise<string> {
-  const metadata: any = await readDoc(`workspaces/${MEDIA_WORKSPACE}/media/${mediaId}`);
+  const metadata: any = await readDoc(`workspaces/${getActiveWorkspaceId()}/media/${mediaId}`);
   if (!metadata) throw new Error('Clinical image is no longer available in cloud storage.');
 
-  const chunks = await readCollection(`workspaces/${MEDIA_WORKSPACE}/media/${mediaId}/chunks`);
+  const chunks = await readCollection(`workspaces/${getActiveWorkspaceId()}/media/${mediaId}/chunks`);
   chunks.sort((a, b) => Number(a.data?.index ?? a.id) - Number(b.data?.index ?? b.id));
   if (chunks.length !== Number(metadata.chunks || chunks.length)) {
     throw new Error('Clinical image download is incomplete. Please run Cloud Sync again.');
@@ -244,7 +244,7 @@ export async function refreshClinicalMediaUrls(
 export async function deleteFirestoreMedia(value: string): Promise<void> {
   const mediaId = parseMediaId(value);
   if (!mediaId) return;
-  const prefix = `workspaces/${MEDIA_WORKSPACE}/media/${mediaId}`;
+  const prefix = `workspaces/${getActiveWorkspaceId()}/media/${mediaId}`;
   const chunks = await readCollection(`${prefix}/chunks`);
   for (const chunk of chunks) await removeDoc(`${prefix}/chunks/${chunk.id}`);
   try { await removeDoc(prefix); } catch {}

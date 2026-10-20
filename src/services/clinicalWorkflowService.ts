@@ -15,14 +15,14 @@ import { AuditTrailService } from './auditTrailService';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { webDoc, webCollection, getDocs as webGetDocs, setDoc as webSetDoc } from './webFirebase';
+import { getActiveWorkspaceId } from './workspaceAccess';
 
 const TASKS_KEY = 'cardiovault_clinical_tasks_v2';
 const PROTOCOLS_KEY = 'cardiovault_clinical_protocols_v2';
 const TEMPLATES_KEY = 'cardiovault_med_templates_v2';
-const TASK_WORKSPACE_ID = 'cardiovault_master_workspace';
 // Launch security: tasks live under their unit so the unit-scoped rules can
 // enforce the board boundary. The old top-level /tasks collection has no rule.
-const taskCollection = (unitId: string) => `workspaces/${TASK_WORKSPACE_ID}/units/${unitId}/tasks`;
+const taskCollection = (unitId: string) => `workspaces/${getActiveWorkspaceId()}/units/${unitId}/tasks`;
 
 const safeSnapshot = (snapshot: any): any => {
   try { return typeof snapshot?.data === 'function' ? (snapshot.data() || null) : (snapshot?.data || null); }
