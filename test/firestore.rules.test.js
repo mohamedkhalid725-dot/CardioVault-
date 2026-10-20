@@ -25,6 +25,14 @@ const UNIT_B = "unitB";
 const PATIENT_A = "patientA";
 const PATIENT_B = "patientB";
 
+// Second customer workspace used only to prove workspace-to-workspace isolation.
+// It has its own owner, its own unit, its own patient and its own access code.
+const WS_B = "ws_team_bravo_2026";
+const UNIT_X = "unitX";
+const PATIENT_X = "patientX";
+const HASH_MASTER = "hash-master-unit-a";
+const HASH_TEAM_B = "hash-team-b-unit-x";
+
 let testEnv;
 
 function path(...parts) {
@@ -37,6 +45,13 @@ function patientPath(id) {
 
 function dbFor(uid) {
   return testEnv.authenticatedContext(uid).firestore();
+}
+
+// Workspace bootstrap requires the owner email to match the signed-in token.
+function dbForWithEmail(uid, email) {
+  return testEnv
+    .authenticatedContext(uid, { email, email_verified: true })
+    .firestore();
 }
 
 async function seed() {
@@ -162,6 +177,47 @@ async function seed() {
         status: "pending",
         createdBy: "seed",
         createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      // ---- second customer team, fully separate workspace ----
+      setDoc(doc(db, "workspaces", WS_B), {
+        ownerUid: "ownerB",
+        ownerEmail: "ownerb@example.com",
+        name: "Team Bravo",
+      }),
+      setDoc(doc(db, "workspaces", WS_B, "members", "userG"), {
+        uid: "userG",
+        workspaceId: WS_B,
+        active: true,
+        forceReauth: false,
+        role: "clinical_editor",
+        unitId: UNIT_X,
+        unitIds: [UNIT_X],
+      }),
+      setDoc(doc(db, "workspaces", WS_B, "team", "userG"), {
+        uid: "userG",
+        workspaceId: WS_B,
+        role: "resident",
+        status: "active",
+        assignedUnitIds: [UNIT_X],
+      }),
+      setDoc(doc(db, "workspaces", WS_B, "patients", PATIENT_X), {
+        patientId: PATIENT_X,
+        unitId: UNIT_X,
+        label: "FAKE X",
+      }),
+      setDoc(doc(db, "accessCodes", HASH_TEAM_B), {
+        workspaceId: WS_B,
+        unitId: UNIT_X,
+        unitName: "Team B ICU",
+        role: "clinical_editor",
+        active: true,
+      }),
+      setDoc(doc(db, "accessCodes", HASH_MASTER), {
+        workspaceId: WORKSPACE,
+        unitId: UNIT_A,
+        unitName: "Unit A",
+        role: "clinical_editor",
+        active: true,
       }),
     ]);
   });
@@ -485,4 +541,182 @@ test("16. task boards are scoped to the member's unit", async () => {
   await assertFails(
     setDoc(doc(dbA, path("tasks", "legacy")), { id: "legacy", unitId: UNIT_A, title: "x" }),
   );
+});
+
+// ---------------------------------------------------------------------------
+// Workspace-to-workspace isolation (Lane B). Before the 2026-10-21 refactor the
+// rules hard-coded one workspace id, so a second customer team either could not
+// exist or, once hard-coding was partially relaxed, could read the first team's
+// records. These tests treat two workspaces as two different hospitals.
+// ---------------------------------------------------------------------------
+
+test("17. team A cannot read, list or write anything inside team B's workspace", async () => {
+  const db = dbFor("userA");
+
+  await assertFails(getDoc(doc(db, "workspaces", WS_B)));
+  await assertFails(getDoc(doc(db, "workspaces", WS_B, "patients", PATIENT_X)));
+  await assertFails(getDocs(collection(db, "workspaces", WS_B, "patients")));
+  await assertFails(getDoc(doc(db, "workspaces", WS_B, "members", "userG")));
+  await assertFails(getDoc(doc(db, "workspaces", WS_B, "team", "userG")));
+
+  await assertFails(
+    updateDoc(doc(db, "workspaces", WS_B, "patients", PATIENT_X), { label: "ILLEGAL" }),
+  );
+  await assertFails(deleteDoc(doc(db, "workspaces", WS_B, "patients", PATIENT_X)));
+  await assertFails(
+    setDoc(doc(db, "workspaces", WS_B, "patients", "injected"), {
+      patientId: "injected",
+      unitId: UNIT_X,
+      label: "ILLEGAL",
+    }),
+  );
+});
+
+test("18. isolation is symmetric: team B cannot reach the legacy master workspace", async () => {
+  const db = dbFor("userG");
+
+  await assertFails(getDoc(doc(db, path())));
+  await assertFails(getDoc(doc(db, patientPath(PATIENT_A))));
+  await assertFails(getDocs(collection(db, path("patients"))));
+  await assertFails(updateDoc(doc(db, patientPath(PATIENT_A)), { label: "ILLEGAL" }));
+  await assertFails(deleteDoc(doc(db, patientPath(PATIENT_B))));
+});
+
+test("19. a doctor can open their own workspace but cannot claim an existing one", async () => {
+  const owner = dbForWithEmail("ownerNew", "newowner@example.com");
+
+  // Self-service bootstrap: the owner uid and email are the caller's own.
+  await assertSucceeds(
+    setDoc(doc(owner, "workspaces", "ws_newteam_2026"), {
+      ownerUid: "ownerNew",
+      ownerEmail: "newowner@example.com",
+      name: "New Team",
+    }),
+  );
+
+  // Cannot create a workspace owned by somebody else.
+  await assertFails(
+    setDoc(doc(owner, "workspaces", "ws_otherteam_2026"), {
+      ownerUid: "someoneElse",
+      ownerEmail: "newowner@example.com",
+      name: "Steal",
+    }),
+  );
+
+  // Cannot take ownership of a workspace that already exists.
+  const intruder = dbForWithEmail("userG", "g@example.com");
+  await assertFails(
+    setDoc(doc(intruder, "workspaces", WORKSPACE), {
+      ownerUid: "userG",
+      ownerEmail: "g@example.com",
+    }),
+  );
+
+  // New customer workspaces must use the reserved prefix.
+  await assertFails(
+    setDoc(doc(owner, "workspaces", "hospital-hidden"), {
+      ownerUid: "ownerNew",
+      ownerEmail: "newowner@example.com",
+    }),
+  );
+});
+
+test("20. an access code opens exactly its own workspace and nothing else", async () => {
+  const joiner = dbFor("userH");
+  const membership = {
+    uid: "userH",
+    workspaceId: WS_B,
+    accessCodeHash: HASH_TEAM_B,
+    unitId: UNIT_X,
+    unitIds: [UNIT_X],
+    role: "clinical_editor",
+    active: true,
+    forceReauth: false,
+  };
+
+  await assertSucceeds(
+    setDoc(doc(joiner, "workspaces", WS_B, "members", "userH"), membership),
+  );
+  await assertSucceeds(
+    setDoc(doc(joiner, "workspaces", WS_B, "team", "userH"), {
+      uid: "userH",
+      workspaceId: WS_B,
+      departmentId: "dept-cardiology",
+      status: "active",
+      role: "resident",
+      assignedUnitIds: [UNIT_X],
+    }),
+  );
+  await assertSucceeds(getDoc(doc(joiner, "workspaces", WS_B, "patients", PATIENT_X)));
+
+  // Joining team B must not open the master workspace.
+  await assertFails(getDoc(doc(joiner, patientPath(PATIENT_A))));
+
+  // The same code replayed against the master workspace must be rejected.
+  const replay = dbFor("userI");
+  await assertFails(
+    setDoc(doc(replay, "workspaces", WORKSPACE, "members", "userI"), {
+      ...membership,
+      uid: "userI",
+      workspaceId: WORKSPACE,
+      unitId: UNIT_A,
+      unitIds: [UNIT_A],
+    }),
+  );
+});
+
+test("21. a team owner can provision only their own workspace", async () => {
+  const ownerB = dbFor("ownerB");
+
+  await assertSucceeds(
+    setDoc(doc(ownerB, "workspaces", WS_B, "units", "unitY"), {
+      unitId: "unitY",
+      name: "Ward Y",
+    }),
+  );
+  await assertSucceeds(
+    setDoc(doc(ownerB, "accessCodes", "hash-team-b-ward-y"), {
+      workspaceId: WS_B,
+      unitId: "unitY",
+      unitName: "Ward Y",
+      role: "clinical_editor",
+      active: true,
+    }),
+  );
+  await assertSucceeds(
+    setDoc(doc(ownerB, "workspaces", WS_B, "accessCodes", "hash-team-b-ward-y"), {
+      workspaceId: WS_B,
+      unitId: "unitY",
+      code: "CV-TEST-CODE",
+      active: true,
+    }),
+  );
+
+  await assertFails(
+    setDoc(doc(ownerB, "accessCodes", "hash-evil"), {
+      workspaceId: WORKSPACE,
+      unitId: UNIT_A,
+      unitName: "Unit A",
+      role: "clinical_editor",
+      active: true,
+    }),
+  );
+  await assertFails(
+    setDoc(doc(ownerB, "workspaces", WORKSPACE, "accessCodes", "hash-evil"), {
+      workspaceId: WORKSPACE,
+      unitId: UNIT_A,
+    }),
+  );
+  await assertFails(
+    setDoc(doc(ownerB, "workspaces", WORKSPACE, "units", "unitZ"), { unitId: "unitZ" }),
+  );
+});
+
+test("22. the legacy master workspace keeps its behaviour for its owner", async () => {
+  const db = dbFor("owner-unused");
+
+  await assertSucceeds(getDoc(doc(db, path())));
+  await assertSucceeds(getDoc(doc(db, patientPath(PATIENT_A))));
+  await assertSucceeds(getDoc(doc(db, path("members", "userD"))));
+  await assertSucceeds(updateDoc(doc(db, patientPath(PATIENT_B)), { label: "OWNER-EDIT" }));
 });

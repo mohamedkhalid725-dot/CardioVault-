@@ -3,15 +3,25 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function masterAccount() { return signedIn() && request.auth.token.email == 'mohamedkhalid725@gmail.com' && request.auth.token.email_verified == true; }
-    function masterWorkspace(workspaceId) { return workspaceId == 'cardiovault_master_workspace'; }
-    function workspaceOwner(workspaceId) { return masterAccount() && masterWorkspace(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid; }
-    function member(workspaceId) { return signedIn() && masterWorkspace(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.active != false && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.forceReauth != true; }
+    // Workspace isolation (2026-10-21): no workspace id and no account email is
+    // hard-coded here any more. Every check below is scoped to the {workspaceId}
+    // in the request path, so a customer team can only ever see its own data.
+    // The legacy master workspace keeps working because its ownerUid is the
+    // master account's uid.
+    function workspaceData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)).data; }
+    function workspaceExists(workspaceId) { return exists(/databases/$(database)/documents/workspaces/$(workspaceId)); }
+    function workspaceOwner(workspaceId) { return signedIn() && workspaceExists(workspaceId) && workspaceData(workspaceId).ownerUid == request.auth.uid; }
+    function member(workspaceId) { return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)) && memberData(workspaceId).active != false && memberData(workspaceId).forceReauth != true; }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
     function departmentAdmin(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'department_admin' && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active'; }
     function departmentConsultant(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'consultant' && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active'; }
     function selfClinicalRole(role) { return role in ['nurse','resident','specialist','consultant']; }
-    function validAccessCode(hash) { return signedIn() && get(/databases/$(database)/documents/accessCodes/$(hash)).data.active == true && get(/databases/$(database)/documents/accessCodes/$(hash)).data.workspaceId == 'cardiovault_master_workspace'; }
+    // An access code is only valid for the workspace that owns it. The
+    // workspaceId comparison is what stops a code from one customer team being
+    // replayed against another team's workspace.
+    function accessCodeData(hash) { return get(/databases/$(database)/documents/accessCodes/$(hash)).data; }
+    function accessCodeExists(hash) { return exists(/databases/$(database)/documents/accessCodes/$(hash)); }
+    function validAccessCode(hash, workspaceId) { return signedIn() && accessCodeExists(hash) && accessCodeData(hash).active == true && accessCodeData(hash).workspaceId == workspaceId; }
     function unitMember(workspaceId,unitId) {
       return member(workspaceId) &&
         (
@@ -31,35 +41,44 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
-      // The master account may read legacy bed and patient records to import
-      // them into the shared workspace. Only the owning UID may write them.
+      // Legacy bed and patient records that lived under /users/{uid} before the
+      // workspace migration. Only the owner of those records may read them; the
+      // old rule let the master account read every user's legacy data.
       match /beds/{bedId} {
-        allow get, list: if workspaceOwner('cardiovault_master_workspace');
+        allow get, list: if signedIn() && request.auth.uid == uid;
       }
       match /patients/{patientId} {
-        allow get, list: if workspaceOwner('cardiovault_master_workspace');
+        allow get, list: if signedIn() && request.auth.uid == uid;
       }
       match /{document=**} { allow read, write: if signedIn() && request.auth.uid == uid; }
     }
 
     match /accessCodes/{hash} {
-      // Access-code permission fix: deployment trigger.
       // Access codes are looked up by their SHA-256 hash. Only signed-in users may
-      // read an active master-workspace code so the redemption flow can validate it.
+      // read a code so the redemption flow can validate it; writes are limited to
+      // the owner of the workspace the code belongs to.
       allow get: if signedIn();
-      allow create: if workspaceOwner(request.resource.data.workspaceId) && request.resource.data.workspaceId == 'cardiovault_master_workspace';
-      allow update, delete: if workspaceOwner(resource.data.workspaceId) && resource.data.workspaceId == 'cardiovault_master_workspace';
+      allow create: if workspaceOwner(request.resource.data.workspaceId);
+      allow update, delete: if workspaceOwner(resource.data.workspaceId);
     }
 
     match /workspaces/{workspaceId} {
-      allow create: if masterAccount() && workspaceId == 'cardiovault_master_workspace' && request.resource.data.ownerUid == request.auth.uid && request.resource.data.ownerEmail == 'mohamedkhalid725@gmail.com';
+      // A signed-in user may bootstrap their own team workspace: the owner uid and
+      // the owner email must be their own. The legacy master workspace keeps its
+      // name; new customer workspaces must use the ws_ prefix so they can never
+      // squat on another workspace id.
+      allow create: if signedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.ownerEmail == request.auth.token.get('email', '') &&
+        request.resource.data.ownerEmail != '' &&
+        (workspaceId == 'cardiovault_master_workspace' || workspaceId.matches('^ws_[A-Za-z0-9_-]{8,64}$'));
       allow get, update, delete: if workspaceOwner(workspaceId);
       allow get: if member(workspaceId);
 
       match /members/{uid} {
         allow get: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
         allow list: if workspaceOwner(workspaceId);
-        allow create: if signedIn() && request.auth.uid == uid && workspaceId == 'cardiovault_master_workspace' && validAccessCode(request.resource.data.accessCodeHash) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.workspaceId == workspaceId && get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId == request.resource.data.unitId;
+        allow create: if signedIn() && request.auth.uid == uid && validAccessCode(request.resource.data.accessCodeHash, workspaceId) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && accessCodeData(request.resource.data.accessCodeHash).unitId == request.resource.data.unitId;
         allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
           (departmentConsultant(workspaceId) &&
            exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(uid)) &&
@@ -69,12 +88,11 @@ service cloud.firestore {
            request.resource.data.role in ['clinical_editor','view_only'] &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitId','unitIds','role','active','forceReauth','updatedAt'])) ||
           (signedIn() && request.auth.uid == uid &&
-           workspaceId == 'cardiovault_master_workspace' &&
-           validAccessCode(request.resource.data.accessCodeHash) &&
+           validAccessCode(request.resource.data.accessCodeHash, workspaceId) &&
            request.resource.data.workspaceId == workspaceId &&
            request.resource.data.uid == request.auth.uid &&
-           request.resource.data.unitId == get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.unitId &&
-           request.resource.data.role == get(/databases/$(database)/documents/accessCodes/$(request.resource.data.accessCodeHash)).data.get('role','clinical_editor') &&
+           request.resource.data.unitId == accessCodeData(request.resource.data.accessCodeHash).unitId &&
+           request.resource.data.role == accessCodeData(request.resource.data.accessCodeHash).get('role','clinical_editor') &&
            request.resource.data.active == true &&
            request.resource.data.forceReauth == false &&
            request.resource.data.unitIds.hasAny([request.resource.data.unitId]) &&
@@ -86,7 +104,7 @@ service cloud.firestore {
         allow get, list: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
         allow create, update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
-           validAccessCode(request.resource.data.accessCodeHash) &&
+           validAccessCode(request.resource.data.accessCodeHash, workspaceId) &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.unitId == unitId);
         allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
