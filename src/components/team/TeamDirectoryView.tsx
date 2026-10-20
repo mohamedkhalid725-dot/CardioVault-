@@ -19,6 +19,7 @@ export const TeamDirectoryView: React.FC = () => {
   const [unitIds, setUnitIds] = useState<string[]>([]);
   const [status, setStatus] = useState<UserProfile['status']>('active');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const isMaster = isOwnerAccess();
   const isAdmin = currentUser.role === 'department_admin';
   const isConsultant = currentUser.role === 'consultant';
@@ -68,13 +69,26 @@ export const TeamDirectoryView: React.FC = () => {
     setStatus(u.status);
   };
 
+  const isDirty =
+    !!editing &&
+    (role !== editing.role ||
+      status !== editing.status ||
+      unitIds.length !== editing.assignedUnitIds.length ||
+      unitIds.some((id) => !editing.assignedUnitIds.includes(id)));
+
+  const closeEdit = () => {
+    if (isDirty && !window.confirm('Discard unsaved changes to this team member?')) return;
+    setEditing(null);
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editing) return;
+    if (!editing || saving) return;
     if (!unitIds.length) {
       showToast('Assign at least one clinical unit.', 'error');
       return;
     }
+    setSaving(true);
     try {
       const updated = await updateTeamDirectoryMember(editing.userId, { role, assignedUnitIds: unitIds, status });
       setUsers((v) => v.map((u) => (u.userId === editing.userId ? { ...u, ...updated } : u)));
@@ -82,7 +96,12 @@ export const TeamDirectoryView: React.FC = () => {
       setEditing(null);
       showToast('Team member updated successfully.', 'success');
     } catch (err: any) {
-      showToast('Could not update team member. Please try again.', 'error');
+      showToast(
+        err?.message ? `Could not update team member: ${err.message}` : 'Could not update team member. Please try again.',
+        'error'
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -181,73 +200,81 @@ export const TeamDirectoryView: React.FC = () => {
       )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={closeEdit}>
           <form
             onSubmit={save}
-            className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3">
               <div>
                 <div className="text-xs text-cyan-500 font-bold">EDIT TEAM MEMBER</div>
                 <h3 className="text-lg font-black">{editing.name}</h3>
               </div>
-              <button type="button" onClick={() => setEditing(null)}>
+              <button type="button" onClick={closeEdit}>
                 <X />
               </button>
             </div>
-            <div>
-              <label className="text-xs font-bold">Clinical Role</label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as ClinicalRole)}
-                className="w-full mt-1 rounded-xl border p-2.5 bg-white dark:bg-slate-800"
-              >
-                <option value="nurse">Nurse</option>
-                <option value="resident">Resident</option>
-                <option value="specialist">Specialist</option>
-                <option value="consultant">Consultant</option>
-                <option value="viewer">Viewer</option>
-                <option value="pharmacist">Pharmacist</option>
-                <option value="lab_user">Lab User</option>
-                <option value="radiology_user">Radiology User</option>
-                <option value="coordinator">Coordinator</option>
-                {isMaster && <option value="department_admin">Department Admin</option>}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold">Assigned Units</label>
-              <div className="mt-1 grid sm:grid-cols-2 gap-2">
-                {units.map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 p-2.5 rounded-xl border text-xs">
-                    <input
-                      type="checkbox"
-                      checked={unitIds.includes(u.id)}
-                      onChange={() =>
-                        setUnitIds((v) => (v.includes(u.id) ? v.filter((x) => x !== u.id) : [...v, u.id]))
-                      }
-                    />
-                    {u.name}
-                  </label>
-                ))}
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-1 space-y-4">
+              <div>
+                <label className="text-xs font-bold">Clinical Role</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as ClinicalRole)}
+                  className="w-full mt-1 rounded-xl border p-2.5 bg-white dark:bg-slate-800"
+                >
+                  <option value="nurse">Nurse</option>
+                  <option value="resident">Resident</option>
+                  <option value="specialist">Specialist</option>
+                  <option value="consultant">Consultant</option>
+                  <option value="viewer">Viewer</option>
+                  <option value="pharmacist">Pharmacist</option>
+                  <option value="lab_user">Lab User</option>
+                  <option value="radiology_user">Radiology User</option>
+                  <option value="coordinator">Coordinator</option>
+                  {isMaster && <option value="department_admin">Department Admin</option>}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold">Assigned Units</label>
+                <div className="mt-1 grid sm:grid-cols-2 gap-2">
+                  {units.map((u) => (
+                    <label key={u.id} className="flex items-center gap-2 p-2.5 rounded-xl border text-xs">
+                      <input
+                        type="checkbox"
+                        checked={unitIds.includes(u.id)}
+                        onChange={() =>
+                          setUnitIds((v) => (v.includes(u.id) ? v.filter((x) => x !== u.id) : [...v, u.id]))
+                        }
+                      />
+                      {u.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold">Status</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as UserProfile['status'])}
+                  className="w-full mt-1 rounded-xl border p-2.5 bg-white dark:bg-slate-800"
+                >
+                  <option value="active">Active</option>
+                  <option value="pending">Pending</option>
+                  <option value="inactive">Inactive</option>
+                </select>
               </div>
             </div>
-            <div>
-              <label className="text-xs font-bold">Status</label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as UserProfile['status'])}
-                className="w-full mt-1 rounded-xl border p-2.5 bg-white dark:bg-slate-800"
-              >
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 text-xs">
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
+              <button type="button" onClick={closeEdit} className="px-4 py-2 text-xs">
                 Cancel
               </button>
-              <button className="px-5 py-2 rounded-xl bg-cyan-500 font-bold text-xs">Save Changes</button>
+              <button
+                disabled={saving}
+                className="px-5 py-2 rounded-xl bg-cyan-500 font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
             </div>
           </form>
         </div>
