@@ -264,8 +264,13 @@ service cloud.firestore {
       }
 
       // ─── Team directory ──────────────────────────────────────────────────
+      // A colleague's profile is theirs alone. The platform owner may read any
+      // profile; an account may always read its own. Nobody may enumerate the
+      // directory: the only team list a member gets is the roster of a unit they
+      // belong to (below), never every account in the workspace.
       match /team/{uid} {
-        allow get, list: if adminOf(workspaceId) || member(workspaceId);
+        allow get: if adminOf(workspaceId) || (signedIn() && request.auth.uid == uid);
+        allow list: if adminOf(workspaceId);
         // A member may self-create only a non-privileged clinical profile.
         allow create: if canWrite(workspaceId) && (
           adminOf(workspaceId) ||
@@ -328,6 +333,22 @@ service cloud.firestore {
                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','type','features','notes','consultantUid','capacityLocked','updatedAt']) )
           )));
 
+        allow delete: if adminOf(workspaceId);
+      }
+
+      // ─── Unit roster ─────────────────────────────────────────────────────
+      // Who works in THIS unit, one document per (unit, member). It is the only
+      // directory a non-owner may read, so a member of Unit A can never learn who
+      // works in Unit B. A member may write only their own entry and only inside a
+      // unit they already belong to; unit membership management is the owner's.
+      // `uid` must equal the document id on every write, so the id and the payload
+      // can never disagree.
+      match /units/{unitId}/roster/{uid} {
+        allow get, list: if adminOf(workspaceId) || unitMember(workspaceId, unitId) || (signedIn() && request.auth.uid == uid);
+        allow create, update: if canWrite(workspaceId)
+          && request.resource.data.uid == uid
+          && ( adminOf(workspaceId)
+               || (signedIn() && request.auth.uid == uid && unitMember(workspaceId, unitId)) );
         allow delete: if adminOf(workspaceId);
       }
 
@@ -417,6 +438,21 @@ service cloud.firestore {
         allow create: if canWrite(workspaceId)
           && (adminOf(workspaceId) || member(workspaceId))
           && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.workspaceId == workspaceId;
+        allow update, delete: if false;
+      }
+
+      // ─── Unit audit trail ────────────────────────────────────────────────
+      // Hard rule: an account may append an event only to a unit it belongs to,
+      // and only in its own name. The payload must agree with the path on all
+      // three ids, so an event can never be filed against another unit or
+      // another person. Append-only, exactly like the workspace trail above.
+      match /units/{unitId}/audit/{eventId} {
+        allow get, list: if adminOf(workspaceId) || unitMember(workspaceId, unitId);
+        allow create: if canWrite(workspaceId)
+          && unitMember(workspaceId, unitId)
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.unitId == unitId
           && request.resource.data.workspaceId == workspaceId;
         allow update, delete: if false;
       }

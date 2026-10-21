@@ -69,6 +69,45 @@ function unitPath(unitId) {
   return path("units", unitId);
 }
 
+function rosterPath(unitId, uid) {
+  return path("units", unitId, "roster", uid);
+}
+
+function unitAuditPath(unitId, eventId) {
+  return path("units", unitId, "audit", eventId);
+}
+
+// One roster document, the shape unitRoster.ts writes.
+function rosterEntry(uid, overrides = {}) {
+  const now = Date.now();
+  return {
+    uid,
+    name: `Roster ${uid}`,
+    role: "clinical_editor",
+    clinicalRole: "resident",
+    status: "active",
+    joinedAtMs: now,
+    updatedAtMs: now,
+    ...overrides,
+  };
+}
+
+// One unit audit event, the shape unitAudit.ts writes.
+function unitAuditEvent(unitId, actorUid, overrides = {}) {
+  return {
+    unitId,
+    workspaceId: WORKSPACE,
+    action: "patient.create",
+    entityType: "patient",
+    entityId: "patientX",
+    summary: "Unit event",
+    actorUid,
+    actorName: actorUid,
+    createdAtMs: Date.now(),
+    ...overrides,
+  };
+}
+
 function subPath() {
   return path("subscription", "current");
 }
@@ -294,6 +333,52 @@ async function seed() {
         role: "consultant",
         status: "active",
         assignedUnitIds: [UNIT_A],
+      }),
+      // ---- unit rosters: only the unit's own members appear on them ----
+      setDoc(doc(db, rosterPath(UNIT_A, "userA")), {
+        uid: "userA",
+        name: "User A",
+        role: "clinical_editor",
+        clinicalRole: "resident",
+        status: "active",
+        joinedAtMs: Date.now() - 60000,
+        updatedAtMs: Date.now() - 60000,
+        addedBy: "userA",
+        email: "usera@example.com",
+      }),
+      setDoc(doc(db, rosterPath(UNIT_A, "userC")), {
+        uid: "userC",
+        name: "User C",
+        role: "clinical_editor",
+        clinicalRole: "specialist",
+        status: "active",
+        joinedAtMs: Date.now() - 60000,
+        updatedAtMs: Date.now() - 60000,
+        addedBy: "userC",
+        email: "userc@example.com",
+      }),
+      setDoc(doc(db, rosterPath(UNIT_B, "userB")), {
+        uid: "userB",
+        name: "User B",
+        role: "clinical_editor",
+        clinicalRole: "resident",
+        status: "active",
+        joinedAtMs: Date.now() - 60000,
+        updatedAtMs: Date.now() - 60000,
+        addedBy: "userB",
+        email: "userb@example.com",
+      }),
+      // ---- a seeded unit audit event, readable only inside UNIT_A ----
+      setDoc(doc(db, unitAuditPath(UNIT_A, "evt-seed-a")), {
+        unitId: UNIT_A,
+        workspaceId: WORKSPACE,
+        action: "patient.create",
+        entityType: "patient",
+        entityId: PATIENT_A,
+        summary: "Seeded unit event",
+        actorUid: "userA",
+        actorName: "User A",
+        createdAtMs: Date.now() - 60000,
       }),
       // ---- units: UNIT_A has an empty consultant slot, UNIT_B has its own ----
       setDoc(doc(db, unitPath(UNIT_A)), {
@@ -1680,5 +1765,200 @@ test("42. only the workspace creator may open its first three-day trial", async 
   ));
   // ... and nobody may grant themselves a longer trial.
   await assertFails(setDoc(clockRef(WS_TRIAL_LONG, "userO"), clock({ days: 30 })));
+});
+
+// ---------------------------------------------------------------------------
+// Lane 1: the workspace `team` collection stops being a directory every member
+// can enumerate, and colleagues move to per-unit rosters plus a per-unit audit
+// trail. These tests pin the two hard rules: a member never sees anybody from a
+// unit they are not in, and an audit event can only exist inside its own unit.
+// ---------------------------------------------------------------------------
+
+test("43. a member cannot enumerate the workspace team directory", async () => {
+  const a = dbFor("userA");
+
+  // Listing is owner-only: the old rule let every member pull the whole roster of
+  // accounts, including colleagues who work only in units they are not in.
+  await assertFails(getDocs(collection(a, path("team"))));
+  await assertFails(getDocs(collection(dbFor("userC"), path("team"))));
+  // A constrained query is still a list.
+  await assertFails(
+    getDocs(query(collection(a, path("team")), where("uid", "==", "userA"))),
+  );
+
+  // The platform owner keeps the whole directory.
+  await assertSucceeds(getDocs(collection(dbFor("admin_root"), path("team"))));
+});
+
+test("44. a member can read only their own team profile", async () => {
+  const a = dbFor("userA");
+
+  await assertSucceeds(getDoc(doc(a, path("team", "userA"))));
+
+  // Somebody else's profile is out of reach, even by exact id.
+  await assertFails(getDoc(doc(a, path("team", "userB"))));
+  await assertFails(getDoc(doc(dbFor("userC"), path("team", "userA"))));
+  await assertFails(getDoc(doc(dbFor("userG"), path("team", "userA"))));
+  await assertFails(
+    getDoc(doc(testEnv.unauthenticatedContext().firestore(), path("team", "userA"))),
+  );
+
+  // The owner reads any profile.
+  await assertSucceeds(getDoc(doc(dbFor("admin_root"), path("team", "userB"))));
+});
+
+test("45. a member can read the roster of a unit they belong to", async () => {
+  const a = dbFor("userA");
+
+  await assertSucceeds(getDoc(doc(a, rosterPath(UNIT_A, "userA"))));
+  await assertSucceeds(getDocs(collection(a, path("units", UNIT_A, "roster"))));
+
+  // A colleague in the same unit sees the same roster.
+  await assertSucceeds(getDoc(doc(dbFor("userC"), rosterPath(UNIT_A, "userA"))));
+  // userC belongs to both units, so both rosters open.
+  await assertSucceeds(getDocs(collection(dbFor("userC"), path("units", UNIT_B, "roster"))));
+
+  // The platform owner reads every roster.
+  await assertSucceeds(getDocs(collection(dbFor("admin_root"), path("units", UNIT_A, "roster"))));
+});
+
+test("46. a member cannot read the roster of a unit they are not in", async () => {
+  const b = dbFor("userB");
+
+  await assertFails(getDoc(doc(b, rosterPath(UNIT_A, "userA"))));
+  await assertFails(getDocs(collection(b, path("units", UNIT_A, "roster"))));
+
+  // ... and not the other way round either.
+  await assertFails(getDoc(doc(dbFor("userA"), rosterPath(UNIT_B, "userB"))));
+  await assertFails(getDocs(collection(dbFor("userA"), path("units", UNIT_B, "roster"))));
+
+  // A member of another workspace sees nothing.
+  await assertFails(getDocs(collection(dbFor("userG"), path("units", UNIT_A, "roster"))));
+
+  // Rosters cannot be gathered across units with a collection-group query.
+  await assertFails(getDocs(collectionGroup(dbFor("userA"), "roster")));
+});
+
+test("47. a member may write only their own roster entry, inside their own unit", async () => {
+  const a = dbFor("userA");
+
+  // Another person's entry is refused, whichever way the ids are mixed.
+  await assertFails(setDoc(doc(a, rosterPath(UNIT_A, "userB")), rosterEntry("userB")));
+  await assertFails(setDoc(doc(a, rosterPath(UNIT_A, "userB")), rosterEntry("userA")));
+  await assertFails(setDoc(doc(a, rosterPath(UNIT_A, "userA")), rosterEntry("userB")));
+
+  // Their own entry, but in a unit they do not belong to.
+  await assertFails(setDoc(doc(a, rosterPath(UNIT_B, "userA")), rosterEntry("userA")));
+
+  // The legitimate self-write still works and is what the join flow uses.
+  await assertSucceeds(
+    setDoc(doc(a, rosterPath(UNIT_A, "userA")), rosterEntry("userA", { name: "User A renamed" })),
+  );
+
+  // Removal is unit management: owner only.
+  await assertFails(deleteDoc(doc(a, rosterPath(UNIT_A, "userA"))));
+  await assertFails(deleteDoc(doc(a, rosterPath(UNIT_A, "userC"))));
+});
+
+test("48. the platform owner may write anybody's roster entry", async () => {
+  const owner = dbFor("admin_root");
+
+  await assertSucceeds(
+    setDoc(doc(owner, rosterPath(UNIT_A, "userF")), rosterEntry("userF", { addedBy: "admin_root" })),
+  );
+  await assertSucceeds(getDoc(doc(owner, rosterPath(UNIT_A, "userF"))));
+
+  // Even the owner keeps the document id and the payload in agreement.
+  await assertFails(setDoc(doc(owner, rosterPath(UNIT_A, "userE")), rosterEntry("userB")));
+
+  // The owner removes a roster entry again.
+  await assertSucceeds(deleteDoc(doc(owner, rosterPath(UNIT_A, "userF"))));
+});
+
+test("49. a member can append an audit event to their own unit, in their own name", async () => {
+  const a = dbFor("userA");
+
+  await assertSucceeds(
+    setDoc(doc(a, unitAuditPath(UNIT_A, "evt-a-1")), unitAuditEvent(UNIT_A, "userA")),
+  );
+  // A member of both units writes into both.
+  await assertSucceeds(
+    setDoc(doc(dbFor("userC"), unitAuditPath(UNIT_B, "evt-c-1")), unitAuditEvent(UNIT_B, "userC")),
+  );
+
+  // Attributing the event to somebody else is refused.
+  await assertFails(
+    setDoc(doc(a, unitAuditPath(UNIT_A, "evt-forged")), unitAuditEvent(UNIT_A, "userB")),
+  );
+  // The payload must agree with the path it is filed under.
+  await assertFails(
+    setDoc(doc(a, unitAuditPath(UNIT_A, "evt-wrong-unit")), unitAuditEvent(UNIT_B, "userA")),
+  );
+  await assertFails(
+    setDoc(
+      doc(a, unitAuditPath(UNIT_A, "evt-wrong-workspace")),
+      unitAuditEvent(UNIT_A, "userA", { workspaceId: WS_B }),
+    ),
+  );
+});
+
+test("50. a member cannot append an audit event to a unit they are not in", async () => {
+  const b = dbFor("userB");
+
+  await assertFails(
+    setDoc(doc(b, unitAuditPath(UNIT_A, "evt-b-1")), unitAuditEvent(UNIT_A, "userB")),
+  );
+  // Claiming to be the unit's own member does not help either.
+  await assertFails(
+    setDoc(doc(b, unitAuditPath(UNIT_A, "evt-b-2")), unitAuditEvent(UNIT_A, "userA")),
+  );
+  // Another workspace's member and an inactive membership are both denied.
+  await assertFails(
+    setDoc(doc(dbFor("userG"), unitAuditPath(UNIT_A, "evt-g-1")), unitAuditEvent(UNIT_A, "userG")),
+  );
+  await assertFails(
+    setDoc(doc(dbFor("userD"), unitAuditPath(UNIT_A, "evt-d-1")), unitAuditEvent(UNIT_A, "userD")),
+  );
+
+  // The denial is about the unit, not about the write: their own unit works.
+  await assertSucceeds(
+    setDoc(doc(b, unitAuditPath(UNIT_B, "evt-b-ok")), unitAuditEvent(UNIT_B, "userB")),
+  );
+});
+
+test("51. unit audit events are append-only for everybody", async () => {
+  const a = dbFor("userA");
+  const eventPath = unitAuditPath(UNIT_A, "evt-append-only");
+
+  await assertSucceeds(setDoc(doc(a, eventPath), unitAuditEvent(UNIT_A, "userA")));
+
+  for (const uid of ["userA", "userC", "admin_root"]) {
+    const db = dbFor(uid);
+    await assertFails(updateDoc(doc(db, eventPath), { summary: "tampered" }));
+    await assertFails(deleteDoc(doc(db, eventPath)));
+  }
+
+  // The seeded event is just as untouchable.
+  await assertFails(deleteDoc(doc(dbFor("admin_root"), unitAuditPath(UNIT_A, "evt-seed-a"))));
+  await assertFails(
+    updateDoc(doc(dbFor("admin_root"), unitAuditPath(UNIT_A, "evt-seed-a")), { action: "owner-edit" }),
+  );
+});
+
+test("52. only the unit's own members and the platform owner can read its audit", async () => {
+  const b = dbFor("userB");
+
+  await assertFails(getDoc(doc(b, unitAuditPath(UNIT_A, "evt-seed-a"))));
+  await assertFails(getDocs(collection(b, path("units", UNIT_A, "audit"))));
+  await assertFails(getDocs(collection(dbFor("userG"), path("units", UNIT_A, "audit"))));
+  await assertFails(getDocs(collection(dbFor("userD"), path("units", UNIT_A, "audit"))));
+
+  // The unit's own members and the platform owner can.
+  await assertSucceeds(getDoc(doc(dbFor("userA"), unitAuditPath(UNIT_A, "evt-seed-a"))));
+  await assertSucceeds(getDocs(collection(dbFor("userC"), path("units", UNIT_A, "audit"))));
+  await assertSucceeds(getDocs(collection(dbFor("admin_root"), path("units", UNIT_A, "audit"))));
+
+  // userB reads its own unit's trail.
+  await assertSucceeds(getDocs(collection(b, path("units", UNIT_B, "audit"))));
 });
 
