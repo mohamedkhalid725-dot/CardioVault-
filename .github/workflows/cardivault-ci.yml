@@ -514,7 +514,7 @@ jobs:
           echo "Live/release App Check debug mode: disabled."
 
       - name: Assert live deploy cannot use staging Firebase config
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/department-system-v1' || github.ref == 'refs/heads/build-972-clean' || github.ref == 'refs/heads/task1-email-auth') }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/department-system-v1' || github.ref == 'refs/heads/build-972-clean' || github.ref == 'refs/heads/task1-email-auth' || github.ref == 'refs/heads/v2.1-build') }}
         env:
           STAGING_APP_ID: ${{ secrets.FIREBASE_STAGING_APP_ID }}
           STAGING_SITE_KEY: ${{ secrets.FIREBASE_STAGING_APPCHECK_RECAPTCHA_SITE_KEY }}
@@ -526,8 +526,17 @@ jobs:
           if [ -n "$STAGING_SITE_KEY" ] && [ "$VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY" = "$STAGING_SITE_KEY" ]; then exit 1; fi
           echo "Live Hosting staging-config guard: PASS."
 
+      - name: Rebuild the production web bundle for the live deploy
+        # The debug APK build above rebuilt `dist` with the App Check debug
+        # provider. The live site must never ship that bundle: it uses the
+        # reCAPTCHA Enterprise provider with the production site key.
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/department-system-v1' || github.ref == 'refs/heads/build-972-clean' || github.ref == 'refs/heads/task1-email-auth' || github.ref == 'refs/heads/v2.1-build') }}
+        env:
+          VITE_AI_APPCHECK_DEBUG: 'false'
+          VITE_CARDIOVAULT_PREVIEW: 'false'
+        run: npm run build
       - name: Deploy CardioVault Web App to Firebase Hosting live
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/department-system-v1' || github.ref == 'refs/heads/build-972-clean' || github.ref == 'refs/heads/task1-email-auth') }}
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/department-system-v1' || github.ref == 'refs/heads/build-972-clean' || github.ref == 'refs/heads/task1-email-auth' || github.ref == 'refs/heads/v2.1-build') }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VITE_AI_APPCHECK_DEBUG: 'false'
