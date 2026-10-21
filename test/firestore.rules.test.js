@@ -11,6 +11,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  or,
   query,
   setDoc,
   updateDoc,
@@ -24,8 +25,12 @@ const PROJECT_ID = "cardiovault-rules-test";
 const WORKSPACE = "cardiovault_master_workspace";
 const UNIT_A = "unitA";
 const UNIT_B = "unitB";
+const UNIT_C = "unitC";
 const PATIENT_A = "patientA";
 const PATIENT_B = "patientB";
+// A file physically in Unit A that Unit B is also allowed to read (unitIds) -
+// the shape the share flow writes. PATIENT_A stays legacy (no unitIds at all).
+const PATIENT_SHARED = "patientShared";
 
 // Temporary-invite fixtures. The rules never hash anything: the client hashes
 // the typed code and looks the document up by that id, so the tests do the same.
@@ -248,6 +253,30 @@ async function seed() {
         patientId: PATIENT_B,
         unitId: UNIT_B,
         label: "FAKE B",
+      }),
+      // Unit C exists only to prove that a shared file does not open a third unit.
+      setDoc(doc(db, path("members", "userH")), {
+        uid: "userH",
+        workspaceId: WORKSPACE,
+        active: true,
+        forceReauth: false,
+        role: "clinical_editor",
+        unitId: UNIT_C,
+        unitIds: [UNIT_C],
+      }),
+      setDoc(doc(db, path("team", "userH")), {
+        uid: "userH",
+        workspaceId: WORKSPACE,
+        role: "resident",
+        status: "active",
+        assignedUnitIds: [UNIT_C],
+      }),
+      // One shared file: it belongs to Unit A and lists Unit B as an allowed reader.
+      setDoc(doc(db, patientPath(PATIENT_SHARED)), {
+        patientId: PATIENT_SHARED,
+        unitId: UNIT_A,
+        unitIds: [UNIT_A, UNIT_B],
+        label: "FAKE SHARED",
       }),
       setDoc(doc(db, path("units", UNIT_A, "tasks", "taskA")), {
         id: "taskA",
@@ -1960,5 +1989,110 @@ test("52. only the unit's own members and the platform owner can read its audit"
 
   // userB reads its own unit's trail.
   await assertSucceeds(getDocs(collection(b, path("units", UNIT_B, "audit"))));
+});
+
+// ═══ Shared patient files (one document, two units) ═════════════════════════
+
+test("53. a member of the shared unit can read the patient after unitIds contains it", async () => {
+  const b = dbFor("userB");
+  const sharedRef = doc(b, patientPath(PATIENT_SHARED));
+
+  // userB belongs to Unit B only: the file lives in Unit A but lists Unit B.
+  await assertSucceeds(getDoc(sharedRef));
+  await assertSucceeds(
+    getDocs(query(collection(b, path("patients")), where("unitIds", "array-contains", UNIT_B))),
+  );
+
+  // The file's own unit keeps reading it exactly as before.
+  await assertSucceeds(getDoc(doc(dbFor("userA"), patientPath(PATIENT_SHARED))));
+  await assertSucceeds(
+    getDocs(query(collection(dbFor("userA"), path("patients")), where("unitId", "==", UNIT_A))),
+  );
+  // The single OR query the web realtime listener runs resolves to the same set.
+  await assertSucceeds(
+    getDocs(
+      query(
+        collection(b, path("patients")),
+        or(where("unitId", "==", UNIT_B), where("unitIds", "array-contains", UNIT_B)),
+      ),
+    ),
+  );
+});
+
+test("54. a member of a third unit cannot read the shared file", async () => {
+  const h = dbFor("userH");
+
+  await assertFails(getDoc(doc(h, patientPath(PATIENT_SHARED))));
+  await assertFails(
+    getDocs(query(collection(h, path("patients")), where("unitIds", "array-contains", UNIT_B))),
+  );
+  await assertFails(getDocs(collection(h, path("patients"))));
+});
+
+test("55. a member cannot put a unit he does not belong to on unitIds", async () => {
+  // userB is in Unit B only: it may not add Unit A to the file's readers.
+  await assertFails(
+    updateDoc(doc(dbFor("userB"), patientPath(PATIENT_B)), { unitIds: [UNIT_B, UNIT_A] }),
+  );
+  // Not on create either.
+  await assertFails(
+    setDoc(doc(dbFor("userB"), patientPath("sharedByB")), {
+      patientId: "sharedByB",
+      unitId: UNIT_B,
+      unitIds: [UNIT_B, UNIT_A],
+    }),
+  );
+  // A patient that never carries unitIds cannot be used to smuggle one in.
+  await assertFails(
+    updateDoc(doc(dbFor("userB"), patientPath(PATIENT_B)), { unitIds: [UNIT_A] }),
+  );
+
+  // The legitimate dual-unit editor (userC: A + B) may share its own file.
+  await assertSucceeds(
+    updateDoc(doc(dbFor("userC"), patientPath(PATIENT_A)), { unitIds: [UNIT_A, UNIT_B] }),
+  );
+  await assertSucceeds(
+    setDoc(doc(dbFor("userC"), patientPath("sharedByC")), {
+      patientId: "sharedByC",
+      unitId: UNIT_A,
+      unitIds: [UNIT_A, UNIT_B],
+    }),
+  );
+});
+
+test("56. the platform owner reads and shares any file regardless of units", async () => {
+  const db = dbFor("admin_root");
+
+  await assertSucceeds(getDoc(doc(db, patientPath(PATIENT_SHARED))));
+  await assertSucceeds(getDoc(doc(db, patientPath(PATIENT_A))));
+  await assertSucceeds(
+    updateDoc(doc(db, patientPath(PATIENT_B)), { unitIds: [UNIT_B, "unitNobody"] }),
+  );
+  await assertSucceeds(
+    setDoc(doc(db, patientPath("ownerShared")), {
+      patientId: "ownerShared",
+      unitId: UNIT_A,
+      unitIds: [UNIT_A, "unitNobody"],
+    }),
+  );
+});
+
+test("57. a legacy patient without unitIds stays readable by its own unit only", async () => {
+  // PATIENT_A is seeded without a unitIds key at all.
+  await assertSucceeds(getDoc(doc(dbFor("userA"), patientPath(PATIENT_A))));
+  await assertFails(getDoc(doc(dbFor("userB"), patientPath(PATIENT_A))));
+  await assertFails(getDoc(doc(dbFor("userH"), patientPath(PATIENT_A))));
+  // Unit B reads exactly the one file that lists it, and no other file.
+  await assertSucceeds(
+    getDocs(query(collection(dbFor("userB"), path("patients")), where("unitIds", "array-contains", UNIT_B))),
+  );
+  // A query aimed at a unit the caller is not in is refused outright, so the
+  // patient list can never become a directory of other units.
+  await assertFails(
+    getDocs(query(collection(dbFor("userB"), path("patients")), where("unitIds", "array-contains", UNIT_A))),
+  );
+  await assertFails(
+    getDocs(query(collection(dbFor("userH"), path("patients")), where("unitIds", "array-contains", UNIT_A))),
+  );
 });
 

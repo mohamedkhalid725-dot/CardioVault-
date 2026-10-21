@@ -47,6 +47,44 @@ service cloud.firestore {
       return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor';
     }
 
+    // The caller's own unit set (their membership row plus their active team
+    // profile). The three sources are exactly the ones unitMember above trusts, so
+    // the two can never disagree about which units belong to the caller.
+    function memberUnits(workspaceId) {
+      return memberData(workspaceId).get('unitIds', [])
+        .concat([memberData(workspaceId).get('unitId','')])
+        .concat(
+          exists(teamPath(workspaceId)) && get(teamPath(workspaceId)).data.status == 'active'
+            ? get(teamPath(workspaceId)).data.get('assignedUnitIds', [])
+            : []
+        );
+    }
+
+    // True when the caller belongs to ANY of the supplied units. The list comes
+    // from a patient document's unitIds, so this is what makes one shared clinical
+    // file visible to the second unit - and only to units the caller is really in.
+    // A legacy document without unitIds yields an empty list and therefore false.
+    function unitMemberAny(workspaceId,unitIds) {
+      return member(workspaceId)
+        && exists(teamPath(workspaceId))
+        && get(teamPath(workspaceId)).data.status == 'active'
+        && (
+          get(teamPath(workspaceId)).data.get('assignedUnitIds', []).hasAny(unitIds)
+          || memberData(workspaceId).get('unitIds', []).hasAny(unitIds)
+          || unitIds.hasAny([memberData(workspaceId).get('unitId','')])
+        );
+    }
+
+    // Sharing a file is additive only: every unit an update ADDS to a patient's
+    // unitIds must be one of the caller's own units, and the patient's physical
+    // unit must stay on the list. Removing units stays with the primary unit's
+    // editor. A document that carries no unitIds yet (legacy) is left untouched.
+    function sharedUnitsWithin(workspaceId) {
+      return !request.resource.data.keys().hasAny(['unitIds'])
+        || ( request.resource.data.unitIds.hasAny([request.resource.data.unitId])
+             && request.resource.data.unitIds.removeAll(resource.data.get('unitIds', [])).hasOnly(memberUnits(workspaceId)) );
+    }
+
     // Clinical titles a member may pick for themselves. 'consultant' is NOT a
     // stored title: it is the unit's single consultant slot
     // (units/{unitId}.consultantUid), so exactly one person can hold it per unit
@@ -383,14 +421,25 @@ service cloud.firestore {
       }
 
       // ─── Patients ────────────────────────────────────────────────────────
+      // A patient file may be shared by more than one unit: unitId is where the
+      // bed is, unitIds is every unit allowed to read the file. Read stays
+      // per-document, so a member only ever reaches a unit through his own
+      // membership, never through another unit's id.
       match /patients/{patientId} {
-        allow get: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow list: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow create: if canWrite(workspaceId) && (adminOf(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId));
+        allow get: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId) || unitMemberAny(workspaceId,resource.data.get('unitIds', []));
+        allow list: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId) || unitMemberAny(workspaceId,resource.data.get('unitIds', []));
+        // A member creates a patient only inside a unit they are in, and may never
+        // hand it to a unit they are not in: every id on unitIds must be their own
+        // and the file's own unit must stay on the list. Owner is exempt.
+        allow create: if canWrite(workspaceId) && (adminOf(workspaceId) || (clinicalEditor(workspaceId,request.resource.data.unitId)
+          && ( !request.resource.data.keys().hasAny(['unitIds'])
+               || ( request.resource.data.unitIds.hasOnly(memberUnits(workspaceId))
+                    && request.resource.data.unitIds.hasAny([request.resource.data.unitId]) ) )));
         // An update needs editor rights on the new unit AND (same unit OR editor
         // rights on the old unit). This keeps legitimate transfers (dual-unit
         // editors, owner) while blocking cross-unit tampering via a unitId rewrite.
-        allow update: if canWrite(workspaceId) && (adminOf(workspaceId) || (clinicalEditor(workspaceId,request.resource.data.unitId) && (request.resource.data.unitId == resource.data.unitId || clinicalEditor(workspaceId,resource.data.unitId))));
+        // Adding a unit to unitIds is sharing, and is bounded by sharedUnitsWithin.
+        allow update: if canWrite(workspaceId) && (adminOf(workspaceId) || (clinicalEditor(workspaceId,request.resource.data.unitId) && (request.resource.data.unitId == resource.data.unitId || clinicalEditor(workspaceId,resource.data.unitId)) && sharedUnitsWithin(workspaceId)));
         allow delete: if canWrite(workspaceId) && (adminOf(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId));
       }
 

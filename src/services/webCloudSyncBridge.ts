@@ -3,7 +3,7 @@ import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
 import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { onSnapshot } from 'firebase/firestore';
-import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
+import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where, or } from './webFirebase';
 import { ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId, type WorkspaceAccessState } from './workspaceAccess';
 
 const SCHEMA_VERSION=12;
@@ -92,6 +92,14 @@ async function collectionData(p:string,unitId?:string):Promise<Array<Record<stri
   const ref=webCollection(p); const snap=unitId?await getDocs(query(ref,where('unitId','==',unitId))):await getDocs(ref);
   return snap.docs.map(d=>({...d.data(),id:d.id}));
 }
+// A clinical file can be shared by more than one unit: the single document keeps
+// a unitIds array with every unit allowed to read it. A unit therefore also asks
+// for the files that list it, so a shared file never disappears from a unit that
+// shares it.
+async function sharedPatientData(p:string,unitId:string):Promise<Array<Record<string,any>>>{
+  if(!unitId)return[];
+  try{const ref=webCollection(p);const snap=await getDocs(query(ref,where('unitIds','array-contains',unitId)));return snap.docs.map(d=>({...d.data(),id:d.id}));}catch(error){console.warn('Shared clinical file lookup failed:',error);return[];}
+}
 async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessState):Promise<number>{
   if(access.role==='owner'||access.role==='view_only')return 0;
   const unitIds=new Set<string>((Array.isArray((access as any).unitIds)?(access as any).unitIds:[access.unitId]).filter(Boolean).map(String));if(!unitIds.size)return 0;
@@ -164,14 +172,16 @@ export async function webLoadCurrentUserFromCloud(){
       const unitIds=Array.from(new Set((access.unitIds?.length?access.unitIds:[access.unitId]).filter(Boolean).map(String)));
       const loaded=await Promise.all(unitIds.map(async unitId=>{
         const unit=await getDoc(webDoc(`${path(access.workspaceId,'units')}/${unitId}`));
-        const [scopedBeds,scopedPatients]=await Promise.all([
+        const [scopedBeds,scopedPatients,sharedPatients]=await Promise.all([
           collectionData(path(access.workspaceId,'beds'),unitId),
           collectionData(path(access.workspaceId,'patients'),unitId),
+          sharedPatientData(path(access.workspaceId,'patients'),unitId),
         ]);
+        const patientsById=new Map<string,Record<string,any>>();for(const item of scopedPatients)patientsById.set(String(item.id),item);for(const item of sharedPatients)if(!patientsById.has(String(item.id)))patientsById.set(String(item.id),item);
         return {
           unit:unit.exists()?{...unit.data(),id:unitId}:null,
           beds:scopedBeds,
-          patients:scopedPatients,
+          patients:Array.from(patientsById.values()),
         };
       }));
       loaded.forEach(item=>{if(item.unit)units.push(item.unit);beds.push(...item.beds);patients.push(...item.patients);});
@@ -278,7 +288,7 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
 
     const listenCollection = (name:'units'|'beds'|'patients', unitId?:string) => {
       const ref = webCollection(path(access.workspaceId,name));
-      const target = unitId ? query(ref, where('unitId','==',unitId)) : ref;
+      const target = unitId ? (name==='patients' ? query(ref, or(where('unitId','==',unitId), where('unitIds','array-contains',unitId))) : query(ref, where('unitId','==',unitId))) : ref;
       const unsubscribe = onSnapshot(target, {includeMetadataChanges:true}, snap => persistCollection(name,snap), error => {
         localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
         localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));

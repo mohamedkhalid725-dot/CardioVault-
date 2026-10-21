@@ -32,6 +32,7 @@ import {
   deleteDoc,
   query,
   where,
+  or,
   type Firestore,
 } from 'firebase/firestore';
 
@@ -182,7 +183,7 @@ export function webCurrentUser(){ return Capacitor.isNativePlatform() ? null : g
 
 export const webDoc = (path:string) => doc(getWebDb(), path);
 export const webCollection = (path:string) => collection(getWebDb(), path);
-export { getDoc, getDocs, setDoc, deleteDoc, query, where };
+export { getDoc, getDocs, setDoc, deleteDoc, query, where, or };
 
 async function getNativeIdToken(): Promise<string> {
   const { user } = await FirebaseAuthentication.getCurrentUser();

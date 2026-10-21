@@ -2,7 +2,7 @@ import type {AdmissionEpisodeSnapshot,Patient,PastAdmission} from '../types/clin
 export type PatientKeyClass='identity'|'assigned'|'episode'|'history'|'meta';
 export const PATIENT_KEY_CLASS:Record<keyof Patient,PatientKeyClass>={
   id:'identity',mrn:'identity',fullName:'identity',name:'identity',age:'identity',sex:'identity',gender:'identity',weight:'identity',height:'identity',photoUrl:'identity',
-  unitId:'assigned',bedId:'assigned',departmentId:'assigned',admissionDate:'assigned',admissionTime:'assigned',currentAdmissionStartedAt:'assigned',status:'assigned',codeStatus:'assigned',
+  unitId:'assigned',unitIds:'assigned',bedId:'assigned',departmentId:'assigned',admissionDate:'assigned',admissionTime:'assigned',currentAdmissionStartedAt:'assigned',status:'assigned',codeStatus:'assigned',
   bedNumber:'episode',primaryDiagnosis:'episode',diagnosis:'episode',secondaryDiagnoses:'episode',allergies:'episode',isArchived:'episode',archiveReason:'episode',archiveDate:'episode',additionalConditions:'episode',dischargeSummary:'episode',
   clinicalSummary:'episode',cardiovascularHistory:'episode',handover:'episode',vitalsHistory:'episode',fluidRecords:'episode',hemodynamicHistory:'episode',fluidIntakeHistory:'episode',urineOutputHistory:'episode',
   examination:'episode',ecgRecords:'episode',cardiology:'episode',medications:'episode',infusions:'episode',ventilator:'episode',imaging:'episode',labs:'episode',labResults:'episode',procedures:'episode',
