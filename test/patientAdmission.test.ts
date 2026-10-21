@@ -5,7 +5,7 @@ import { isAtOrAfterCurrentAdmission, prepareReadmittedPatient, toLocalIsoTimest
 
 const patientResetFixture:any={
   id:'p-reset',mrn:'MRN-RESET',fullName:'Fixture Patient',name:'Fixture Alias',age:55,sex:'Male',gender:'male',weight:80,height:175,photoUrl:'photo://old',
-  unitId:'unit-old',bedId:'bed-old',bedNumber:'B-01',departmentId:'dept-old',status:'Critical',admissionDate:'2026-10-01',admissionTime:'09:00',primaryDiagnosis:'Old ACS',diagnosis:'Old diagnosis',secondaryDiagnoses:['Old secondary'],allergies:['Old allergy'],codeStatus:'Full Code',
+  unitId:'unit-old',unitIds:['unit-old'],bedId:'bed-old',bedNumber:'B-01',departmentId:'dept-old',status:'Critical',admissionDate:'2026-10-01',admissionTime:'09:00',primaryDiagnosis:'Old ACS',diagnosis:'Old diagnosis',secondaryDiagnoses:['Old secondary'],allergies:['Old allergy'],codeStatus:'Full Code',
   isArchived:true,archiveReason:'Discharged Home',archiveDate:'2026-10-08',currentAdmissionStartedAt:'2026-10-01T09:00:00+03:00',additionalConditions:['Previous admission condition'],dischargeSummary:'Old discharge',
   pastAdmissions:[],
   clinicalSummary:{chiefComplaint:'Old complaint',hpi:'Old HPI',pmh:['HTN'],psh:['PCI'],drugHistory:'Old drugs',allergies:['Old allergy'],familyHistory:'Old family',socialHistory:'Old social'},

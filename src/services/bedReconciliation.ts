@@ -57,7 +57,11 @@ export function reconcileClinicalRegistry(units:Unit[],beds:Bed[],patients:Patie
     }
   };
   for(const bed of beds||[])ensureUnit(bed.unitId);
-  for(const patient of patients||[])ensureUnit(patient.unitId);
+  // A shared clinical file keeps the unit where the patient physically is, and
+  // that unit can be one the reader is not a member of (the file is only shared
+  // for reading). Inventing that unit here would put a unit in front of the
+  // reader that he does not belong to, so a shared file never creates a unit.
+  for(const patient of patients||[]){const shared=Array.isArray((patient as any).unitIds)&&((patient as any).unitIds as any[]).length>0;if(!shared)ensureUnit(patient.unitId);}
   const counts=new Map<string,number>();
   for(const bed of beds||[]){const id=String(bed.unitId||'');if(id)counts.set(id,(counts.get(id)||0)+1);}
   const normalizedUnits=nextUnits.map(unit=>{

@@ -304,6 +304,10 @@ export interface Patient {
   height: number;
   photoUrl?: string;
   unitId: string;
+  // Every unit allowed to read this clinical file. Always contains unitId, which
+  // stays the unit the patient is physically in (the bed's unit). One shared
+  // file, one document: legacy documents simply omit the field.
+  unitIds?: string[];
   bedId: string;
   bedNumber?: string;
   departmentId?: string;
