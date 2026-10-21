@@ -254,6 +254,42 @@ jobs:
             } catch (error) {
               lines.push('workspaces read failed: ' + String(error && error.message || error));
             }
+            // The shape of every membership decides what a member doctor can
+            // still do: a clinical_editor with an active membership and an
+            // active team profile can read, admit, edit and discharge patients
+            // in his own unit. Anything else has to be repaired by hand.
+            try {
+              const master = db.collection('workspaces').doc('cardiovault_master_workspace');
+              const members = await master.collection('members').get();
+              let canEdit = 0, canOnlyRead = 0, lockedOut = 0;
+              for (const member of members.docs) {
+                const data = member.data() || {};
+                const role = String(data.role || '(none)');
+                const active = data.active !== false;
+                const forced = data.forceReauth === true;
+                const unitIds = Array.isArray(data.unitIds) ? data.unitIds.map(String) : (data.unitId ? [String(data.unitId)] : []);
+                let teamStatus = '(no team profile)';
+                let teamUnits = [];
+                try {
+                  const team = await master.collection('team').doc(member.id).get();
+                  if (team.exists) {
+                    teamStatus = String(team.data().status || '(no status)');
+                    teamUnits = Array.isArray(team.data().assignedUnitIds) ? team.data().assignedUnitIds.map(String) : [];
+                  }
+                } catch (error) { /* the team profile is optional for the report */ }
+                const editor = role === 'clinical_editor';
+                const teamOk = teamStatus === 'active';
+                let verdict = 'NO ACCESS';
+                if (active && !forced && editor && teamOk && unitIds.length) { verdict = 'CAN EDIT PATIENTS'; canEdit += 1; }
+                else if (active && !forced && unitIds.length) { verdict = 'READ ONLY'; canOnlyRead += 1; }
+                else { lockedOut += 1; }
+                lines.push('  member ' + member.id + ' role=' + role + ' active=' + active + ' forceReauth=' + forced
+                  + ' units=[' + unitIds.join(',') + '] teamStatus=' + teamStatus + ' teamUnits=[' + teamUnits.join(',') + '] -> ' + verdict);
+              }
+              lines.push('membership summary: can edit patients=' + canEdit + ', read only=' + canOnlyRead + ', no access=' + lockedOut);
+            } catch (error) {
+              lines.push('membership detail failed: ' + String(error && error.message || error));
+            }
             try {
               const rulesets = await admin.securityRules().listRulesets();
               lines.push('deployed Firestore rulesets: ' + rulesets.length);
