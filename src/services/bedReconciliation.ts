@@ -41,11 +41,16 @@ const readableUnitName=(unitId:string)=>{
  * Older versions could restore a larger bed set while the corresponding Unit
  * documents were missing. We never discard those beds; instead we recreate the
  * missing Unit records from each bed/patient unitId and derive totalBeds from
- * the actual Bed records.
+ * the actual Bed records. A unit that already exists keeps the capacity the
+ * doctor declared: its totalBeds is his own number, not a count of whatever
+ * bed documents happen to be in the cloud at that moment.
  */
 export function reconcileClinicalRegistry(units:Unit[],beds:Bed[],patients:Patient[]):{units:Unit[];beds:Bed[];patients:Patient[];changed:boolean}{
   const nextUnits=[...(Array.isArray(units)?units:[])];
   const known=new Set(nextUnits.map(unit=>String(unit.id)));
+  // Units that had to be RECOVERED from their beds. They never had a declared
+  // capacity, so theirs is derived from the bed records.
+  const recovered=new Set<string>();
   let changed=false;
   const ensureUnit=(unitId:string)=>{
     const id=String(unitId||'').trim();
@@ -53,6 +58,7 @@ export function reconcileClinicalRegistry(units:Unit[],beds:Bed[],patients:Patie
     if(!known.has(id)){
       nextUnits.push({id,name:readableUnitName(id),type:'Clinical Unit',totalBeds:0});
       known.add(id);
+      recovered.add(id);
       changed=true;
     }
   };
@@ -65,7 +71,18 @@ export function reconcileClinicalRegistry(units:Unit[],beds:Bed[],patients:Patie
   const counts=new Map<string,number>();
   for(const bed of beds||[]){const id=String(bed.unitId||'');if(id)counts.set(id,(counts.get(id)||0)+1);}
   const normalizedUnits=nextUnits.map(unit=>{
-    const actual=counts.get(String(unit.id))||0;
+    const id=String(unit.id);
+    if(!recovered.has(id)){
+      // `totalBeds` is the capacity the doctor declared when the unit was
+      // created, and addBed/removeBed keep it in step with the bed records.
+      // It must NOT be rewritten from the number of bed documents that happen
+      // to be in the cloud: a restore that landed between the unit write and
+      // the bed writes used to turn a six-bed unit into a zero-bed unit, and
+      // the next sync wrote that zero back for good. The declared capacity
+      // stays as the doctor set it.
+      return unit;
+    }
+    const actual=counts.get(id)||0;
     if(unit.totalBeds!==actual){changed=true;return {...unit,totalBeds:actual};}
     return unit;
   });

@@ -5,6 +5,7 @@ import { StorageService, stripLegacyDemoData } from './storage';
 import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
 import { WorkspaceAccessState, ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId } from './workspaceAccess';
 import { reconcileClinicalRegistry } from './bedReconciliation';
+import { clearPendingLocalChanges, hasPendingLocalChanges, markPendingLocalChanges, mergeClinicalCollections } from './clinicalMerge';
 import { webCurrentUser } from './webFirebase';
 import { webLoadCurrentUserFromCloud, webSyncCurrentUserNow } from './webCloudSyncBridge';
 
@@ -13,6 +14,11 @@ let syncing=false;
 let suppressSync=false;
 let syncTimer:ReturnType<typeof setTimeout>|null=null;
 let syncRequested=false;
+// The promise of the sync that is running right now. A caller that needs the
+// cloud to be up to date (creating a unit, for example) has to wait for it
+// instead of starting a second sync that would be dropped as "already
+// syncing" and report success without having uploaded anything.
+let inflightSync:Promise<void>|null=null;
 const UID_KEY='cardiovault_google_uid';
 const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
 const LAST_ERROR_KEY='cardiovault_last_cloud_sync_error';

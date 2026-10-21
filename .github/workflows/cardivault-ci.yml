@@ -59,6 +59,9 @@ jobs:
           git push origin HEAD:${GITHUB_REF_NAME} || true
       - name: Upload TypeScript diagnostics
         if: always()
+        # A full Actions storage quota must never kill the build: the log is a
+        # convenience, the APK is the deliverable.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: cardiovault-tscheck-${{ github.sha }}
@@ -439,12 +442,38 @@ jobs:
             echo "CARDIOVAULT_RELEASE_ARTIFACT=CardioVault-release-unsigned-apk" >> "$GITHUB_ENV"
           fi
       - name: Upload hardened release APK
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.CARDIOVAULT_RELEASE_ARTIFACT }}
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Publish the APKs as release assets
+        # Release assets live in their own quota, so the APK is still reachable
+        # when the Actions artifact storage is full.
+        if: ${{ always() && github.ref == 'refs/heads/v2.1-build' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v2.1.0-ci"
+          mkdir -p apk-out
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "apk-out/CardioVault-2.1.0-release.apk"
+          fi
+          if [ -f android/app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp android/app/build/outputs/apk/debug/app-debug.apk "apk-out/CardioVault-2.1.0-debug.apk"
+          fi
+          if [ -z "$(ls -A apk-out)" ]; then
+            echo "No APK was produced by this run."
+            exit 0
+          fi
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "CardioVault 2.1.0 (internal CI build)" --notes "Automatic build from the v2.1-build branch. Not published to any store." --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" apk-out/*.apk --clobber
+          echo "APKs published to the release $TAG."
       - name: Build preview web bundle with App Check debug provider (legacy branches)
         if: ${{ github.ref == 'refs/heads/task2-firebase-ai' || github.ref == 'refs/heads/task2-appcheck-preview-skip' || github.ref == 'refs/heads/task2-appcheck-debug-provider-fix' || github.ref == 'refs/heads/task2-appcheck-enterprise-web' }}
         env:
@@ -518,6 +547,7 @@ jobs:
           retention-days: 14
 
       - name: Upload CardioVault debug APK
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: CardioVault-debug-apk
