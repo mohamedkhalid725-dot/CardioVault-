@@ -5,6 +5,7 @@ import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc,getDocs as
 import { sha256Hex } from './codeHash';
 import { AuthorizationService } from './authorizationService';
 import { UserProfile, ClinicalRole } from '../types/clinical';
+import { listRosterForUnits, upsertRosterEntry, removeRosterEntry } from './unitRoster';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
 export interface WorkspaceAccessState{workspaceId:string;role:WorkspaceRole;unitId:string|null;unitName:string|null;unitIds?:string[];unitNames?:Record<string,string>;}
 export interface UnitAccessCode{unitId:string;unitName:string;code:string;role:Exclude<WorkspaceRole,'owner'>;active:boolean;}
@@ -72,6 +73,16 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   try{
     await writeTeamProfile(targetWorkspace,id,teamProfile);
   }catch(error){console.warn('Team directory cloud registration failed:',error);}
+  // Roster documents are the only directory a member reads, so every granted unit
+  // gets one here. The membership above is already written, which is exactly what
+  // the rules require for a member to write their own entry. Re-running the code
+  // for a second unit refreshes both entries instead of duplicating anything.
+  const rosterClinicalRole=SELF_CLINICAL_ROLES.includes(String(teamProfile.role) as SelfClinicalRole)?String(teamProfile.role):undefined;
+  for(const unitId of unitIds){
+    try{
+      await upsertRosterEntry(targetWorkspace,unitId,{uid:id,name:teamProfile.name||'Clinician',role:membership.role,clinicalRole:rosterClinicalRole,status:'active',email:String(teamProfile.email||''),addedBy:id});
+    }catch(error){console.warn('Unit roster registration failed:',unitId,error);}
+  }
   let unitName=String(access.unitName||'');
   try{
     if(Capacitor.isNativePlatform()){
@@ -239,6 +250,39 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
   try{
     if(master)await ensureOwnerWorkspace();
     const workspaceId=getActiveWorkspaceId();
+    // ── Member directory ──────────────────────────────────────────────────
+    // The workspace `team` collection is owner-only; a member may read nothing
+    // from it except their own profile. Colleagues therefore come from the
+    // rosters of the units the caller belongs to, so an account can never see a
+    // person who works only in a unit it is not in. assignedUnitIds is the union
+    // of the units a roster entry was found in. Everything below this point is
+    // the platform owner's view and may read the whole directory.
+    if(!master){
+      const validRoles=['pending','department_admin','consultant','specialist','resident','nurse','viewer','pharmacist','lab_user','radiology_user','coordinator'];
+      const localById=new Map(localUsers.map(profile=>[String(profile?.userId||''),profile]));
+      const membership=await readPath(`workspaces/${workspaceId}/members/${id}`).catch(error=>{console.warn('Own membership lookup failed:',error);return null;});
+      const unitIds=membershipUnitIds(membership);
+      const roster=unitIds.length?await listRosterForUnits(workspaceId,unitIds):[];
+      const rosterProfiles=new Map<string,any>();
+      for(const entry of roster){
+        const entryId=String(entry?.uid||'');
+        if(!entryId)continue;
+        const local:any=localById.get(entryId);
+        const clinicalRole=String(entry?.clinicalRole||'');
+        rosterProfiles.set(entryId,{
+          ...local,
+          userId:entryId,
+          uid:entryId,
+          email:String(entry?.email||local?.email||''),
+          name:String(entry?.name||local?.name||'Team member'),
+          role:validRoles.includes(clinicalRole)?clinicalRole:(validRoles.includes(String(local?.role))?local?.role:'pending'),
+          departmentId:String(local?.departmentId||'dept-cardiology'),
+          assignedUnitIds:Array.isArray(entry?.unitIds)?entry.unitIds.map(String):[],
+          status:entry?.status==='inactive'?'inactive':'active',
+        });
+      }
+      return Array.from(rosterProfiles.values()).filter(profile=>profile?.status!=='inactive');
+    }
     let teamProfiles:any[]=[];
     let memberRecords:any[]=[];
     if(Capacitor.isNativePlatform()){
@@ -335,6 +379,32 @@ export async function updateTeamDirectoryMember(userId:string,updates:Record<str
     await webSetDoc(webDoc(ref),patch,{merge:true});
     await webSetDoc(webDoc(existingRef),membership,{merge:true});
   }
+  // Keep the per-unit rosters in step with the membership this call just granted.
+  // The rules let the owner write anybody's entry; a member could never do this.
+  // A unit that was taken away loses its roster entry, so the person stops
+  // appearing in the directory of a unit they no longer work in.
+  const rosterActor=(await uid())||undefined;
+  const rosterClinicalRole=SELF_CLINICAL_ROLES.includes(String(updates['role']) as SelfClinicalRole)?String(updates['role']):undefined;
+  for(const unitId of cleanUnitIds){
+    try{
+      await upsertRosterEntry(workspaceId,unitId,{
+        uid:userId,
+        name:String(updates['name']||existingMember.name||'Team member'),
+        role:membership.role,
+        clinicalRole:rosterClinicalRole,
+        status:membership.active?'active':'inactive',
+        email:String(updates['email']||existingMember.email||''),
+        addedBy:rosterActor,
+      });
+    }catch(error){console.warn('Unit roster sync failed:',unitId,error);}
+  }
+  const previousUnitIds=Array.from(new Set([
+    ...(Array.isArray(existingMember.unitIds)?existingMember.unitIds.map(String):[]),
+    ...(existingMember.unitId?[String(existingMember.unitId)]:[]),
+  ].filter(Boolean)));
+  for(const unitId of previousUnitIds.filter(unitId=>!cleanUnitIds.includes(unitId))){
+    try{await removeRosterEntry(workspaceId,unitId,userId);}catch(error){console.warn('Unit roster removal failed:',unitId,error);}
+  }
   const users=AuthorizationService.getUsers(); const local=users.find(u=>u.userId===userId);
   if(local){ const updated={...local,...patch}; AuthorizationService.saveUsers(users.map(u=>u.userId===userId?updated:u)); return updated; }
   return patch;
@@ -355,9 +425,16 @@ export async function removeTeamDirectoryMember(userId:string):Promise<void>{
       await FirebaseFirestore.deleteDocument({reference:memberRef});
     }else{
       const snap=await webGetDocs(webCollection(unitsRef));
+      for(const docSnap of snap.docs)unitIds.push(String(docSnap.id||''));
       for(const docSnap of snap.docs)await webDeleteDoc(docSnap.ref);
       await webDeleteDoc(webDoc(teamRef));
       await webDeleteDoc(webDoc(memberRef));
+    }
+    // A removed account must also disappear from every unit's roster: the roster
+    // is what the remaining members read, so a stale entry would keep showing a
+    // person who no longer works there.
+    for(const unitId of unitIds)if(unitId){
+      try{await removeRosterEntry(workspaceId,unitId,userId);}catch(error){console.warn('Unit roster removal failed:',unitId,error);}
     }
   }catch(error){
     console.error('Complete member removal failed:',error);
@@ -421,7 +498,9 @@ export async function createTeamWorkspace(name:string):Promise<WorkspaceAccessSt
   const workspaceRef=`workspaces/${workspaceId}`;
   // No ownerUid and no team profile: creating a workspace grants nothing. The
   // platform owner is the only owner, and access to the workspace comes from a
-  // unit membership (access code) like every other account.
+  // unit membership (access code) like every other account. That is also why no
+  // roster entry is written here: there is no unit to write it under yet. The
+  // roster is created when the first access code is redeemed.
   const workspaceDoc={createdBy:id,createdByEmail:email,name:cleanName,schemaVersion:12,createdAt:now};
   if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:workspaceRef,data:workspaceDoc,merge:false});
   else await webSetDoc(webDoc(workspaceRef),workspaceDoc,{merge:false});
@@ -546,6 +625,14 @@ export async function registerCreatedUnit(unitId:string):Promise<void>{
   if(stored&&stored.workspaceId===workspaceId){
     setStoredWorkspaceAccess({...stored,unitId:stored.unitId||clean,unitIds:[...new Set([...(stored.unitIds||[]),clean])]});
   }
+  // The creator's membership now includes the new unit, so their own roster entry
+  // can be written (the rules require membership of the unit first). Without it
+  // the unit's Team screen would not list its own consultant.
+  try{
+    const local:any=AuthorizationService.getUsers().find(profile=>profile.userId===id);
+    const localRole=String(local?.role||'');
+    await upsertRosterEntry(workspaceId,clean,{uid:id,name:String(local?.name||'Clinician'),role:String(membership.role||'clinical_editor'),clinicalRole:SELF_CLINICAL_ROLES.includes(localRole as SelfClinicalRole)?localRole:undefined,status:'active',email:String(local?.email||''),addedBy:id});
+  }catch(error){console.warn('Unit roster registration failed for the new unit:',error);}
 }
 export async function getUnitById(unitId:string):Promise<MyUnit|null>{
   const clean=String(unitId||'').trim();

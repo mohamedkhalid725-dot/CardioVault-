@@ -232,6 +232,22 @@ async function main() {
       status: 'active',
       updatedAt: iso,
     });
+    // Unit rosters: the Team screen of a non-owner reads these, never the
+    // workspace team collection (which is owner-only), so every unit a member
+    // belongs to needs its own roster document or the demo directory is empty.
+    for (const unitId of member.units) {
+      await write(`workspaces/${WORKSPACE_ID}/units/${unitId}/roster/${uid}`, {
+        uid,
+        name: member.name,
+        role: 'clinical_editor',
+        clinicalRole: member.role,
+        status: 'active',
+        joinedAtMs: now,
+        updatedAtMs: now,
+        addedBy: owner.uid,
+        email: member.account.email,
+      });
+    }
   }
 
   // Units ----------------------------------------------------------------
