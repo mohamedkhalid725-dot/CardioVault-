@@ -1,4 +1,4 @@
-import {Bed,Patient,Unit} from '../types/clinical';
+import type {Bed,Patient,Unit} from '../types/clinical';
 
 const BEDS_KEY='cardiovault_beds_v2';
 const PATIENTS_KEY='cardiovault_patients_v2';

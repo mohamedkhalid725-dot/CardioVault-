@@ -8,7 +8,7 @@ import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {webCurrentUser,webGoogleSignIn,checkWebRedirectResult,webEmailSignIn,webEmailCreate,webSignOut} from'../services/webFirebase';
 import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
-import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid } from '../services/workspaceAccess';
+import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,setUnitCapacityLocked,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid } from '../services/workspaceAccess';
 import {listIndexedWorkspaces,registerWorkspaceInIndex,readWorkspaceName,type IndexedWorkspace } from '../services/workspaceIndex';
 import {getSubscription} from '../services/workspaceSubscription';
 import {notifyClinicalData} from'../services/clinicalNotifications';
@@ -54,6 +54,9 @@ export interface AppContextType{
   readmitPatient:(id:string,unitId:string,bedId:string)=>void;
   deletePatientPermanently:(id:string)=>void;
   addUnit:(name:string,type:string,initialBedsCount?:number)=>Unit;
+  // Uploads a freshly created unit with its beds and then closes its capacity
+  // window. It must run after addUnit and before the unit is resized.
+  finalizeUnitCreation:(unitId:string)=>Promise<void>;
   updateUnit:(id:string,name:string,type:string)=>void;
   lockUnitCapacity:(id:string)=>void;
   deleteUnit:(id:string)=>boolean;
@@ -322,11 +325,42 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   const unit:Unit={id,name:name.trim(),type,totalBeds:initialBedsCount,createdBy:ownerUid,consultantUid:ownerUid,createdAtMs:Date.now(),capacityLocked:false};
   const newBeds:Bed[]=Array.from({length:initialBedsCount},(_,i)=>({id:`bed-${id}-${i+1}`,unitId:id,bedNumber:`Bed ${i+1}`,status:'Empty'}));
   commitUnits([...units,unit]);commitBeds([...beds,...newBeds]);
-  // Creating a unit grants its consultant slot but not membership; this adds the
-  // unit to my own membership so it survives a reload and reaches other devices.
-  if(!subscriptionLocked)void registerCreatedUnit(unit.id).catch(error=>console.warn('Registering the created unit on my membership failed:',error));
   void notifyClinicalData(`تم إضافة وحدة جديدة: ${unit.name}.`,'تمت إضافة بيانات جديدة',{unitId:unit.id,type:'unit-update'});
   return unit;
+ };
+ // Finishes a unit creation in the cloud, in the only order the rules accept.
+ //
+ // The unit document and its bed documents are two different writes, and the
+ // rules only allow a bed inside a unit that is not capacity-locked yet
+ // (firestore.rules, match /beds). Locking the capacity in the same tick as
+ // the creation therefore made EVERY bed write fail: the unit reached the
+ // cloud with no beds at all, and the next restore recomputed its bed count
+ // as zero, for good. The order is therefore:
+ //   1. upload the unit and its beds (the sync pushes the unit first)
+ //   2. add the unit to the creator's membership, so the rules accept
+ //      further updates on it
+ //   3. close the capacity window, in the cloud and then locally
+ const finalizeUnitCreation=async(unitId:string):Promise<void>=>{
+  try{
+   const uploaded=await syncCurrentUserNow();
+   if(!uploaded)throw new Error(localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'The unit could not be uploaded to the cloud.');
+   if(!subscriptionLocked){
+    try{ await registerCreatedUnit(unitId); }
+    catch(error){
+     // The platform owner holds no membership document: the rules give him
+     // administrative rights instead. There is nothing to register for him and
+     // the capacity lock is still allowed. For everybody else the registration
+     // is what makes the lock legal, so a failure there is fatal.
+     if(!await isMasterAccount())throw error;
+    }
+   }
+   await setUnitCapacityLocked(unitId,true);
+   lockUnitCapacity(unitId);
+   showToast('Unit created. Only the owner can change its number of beds now.','success');
+  }catch(error:any){
+   console.warn('Unit finalisation failed:',error);
+   showToast(String(error?.message||'The unit was created, but its bed count could not be locked yet. Try again in a moment.'),'warning');
+  }
  };
  // Freezes capacity in the local record as soon as the creation wizard finishes, so
  // the UI stops offering bed-count changes even before the cloud copy is locked. It
@@ -345,6 +379,6 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const syncNow=async()=>{setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
  const resetDatabase=()=>{if(patients.length>0||units.length>0){const answer=window.prompt('This ERASES all units, beds and patients. Type RESET to confirm.');if(String(answer||'').trim().toUpperCase()!=='RESET'){showToast('Reset cancelled.','info');return;}}StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
- return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,updateUnit,lockUnitCapacity,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
+ return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,finalizeUnitCreation,updateUnit,lockUnitCapacity,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
 };
 export const useApp=()=>{const c=useContext(AppContext);if(!c)throw new Error('useApp must be used inside AppProvider');return c;};

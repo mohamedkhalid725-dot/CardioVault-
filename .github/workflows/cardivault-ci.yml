@@ -539,6 +539,7 @@ jobs:
           npx firebase-tools@latest deploy --only hosting --project ccu-notebook --non-interactive --config firebase.json
 
       - name: Upload CardioVault Web App
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: CardioVault-web-${{ github.sha }}

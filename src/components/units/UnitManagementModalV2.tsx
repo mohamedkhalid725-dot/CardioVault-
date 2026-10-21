@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Plus, Trash2, Edit2, Building2, Lock, LockOpen, ShieldCheck } from 'lucide-react';
 import { Unit } from '../../types/clinical';
 import { useApp } from '../../context/AppContext';
-import { isMasterAccount, setUnitCapacityLocked, getMyUnits, claimUnitConsultant, clearUnitConsultant } from '../../services/workspaceAccess';
+import { isMasterAccount, getMyUnits, claimUnitConsultant, clearUnitConsultant } from '../../services/workspaceAccess';
 
 const UNIT_TYPE_OPTIONS = ['Intensive Care', 'Coronary Care', 'HDU', 'Step-down', 'Ward', 'Emergency'];
 // Bed creation/deletion is allowed to a unit consultant only during the first hour
@@ -25,7 +25,7 @@ interface Props {
 }
 
 export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { units, beds, patients, addUnit, addBed, updateUnit, deleteUnit, lockUnitCapacity, syncNow, showToast } = useApp();
+  const { units, beds, patients, addUnit, addBed, updateUnit, deleteUnit, finalizeUnitCreation, syncNow, showToast } = useApp();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('');
@@ -35,6 +35,10 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
   const [myUid, setMyUid] = useState('');
   const [isOwner, setIsOwner] = useState(false);
   const [myUnitIds, setMyUnitIds] = useState<string[]>([]);
+  // True while a unit is being uploaded. The bed count must not be touched
+  // during that window: the cloud only accepts a bed inside a unit whose
+  // capacity is still open.
+  const [finalizing, setFinalizing] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -93,7 +97,9 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
   const capacityIsLocked = (unit: Unit) => unit.capacityLocked === true || provisioningLeftMs(unit) <= 0;
   const isUnitConsultant = (unit: Unit) => !!myUid && unit.consultantUid === myUid;
   // Mirrors firestore.rules: owner always, consultant only while the window is open.
-  const canChangeCapacity = (unit: Unit) => isOwner || (isUnitConsultant(unit) && !capacityIsLocked(unit));
+  // A unit that is still being uploaded is off limits as well: its bed
+  // documents are written to the cloud right now.
+  const canChangeCapacity = (unit: Unit) => !finalizing && (isOwner || (isUnitConsultant(unit) && !capacityIsLocked(unit)));
   // Mirrors firestore.rules: the consultant slot holder or the owner may rename / retype.
   const canRename = (unit: Unit) => isOwner || isUnitConsultant(unit);
   // Delete is owner-only in the rules, so the action is hidden from everybody else.
@@ -110,15 +116,17 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
       return;
     }
     const unit = addUnit(name, type, count);
-    // Close the one-hour provisioning window immediately: from now on the owner
-    // controls the bed count of this unit.
-    lockUnitCapacity(unit.id);
-    void setUnitCapacityLocked(unit.id, true).catch((error) => console.warn('Unit capacity lock failed:', error));
+    // The unit and its beds have to reach the cloud before the capacity is
+    // closed: the rules refuse a bed inside a unit whose capacity is already
+    // locked, so locking here used to leave the unit in the cloud with no beds
+    // at all and the bed count came back as zero.
     setName('');
     setType('');
     setCount(6);
     setAdding(false);
-    showToast('Unit created. Only the owner can change its number of beds now.', 'success');
+    setFinalizing(true);
+    showToast('Unit created. Uploading its beds to the cloud…', 'info');
+    void finalizeUnitCreation(unit.id).finally(() => setFinalizing(false));
   };
 
   const addOneBed = (unit: Unit) => {

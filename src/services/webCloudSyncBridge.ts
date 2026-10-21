@@ -2,6 +2,7 @@ import { StorageService, stripLegacyDemoData } from './storage';
 import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
 import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
+import { clearPendingLocalChanges, hasPendingLocalChanges, markPendingLocalChanges, mergeClinicalCollections } from './clinicalMerge';
 import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where, or } from './webFirebase';
 import { ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId, type WorkspaceAccessState } from './workspaceAccess';
@@ -188,6 +189,15 @@ export async function webLoadCurrentUserFromCloud(){
     }
     const cleaned = stripLegacyDemoData(units, beds, patients);
     units=cleaned.units; beds=cleaned.beds; patients=cleaned.patients;
+    // The cloud snapshot must not wipe work the doctor has not seen uploaded
+    // yet: a unit whose bed documents are still on their way to the cloud
+    // would come back with a bed count of zero.
+    const merged=mergeClinicalCollections(
+      {units,beds,patients},
+      {units:StorageService.getUnits(),beds:StorageService.getBeds(),patients:StorageService.getPatients()},
+      {keepLocalOnly:hasPendingLocalChanges()},
+    );
+    units=merged.units; beds=merged.beds; patients=merged.patients;
     const reconciled=reconcileClinicalRegistry(units,beds,patients);
     units=reconciled.units; beds=reconciled.beds; patients=reconciled.patients;
     localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
@@ -231,18 +241,20 @@ export async function webSyncCurrentUserNow(){
       }
     };
     if(access.role==='owner'){
+      clearPendingLocalChanges();
       await sync('units',StorageService.getUnits(),false);
     }else{
       // A member owns only the units on their membership plus any unit they created
       // themselves (the rules make the creator that unit's consultant). Pushing the
       // whole local list would be denied for every unit they do not belong to.
       const myUid=String(user.uid);
+      clearPendingLocalChanges();
       await sync('units',StorageService.getUnits().filter(u=>allowedUnitIds.has(String(u.id))||String((u as any).createdBy||'')===myUid),false);
     }
     await sync('beds',StorageService.getBeds(),access.role!=='owner');
     await sync('patients',StorageService.getPatients(),access.role!=='owner');
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);setSyncPending(false);return true;
-  }catch(error:any){localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));setSyncPending(true);return false;}
+  }catch(error:any){markPendingLocalChanges();localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));setSyncPending(true);return false;}
 }
 
 
