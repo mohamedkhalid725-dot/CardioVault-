@@ -6,16 +6,21 @@ service cloud.firestore {
     // Workspace isolation (2026-10-21): no workspace id and no account email is
     // hard-coded here any more. Every check below is scoped to the {workspaceId}
     // in the request path, so a customer team can only ever see its own data.
-    // The legacy master workspace keeps working because its ownerUid is the
-    // master account's uid.
-    function workspaceData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)).data; }
-    function workspaceExists(workspaceId) { return exists(/databases/$(database)/documents/workspaces/$(workspaceId)); }
-    function workspaceOwner(workspaceId) { return signedIn() && workspaceExists(workspaceId) && workspaceData(workspaceId).ownerUid == request.auth.uid; }
+    //
+    // Single-owner model (2026-10-21): exactly one platform owner exists. It is
+    // recorded in /platformOwners/{uid} and written only from the Firebase
+    // console. No customer account can ever be an owner, and ownerUid on a
+    // workspace no longer grants anything.
+    function platformOwner() { return signedIn() && exists(/databases/$(database)/documents/platformOwners/$(request.auth.uid)); }
+    // Administrative authority over a workspace belongs to the platform owner
+    // only. Customers work through unit membership, never through ownership.
+    function adminOf(workspaceId) { return platformOwner(); }
     function member(workspaceId) { return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)) && memberData(workspaceId).active != false && memberData(workspaceId).forceReauth != true; }
     function memberData(workspaceId) { return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data; }
-    function departmentAdmin(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'department_admin' && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active'; }
-    function departmentConsultant(workspaceId) { return member(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.role == 'consultant' && get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active'; }
-    function selfClinicalRole(role) { return role in ['nurse','resident','specialist','consultant']; }
+    // 'consultant' is deliberately excluded: it grants seniority inside a unit and
+    // is never self-assigned. It is claimed through the unit's single consultant
+    // slot (units/{unitId}.consultantUid) and can only be cleared by the owner.
+    function selfClinicalRole(role) { return role in ['nurse','resident','specialist']; }
     // An access code is only valid for the workspace that owns it. The
     // workspaceId comparison is what stops a code from one customer team being
     // replayed against another team's workspace.
@@ -25,15 +30,12 @@ service cloud.firestore {
     function unitMember(workspaceId,unitId) {
       return member(workspaceId) &&
         (
-          departmentAdmin(workspaceId) ||
+          exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active' &&
           (
-            exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)) &&
-            get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.status == 'active' &&
-            (
-              get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.get('assignedUnitIds', []).hasAny([unitId]) ||
-              memberData(workspaceId).get('unitId', '') == unitId ||
-              memberData(workspaceId).get('unitIds', []).hasAny([unitId])
-            )
+            get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid)).data.get('assignedUnitIds', []).hasAny([unitId]) ||
+            memberData(workspaceId).get('unitId', '') == unitId ||
+            memberData(workspaceId).get('unitIds', []).hasAny([unitId])
           )
         );
     }
@@ -58,35 +60,29 @@ service cloud.firestore {
       // read a code so the redemption flow can validate it; writes are limited to
       // the owner of the workspace the code belongs to.
       allow get: if signedIn();
-      allow create: if workspaceOwner(request.resource.data.workspaceId);
-      allow update, delete: if workspaceOwner(resource.data.workspaceId);
+      allow create: if adminOf(request.resource.data.workspaceId);
+      allow update, delete: if adminOf(resource.data.workspaceId);
     }
 
     match /workspaces/{workspaceId} {
-      // A signed-in user may bootstrap their own team workspace: the owner uid and
-      // the owner email must be their own. The legacy master workspace keeps its
-      // name; new customer workspaces must use the ws_ prefix so they can never
-      // squat on another workspace id.
+      // A signed-in user may bootstrap a customer team workspace, but the
+      // document may never claim an owner: ownership is the platform owner's
+      // alone. createdBy is recorded for the audit trail only.
       allow create: if signedIn() &&
-        request.resource.data.ownerUid == request.auth.uid &&
-        request.resource.data.ownerEmail == request.auth.token.get('email', '') &&
-        request.resource.data.ownerEmail != '' &&
+        request.resource.data.createdBy == request.auth.uid &&
+        !request.resource.data.keys().hasAny(['ownerUid', 'ownerEmail']) &&
         (workspaceId == 'cardiovault_master_workspace' || workspaceId.matches('^ws_[A-Za-z0-9_-]{8,64}$'));
-      allow get, update, delete: if workspaceOwner(workspaceId);
+      allow get, update, delete: if adminOf(workspaceId);
       allow get: if member(workspaceId);
 
       match /members/{uid} {
-        allow get: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
-        allow list: if workspaceOwner(workspaceId);
+        allow get: if adminOf(workspaceId) || (signedIn() && request.auth.uid == uid);
+        allow list: if adminOf(workspaceId);
         allow create: if signedIn() && request.auth.uid == uid && validAccessCode(request.resource.data.accessCodeHash, workspaceId) && request.resource.data.workspaceId == workspaceId && request.resource.data.uid == request.auth.uid && accessCodeData(request.resource.data.accessCodeHash).unitId == request.resource.data.unitId;
-        allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
-          (departmentConsultant(workspaceId) &&
-           exists(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(uid)) &&
-           get(/databases/$(database)/documents/workspaces/$(workspaceId)/team/$(uid)).data.role != 'department_admin' &&
-           request.resource.data.workspaceId == workspaceId &&
-           request.resource.data.uid == uid &&
-           request.resource.data.role in ['clinical_editor','view_only'] &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitId','unitIds','role','active','forceReauth','updatedAt'])) ||
+        // Membership changes (role, unit list, activation) are administrative:
+        // the platform owner alone. A member may only ADD the unit an access code
+        // grants them; every other field of their own record is fixed here.
+        allow update: if adminOf(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            validAccessCode(request.resource.data.accessCodeHash, workspaceId) &&
            request.resource.data.workspaceId == workspaceId &&
@@ -96,30 +92,31 @@ service cloud.firestore {
            request.resource.data.active == true &&
            request.resource.data.forceReauth == false &&
            request.resource.data.unitIds.hasAny([request.resource.data.unitId]) &&
+           request.resource.data.unitIds.hasAll(resource.data.get('unitIds', [])) &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitId','unitIds','role','accessCodeHash','accessCodeHashes','active','forceReauth','updatedAt']));
-        allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
+        allow delete: if adminOf(workspaceId);
       }
 
       match /members/{uid}/units/{unitId} {
-        allow get, list: if workspaceOwner(workspaceId) || (signedIn() && request.auth.uid == uid);
-        allow create, update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
+        allow get, list: if adminOf(workspaceId) || (signedIn() && request.auth.uid == uid);
+        allow create, update: if adminOf(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            validAccessCode(request.resource.data.accessCodeHash, workspaceId) &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.unitId == unitId);
-        allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
+        allow delete: if adminOf(workspaceId);
       }
 
-      match /accessCodes/{hash} { allow read, write: if workspaceOwner(workspaceId); }
+      match /accessCodes/{hash} { allow read, write: if adminOf(workspaceId); }
 
       match /team/{uid} {
         // Department members can view the Team Directory; only the workspace owner
         // or the member themselves can write their own profile.
-        allow get, list: if workspaceOwner(workspaceId) || member(workspaceId);
+        allow get, list: if adminOf(workspaceId) || member(workspaceId);
         // Launch security: a member may self-create only a non-privileged
-        // clinical profile. 'consultant' unlocks team-management powers, so
-        // it is granted by owner/admin/consultant update only, never self-taken.
-        allow create: if workspaceOwner(workspaceId) ||
+        // clinical profile. 'consultant' is never self-taken: it is claimed once
+        // per unit through units/{unitId}.consultantUid and cleared by the owner.
+        allow create: if adminOf(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.workspaceId == workspaceId &&
@@ -129,72 +126,74 @@ service cloud.firestore {
            (request.resource.data.role == 'pending' || request.resource.data.role in ['nurse', 'resident', 'specialist']));
         // A member may update only their own clinical profile fields.
         // UID/workspaceId are immutable because they are excluded from the allowed diff.
-        // Keeping this rule independent of departmentAdmin() avoids evaluating the
-        // same team document as an admin check during the member's own update.
-        allow update: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId) ||
-          (departmentConsultant(workspaceId) &&
-           resource.data.role != 'department_admin' &&
-           request.resource.data.role != 'department_admin' &&
-           request.resource.data.uid == uid &&
-           request.resource.data.workspaceId == workspaceId &&
-           request.resource.data.role in ['nurse','resident','specialist','consultant','viewer','pharmacist','lab_user','radiology_user','coordinator','pending'] &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','assignedUnitIds','status','updatedAt'])) ||
+        // Role management and unit assignment belong to the platform owner; the
+        // 'consultant' branch was removed on 2026-10-21 because it let any member
+        // promote themselves and then rewrite other memberships.
+        allow update: if adminOf(workspaceId) ||
           (signedIn() && request.auth.uid == uid &&
            resource.data.uid == request.auth.uid &&
            request.resource.data.uid == request.auth.uid &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt']) &&
            selfClinicalRole(request.resource.data.role));
 
-        allow delete: if workspaceOwner(workspaceId) || departmentAdmin(workspaceId);
+        allow delete: if adminOf(workspaceId);
       }
-      match /units/{unitId} { allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId); allow list: if workspaceOwner(workspaceId); allow create, update, delete: if workspaceOwner(workspaceId); }
+      match /units/{unitId} { allow get: if adminOf(workspaceId) || unitMember(workspaceId,unitId); allow list: if adminOf(workspaceId); allow create, update, delete: if adminOf(workspaceId); }
       match /beds/{bedId} {
-        allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow create, delete: if workspaceOwner(workspaceId);
-        allow update: if workspaceOwner(workspaceId) || (clinicalEditor(workspaceId,resource.data.unitId) && request.resource.data.unitId == resource.data.unitId);
+        allow get: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow list: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow create, delete: if adminOf(workspaceId);
+        allow update: if adminOf(workspaceId) || (clinicalEditor(workspaceId,resource.data.unitId) && request.resource.data.unitId == resource.data.unitId);
       }
       match /patients/{patientId} {
-        allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow list: if workspaceOwner(workspaceId) || unitMember(workspaceId,resource.data.unitId);
-        allow create: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
+        allow get: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow list: if adminOf(workspaceId) || unitMember(workspaceId,resource.data.unitId);
+        allow create: if adminOf(workspaceId) || clinicalEditor(workspaceId,request.resource.data.unitId);
         // Launch security: an update is allowed only with editor rights on the
         // new unit AND (same unit OR editor rights on the old unit). This keeps
         // legitimate transfers (dual-unit editors, owner) while blocking
         // cross-unit record tampering through a unitId rewrite.
-        allow update: if workspaceOwner(workspaceId) || (clinicalEditor(workspaceId,request.resource.data.unitId) && (request.resource.data.unitId == resource.data.unitId || clinicalEditor(workspaceId,resource.data.unitId)));
-        allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
+        allow update: if adminOf(workspaceId) || (clinicalEditor(workspaceId,request.resource.data.unitId) && (request.resource.data.unitId == resource.data.unitId || clinicalEditor(workspaceId,resource.data.unitId)));
+        allow delete: if adminOf(workspaceId) || clinicalEditor(workspaceId,resource.data.unitId);
       }
       match /units/{unitId}/tasks/{taskId} {
         // Unit-shared task board: doctors of a unit follow every task of that
         // unit's patients. Scoping tasks under their unit keeps other units'
         // patient names out of reach. The old top-level /tasks collection has
         // no rule and is therefore denied by the default-deny tail.
-        allow get, list, create, update: if workspaceOwner(workspaceId) || unitMember(workspaceId,unitId);
-        allow delete: if workspaceOwner(workspaceId);
+        allow get, list, create, update: if adminOf(workspaceId) || unitMember(workspaceId,unitId);
+        allow delete: if adminOf(workspaceId);
       }
 
-      match /metadata/{documentId} { allow read, write: if workspaceOwner(workspaceId); }
+      match /metadata/{documentId} { allow read, write: if adminOf(workspaceId); }
 
       match /media/{mediaId} {
-        allow get: if workspaceOwner(workspaceId) || unitMember(workspaceId, resource.data.unitId);
-        allow create, update: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, request.resource.data.unitId);
-        allow delete: if workspaceOwner(workspaceId) || clinicalEditor(workspaceId, resource.data.unitId);
+        allow get: if adminOf(workspaceId) || unitMember(workspaceId, resource.data.unitId);
+        allow create, update: if adminOf(workspaceId) || clinicalEditor(workspaceId, request.resource.data.unitId);
+        allow delete: if adminOf(workspaceId) || clinicalEditor(workspaceId, resource.data.unitId);
 
         match /chunks/{chunkId} {
-          allow read: if workspaceOwner(workspaceId) ||
+          allow read: if adminOf(workspaceId) ||
             (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)) &&
              unitMember(workspaceId, get(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)).data.unitId));
 
-          allow create, update: if workspaceOwner(workspaceId) ||
+          allow create, update: if adminOf(workspaceId) ||
             (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)) &&
              clinicalEditor(workspaceId, get(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)).data.unitId));
 
-          allow delete: if workspaceOwner(workspaceId) ||
+          allow delete: if adminOf(workspaceId) ||
             (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)) &&
              clinicalEditor(workspaceId, get(/databases/$(database)/documents/workspaces/$(workspaceId)/media/$(mediaId)).data.unitId));
         }
       }
+    }
+
+    // The platform owner registry. Written only from the Firebase console: no
+    // client may create, modify or list it. A uid can read its own entry so the
+    // app can decide which screens to show; the rules never rely on that read.
+    match /platformOwners/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
     }
 
     match /{document=**} { allow read, write: if false; }

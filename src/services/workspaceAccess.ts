@@ -19,7 +19,7 @@ const newCode=()=>{const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const bytes
 export const getStoredWorkspaceAccess=():WorkspaceAccessState|null=>{try{const value=JSON.parse(localStorage.getItem(ACTIVE_KEY)||'null');return value?.workspaceId?value:null;}catch{return null;}};
 export function getActiveWorkspaceId():string{return getStoredWorkspaceAccess()?.workspaceId||MASTER_WORKSPACE_ID;}
 export const setStoredWorkspaceAccess=(state:WorkspaceAccessState|null)=>{if(state)localStorage.setItem(ACTIVE_KEY,JSON.stringify(state));else localStorage.removeItem(ACTIVE_KEY);};
-export async function ensureOwnerWorkspace():Promise<WorkspaceAccessState|null>{const id=await uid();if(!id||!(await isMasterAccount()))return null;const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};const workspaceRef=`workspaces/${MASTER_WORKSPACE_ID}`;try{let data:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:workspaceRef});data=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(workspaceRef));data=result.exists()?result.data():null;}if(data?.ownerUid===id&&String(data?.ownerEmail||'').trim().toLowerCase()===MASTER_ACCOUNT_EMAIL){setStoredWorkspaceAccess(state);}else if(data?.ownerUid&&data.ownerUid!==id){return null;}else{const payload={ownerUid:id,ownerEmail:MASTER_ACCOUNT_EMAIL,schemaVersion:12,createdAt:data?.createdAt||new Date().toISOString()};if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:workspaceRef,data:payload,merge:true});else await webSetDoc(webDoc(workspaceRef),payload,{merge:true});setStoredWorkspaceAccess(state);}}catch(error){console.warn('Master workspace bootstrap failed:',error);return null;}try{const owner=AuthorizationService.getCurrentUser();const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;const team={...owner,userId:id,uid:id,name:owner.name||'Dr. Mohamed Khalid',email:MASTER_ACCOUNT_EMAIL,role:'department_admin',departmentId:'dept-cardiology',assignedUnitIds:['unit-ccu-1','unit-ccu-2','unit-cardiology-ward','unit-icu-1'],status:'active',updatedAt:new Date().toISOString()};if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:teamRef,data:team,merge:true});else await webSetDoc(webDoc(teamRef),team,{merge:true});}catch(error){console.warn('Owner team registration failed:',error);}return state;}
+export async function ensureOwnerWorkspace():Promise<WorkspaceAccessState|null>{const id=await uid();if(!id||!(await isMasterAccount()))return null;const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};const workspaceRef=`workspaces/${MASTER_WORKSPACE_ID}`;try{let data:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:workspaceRef});data=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(workspaceRef));data=result.exists()?result.data():null;}if(data?.ownerUid===id||data?.createdBy===id){const ownerEmailOk=String(data?.createdByEmail||data?.ownerEmail||'').trim().toLowerCase()===MASTER_ACCOUNT_EMAIL;if(ownerEmailOk)setStoredWorkspaceAccess(state);else return null;}else if((data?.ownerUid||data?.createdBy)&&(data.ownerUid||data.createdBy)!==id){return null;}else{const payload={createdBy:id,createdByEmail:MASTER_ACCOUNT_EMAIL,schemaVersion:12,createdAt:data?.createdAt||new Date().toISOString()};if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:workspaceRef,data:payload,merge:true});else await webSetDoc(webDoc(workspaceRef),payload,{merge:true});setStoredWorkspaceAccess(state);}}catch(error){console.warn('Master workspace bootstrap failed:',error);return null;}try{const owner=AuthorizationService.getCurrentUser();const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;const team={...owner,userId:id,uid:id,name:owner.name||'Dr. Mohamed Khalid',email:MASTER_ACCOUNT_EMAIL,role:'department_admin',departmentId:'dept-cardiology',assignedUnitIds:['unit-ccu-1','unit-ccu-2','unit-cardiology-ward','unit-icu-1'],status:'active',updatedAt:new Date().toISOString()};if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:teamRef,data:team,merge:true});else await webSetDoc(webDoc(teamRef),team,{merge:true});}catch(error){console.warn('Owner team registration failed:',error);}return state;}
 export async function getActiveOwnerWorkspace():Promise<WorkspaceAccessState|null>{const stored=getStoredWorkspaceAccess();if(stored?.role==='owner')return stored;return await ensureOwnerWorkspace();}
 export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessState>{
   const id=await uid();
@@ -177,8 +177,11 @@ export async function revokeUnitAccessCode(code:string):Promise<void>{
     }
   }catch(error){console.warn('Failed to invalidate old unit-code memberships:',error);throw new Error('The old Unit Access Code was revoked, but active memberships could not all be invalidated. Check Firestore permissions.');}
 }
-export type SelfClinicalRole='nurse'|'resident'|'specialist'|'consultant';
-export const SELF_CLINICAL_ROLES:SelfClinicalRole[]=['nurse','resident','specialist','consultant'];
+// Clinical titles a member may pick for themselves. 'consultant' is not here on
+// purpose: it is claimed once per unit through units/{unitId}.consultantUid and
+// cleared only by the platform owner.
+export type SelfClinicalRole='nurse'|'resident'|'specialist';
+export const SELF_CLINICAL_ROLES:SelfClinicalRole[]=['nurse','resident','specialist'];
 export async function getOwnTeamProfile():Promise<any|null>{
   const id=await uid();
   if(!id)return null;
@@ -298,7 +301,7 @@ export async function getTeamDirectoryMembers():Promise<any[]>{
   }
 }
 export async function updateTeamDirectoryMember(userId:string,updates:Record<string,any>):Promise<any>{
-  const workspaceId=getActiveWorkspaceId(); const master=await isMasterAccount(); const own=await getOwnTeamProfile(); const consultant=own?.role==='consultant'&&own?.status==='active'; if(!master&&own?.role!=='department_admin'&&!consultant) throw new Error('Only the Master Account, Department Admin, or Consultant can manage the Team Directory.'); const target=Capacitor.isNativePlatform()?safe((await FirebaseFirestore.getDocument({reference:`workspaces/${workspaceId}/team/${userId}`})).snapshot):(await webGetDoc(webDoc(`workspaces/${workspaceId}/team/${userId}`))).data(); if(consultant&&target?.role==='department_admin')throw new Error('Consultants cannot change a Department Admin.'); if(updates.role==='department_admin'&&!master)throw new Error('Only the Master Account can assign Department Admin.');
+  const workspaceId=getActiveWorkspaceId(); const master=await isMasterAccount(); if(!master)throw new Error('Only the platform owner can manage the Team Directory.');
   const cleanUnitIds=Array.from(new Set(Array.isArray(updates.assignedUnitIds)?updates.assignedUnitIds.map(String).filter(Boolean):[]));
   if(!cleanUnitIds.length) throw new Error('Assign at least one clinical unit.');
   const now=new Date().toISOString();
@@ -331,7 +334,7 @@ export async function updateTeamDirectoryMember(userId:string,updates:Record<str
   return patch;
 }
 export async function removeTeamDirectoryMember(userId:string):Promise<void>{
-  const workspaceId=getActiveWorkspaceId(); const master=await isMasterAccount(); const own=await getOwnTeamProfile(); if(!master&&own?.role!=='department_admin')throw new Error('Only the Master Account or Department Admin can remove department members.');
+  const workspaceId=getActiveWorkspaceId(); const master=await isMasterAccount(); if(!master)throw new Error('Only the platform owner can remove department members.');
   if(userId===await uid())throw new Error('You cannot remove your own account from the department.');
   const teamRef=`workspaces/${workspaceId}/team/${userId}`;
   const memberRef=`workspaces/${workspaceId}/members/${userId}`;
@@ -410,18 +413,12 @@ export async function createTeamWorkspace(name:string):Promise<WorkspaceAccessSt
   const workspaceId=`ws_${Array.from(bytes).map(b=>alphabet[b%alphabet.length]).join('')}`;
   const now=new Date().toISOString();
   const workspaceRef=`workspaces/${workspaceId}`;
-  const workspaceDoc={ownerUid:id,ownerEmail:email,name:cleanName,schemaVersion:12,createdAt:now};
+  // No ownerUid and no team profile: creating a workspace grants nothing. The
+  // platform owner is the only owner, and access to the workspace comes from a
+  // unit membership (access code) like every other account.
+  const workspaceDoc={createdBy:id,createdByEmail:email,name:cleanName,schemaVersion:12,createdAt:now};
   if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:workspaceRef,data:workspaceDoc,merge:false});
   else await webSetDoc(webDoc(workspaceRef),workspaceDoc,{merge:false});
-  const owner=AuthorizationService.getCurrentUser();
-  // No assignedUnitIds on purpose: owner rights do not depend on unit membership.
-  const {assignedUnitIds:_ignoredUnitIds,...ownerProfile}=owner;
-  const team={...ownerProfile,userId:id,uid:id,name:String(ownerProfile.name||'').trim()||cleanName,email,role:'department_admin',departmentId:'dept-cardiology',status:'active',updatedAt:now};
-  const teamRef=`workspaces/${workspaceId}/team/${id}`;
-  if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:teamRef,data:team,merge:true});
-  else await webSetDoc(webDoc(teamRef),team,{merge:true});
-  const state:WorkspaceAccessState={workspaceId,role:'owner',unitId:null,unitName:null};
-  setStoredWorkspaceAccess(state);
-  return state;
+  return {workspaceId,role:'view_only',unitId:null,unitName:null};
 }
 export async function joinTeamWorkspace(code:string):Promise<WorkspaceAccessState>{return redeemUnitAccessCode(code);}

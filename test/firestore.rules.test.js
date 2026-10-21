@@ -219,6 +219,28 @@ async function seed() {
         role: "clinical_editor",
         active: true,
       }),
+      // The single platform owner. Written from the console only, never by a client.
+      setDoc(doc(db, "platformOwners", "admin_root"), {
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      // A member whose team profile already says 'consultant'. Before 2026-10-21
+      // that alone was enough to rewrite other memberships.
+      setDoc(doc(db, path("members", "consultantX")), {
+        uid: "consultantX",
+        workspaceId: WORKSPACE,
+        active: true,
+        forceReauth: false,
+        role: "clinical_editor",
+        unitId: UNIT_A,
+        unitIds: [UNIT_A],
+      }),
+      setDoc(doc(db, path("team", "consultantX")), {
+        uid: "consultantX",
+        workspaceId: WORKSPACE,
+        role: "consultant",
+        status: "active",
+        assignedUnitIds: [UNIT_A],
+      }),
     ]);
   });
 }
@@ -582,41 +604,54 @@ test("18. isolation is symmetric: team B cannot reach the legacy master workspac
   await assertFails(deleteDoc(doc(db, patientPath(PATIENT_B))));
 });
 
-test("19. a doctor can open their own workspace but cannot claim an existing one", async () => {
-  const owner = dbForWithEmail("ownerNew", "newowner@example.com");
+test("19. a customer can create a workspace but can never own one", async () => {
+  const creator = dbForWithEmail("ownerNew", "newowner@example.com");
 
-  // Self-service bootstrap: the owner uid and email are the caller's own.
+  // Self-service bootstrap: the creator is recorded for the audit trail only.
   await assertSucceeds(
-    setDoc(doc(owner, "workspaces", "ws_newteam_2026"), {
-      ownerUid: "ownerNew",
-      ownerEmail: "newowner@example.com",
+    setDoc(doc(creator, "workspaces", "ws_newteam_2026"), {
+      createdBy: "ownerNew",
       name: "New Team",
     }),
   );
 
-  // Cannot create a workspace owned by somebody else.
+  // Claiming ownership of a workspace is refused, even for one's own new team.
   await assertFails(
-    setDoc(doc(owner, "workspaces", "ws_otherteam_2026"), {
-      ownerUid: "someoneElse",
-      ownerEmail: "newowner@example.com",
-      name: "Steal",
+    setDoc(doc(creator, "workspaces", "ws_otherteam_2026"), {
+      ownerUid: "ownerNew",
+      name: "Mine",
     }),
   );
 
-  // Cannot take ownership of a workspace that already exists.
+  // Creating a workspace on behalf of somebody else is refused.
+  await assertFails(
+    setDoc(doc(creator, "workspaces", "ws_thirdteam_2026"), {
+      createdBy: "someoneElse",
+      name: "Not mine",
+    }),
+  );
+
+  // Cannot take over a workspace that already exists.
   const intruder = dbForWithEmail("userG", "g@example.com");
   await assertFails(
     setDoc(doc(intruder, "workspaces", WORKSPACE), {
-      ownerUid: "userG",
-      ownerEmail: "g@example.com",
+      createdBy: "userG",
     }),
   );
 
   // New customer workspaces must use the reserved prefix.
   await assertFails(
-    setDoc(doc(owner, "workspaces", "hospital-hidden"), {
-      ownerUid: "ownerNew",
-      ownerEmail: "newowner@example.com",
+    setDoc(doc(creator, "workspaces", "hospital-hidden"), {
+      createdBy: "ownerNew",
+    }),
+  );
+
+  // A workspace creator has no rights inside the workspace they created:
+  // access comes from unit membership, never from creation.
+  await assertFails(getDoc(doc(creator, "workspaces", "ws_newteam_2026", "patients", "p1")));
+  await assertFails(
+    setDoc(doc(creator, "workspaces", "ws_newteam_2026", "units", "unitY"), {
+      unitId: "unitY",
     }),
   );
 });
@@ -665,17 +700,39 @@ test("20. an access code opens exactly its own workspace and nothing else", asyn
   );
 });
 
-test("21. a team owner can provision only their own workspace", async () => {
-  const ownerB = dbFor("ownerB");
+test("21. only the platform owner provisions units and access codes", async () => {
+  const teamLead = dbFor("ownerB");
 
+  // The account that created a workspace has no administrative rights in it.
+  await assertFails(
+    setDoc(doc(teamLead, "workspaces", WS_B, "units", "unitY"), {
+      unitId: "unitY",
+      name: "Ward Y",
+    }),
+  );
+  await assertFails(
+    setDoc(doc(teamLead, "accessCodes", "hash-team-b-ward-y"), {
+      workspaceId: WS_B,
+      unitId: "unitY",
+      unitName: "Ward Y",
+      role: "clinical_editor",
+      active: true,
+    }),
+  );
+  await assertFails(
+    deleteDoc(doc(teamLead, "workspaces", WS_B, "members", "userG")),
+  );
+
+  // The platform owner can provision any workspace...
+  const owner = dbFor("admin_root");
   await assertSucceeds(
-    setDoc(doc(ownerB, "workspaces", WS_B, "units", "unitY"), {
+    setDoc(doc(owner, "workspaces", WS_B, "units", "unitY"), {
       unitId: "unitY",
       name: "Ward Y",
     }),
   );
   await assertSucceeds(
-    setDoc(doc(ownerB, "accessCodes", "hash-team-b-ward-y"), {
+    setDoc(doc(owner, "accessCodes", "hash-team-b-ward-y"), {
       workspaceId: WS_B,
       unitId: "unitY",
       unitName: "Ward Y",
@@ -684,39 +741,55 @@ test("21. a team owner can provision only their own workspace", async () => {
     }),
   );
   await assertSucceeds(
-    setDoc(doc(ownerB, "workspaces", WS_B, "accessCodes", "hash-team-b-ward-y"), {
+    setDoc(doc(owner, "workspaces", WS_B, "accessCodes", "hash-team-b-ward-y"), {
       workspaceId: WS_B,
       unitId: "unitY",
       code: "CV-TEST-CODE",
       active: true,
     }),
   );
-
-  await assertFails(
-    setDoc(doc(ownerB, "accessCodes", "hash-evil"), {
-      workspaceId: WORKSPACE,
-      unitId: UNIT_A,
-      unitName: "Unit A",
-      role: "clinical_editor",
-      active: true,
-    }),
-  );
-  await assertFails(
-    setDoc(doc(ownerB, "workspaces", WORKSPACE, "accessCodes", "hash-evil"), {
-      workspaceId: WORKSPACE,
-      unitId: UNIT_A,
-    }),
-  );
-  await assertFails(
-    setDoc(doc(ownerB, "workspaces", WORKSPACE, "units", "unitZ"), { unitId: "unitZ" }),
+  await assertSucceeds(
+    setDoc(doc(owner, "workspaces", WORKSPACE, "units", "unitZ"), { unitId: "unitZ" }),
   );
 });
 
-test("22. the legacy master workspace keeps its behaviour for its owner", async () => {
-  const db = dbFor("owner-unused");
+test("22. the platform owner keeps full access to the legacy master workspace", async () => {
+  const db = dbFor("admin_root");
 
   await assertSucceeds(getDoc(doc(db, path())));
   await assertSucceeds(getDoc(doc(db, patientPath(PATIENT_A))));
   await assertSucceeds(getDoc(doc(db, path("members", "userD"))));
   await assertSucceeds(updateDoc(doc(db, patientPath(PATIENT_B)), { label: "OWNER-EDIT" }));
+});
+
+test("23. a member cannot promote themselves to consultant", async () => {
+  const db = dbFor("userF");
+  const selfRef = doc(db, path("team", "userF"));
+
+  await assertSucceeds(
+    setDoc(selfRef, {
+      uid: "userF",
+      workspaceId: WORKSPACE,
+      departmentId: "dept-cardiology",
+      status: "active",
+      role: "resident",
+    }),
+  );
+  await assertFails(updateDoc(selfRef, { role: "consultant" }));
+  await assertSucceeds(updateDoc(selfRef, { role: "specialist" }));
+});
+
+test("24. a consultant profile cannot manage other memberships", async () => {
+  const db = dbFor("consultantX");
+  const other = doc(db, path("members", "userA"));
+
+  await assertFails(updateDoc(other, { unitIds: [UNIT_A, UNIT_B] }));
+  await assertFails(updateDoc(other, { role: "view_only" }));
+  await assertFails(updateDoc(other, { active: false }));
+  await assertFails(deleteDoc(other));
+
+  // Nor can they grant themselves a second unit.
+  await assertFails(
+    updateDoc(doc(db, path("members", "consultantX")), { unitIds: [UNIT_A, UNIT_B] }),
+  );
 });
