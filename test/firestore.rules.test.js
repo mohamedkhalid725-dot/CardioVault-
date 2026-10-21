@@ -2249,3 +2249,74 @@ test("64. a member may not add a unit he has no proof for, nor drop a unit", asy
   );
 });
 
+test("65. the creation flow uploads the unit, its beds, and only then closes the capacity", async () => {
+  // The app creates a unit in this exact order, and the rules only accept it
+  // in this order: a unit created already locked is refused (test 34), and a
+  // bed is only accepted inside a unit whose capacity is still open. Locking
+  // the capacity in the same tick as the creation therefore made every bed
+  // write fail, and the unit reached the cloud with no beds at all.
+  const now = Date.now();
+  const a = dbFor("userA");
+  const unitId = "unitCreated";
+
+  // Step 1: the unit document, with an OPEN capacity.
+  await assertSucceeds(
+    setDoc(doc(a, unitPath(unitId)), {
+      unitId,
+      name: "New Unit",
+      type: "cardiology",
+      createdBy: "userA",
+      consultantUid: "userA",
+      capacityLocked: false,
+      totalBeds: 3,
+      createdAtMs: now,
+    }),
+  );
+
+  // Step 2: its bed documents, while the capacity is still open.
+  for (let index = 1; index <= 3; index += 1) {
+    await assertSucceeds(
+      setDoc(doc(a, path("beds", `bed-${unitId}-${index}`)), {
+        bedId: `bed-${unitId}-${index}`,
+        unitId,
+        label: `Bed ${index}`,
+      }),
+    );
+  }
+
+  // Step 3: the creator adds the unit to his own membership, which is what
+  // makes him a member of the unit he just created.
+  await assertSucceeds(
+    updateDoc(doc(a, path("members", "userA")), {
+      unitId,
+      unitIds: [UNIT_A, unitId],
+      updatedAt: new Date().toISOString(),
+    }),
+  );
+
+  // Step 4: only now may the capacity window be closed.
+  await assertSucceeds(
+    updateDoc(doc(a, unitPath(unitId)), {
+      capacityLocked: true,
+      updatedAt: new Date().toISOString(),
+    }),
+  );
+
+  // The closed window stops the consultant from resizing the unit...
+  await assertFails(
+    setDoc(doc(a, path("beds", `bed-${unitId}-4`)), {
+      bedId: `bed-${unitId}-4`,
+      unitId,
+      label: "Bed 4",
+    }),
+  );
+  // ...but the platform owner may still do it.
+  await assertSucceeds(
+    setDoc(doc(dbFor("admin_root"), path("beds", `bed-${unitId}-4`)), {
+      bedId: `bed-${unitId}-4`,
+      unitId,
+      label: "Bed 4",
+    }),
+  );
+});
+
