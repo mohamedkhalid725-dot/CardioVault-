@@ -18,7 +18,19 @@ const appVersion = (() => {
 export default defineConfig(() => {
   return {
     base: './',
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        // The version shown in the browser tab, the page description and the
+        // social tags comes from package.json, so it can never drift away
+        // from the version the app itself reports.
+        name: 'cardiovault-version-meta',
+        transformIndexHtml(html: string) {
+          return html.replaceAll('__APP_VERSION__', appVersion);
+        },
+      },
+    ],
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
     },
