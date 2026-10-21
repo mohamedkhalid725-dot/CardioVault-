@@ -48,6 +48,7 @@ const WS_TRIAL_LONG = "ws_trial_long_2026";
 const UNIT_X = "unitX";
 const PATIENT_X = "patientX";
 const HASH_MASTER = "hash-master-unit-a";
+const HASH_MASTER_B = "hash-master-unit-b";
 const HASH_TEAM_B = "hash-team-b-unit-x";
 
 let testEnv;
@@ -365,6 +366,13 @@ async function seed() {
         workspaceId: WS_B,
         unitId: UNIT_X,
         unitName: "Team B ICU",
+        role: "clinical_editor",
+        active: true,
+      }),
+      setDoc(doc(db, "accessCodes", HASH_MASTER_B), {
+        workspaceId: WORKSPACE,
+        unitId: UNIT_B,
+        unitName: "Unit B",
         role: "clinical_editor",
         active: true,
       }),
@@ -2180,8 +2188,7 @@ test("61. the team index grants nothing: a team still needs a real membership", 
   await assertFails(getDoc(doc(b, "workspaces", WS_B, "members", "userI")));
 });
 
-test("62. the team index never exposes the teams of another account", async () => {
-  const i = dbFor("userI");
+test("62. the team index never exposes the teams of another account", async () => {  const i = dbFor("userI");
   const b = dbFor("userB");
   // userI is a member of both teams; userB only of the master workspace.
   await assertSucceeds(
@@ -2196,5 +2203,49 @@ test("62. the team index never exposes the teams of another account", async () =
   // The other account sees only its own index (empty).
   const theirs = await getDocs(collection(b, "userWorkspaces", "userB", "workspaces"));
   assert.equal(theirs.docs.length, 0);
+});
+
+// ═══ One doctor, two units of the same team ════════════════════════════════
+
+test("63. a member adds a second unit to his own membership with a valid code", async () => {
+  const a = dbFor("userA");
+  const membership = doc(a, path("members", "userA"));
+
+  // The doctor keeps his first unit as the primary one and gains the second.
+  await assertSucceeds(
+    updateDoc(membership, {
+      unitIds: [UNIT_A, UNIT_B],
+      accessCodeHash: HASH_MASTER_B,
+    }),
+  );
+  // He may then read the patients of BOTH units.
+  await assertSucceeds(getDoc(doc(a, patientPath(PATIENT_B))));
+  await assertSucceeds(getDoc(doc(a, patientPath(PATIENT_A))));
+});
+
+test("64. a member may not add a unit he has no proof for, nor drop a unit", async () => {
+  const a = dbFor("userA");
+  const membership = doc(a, path("members", "userA"));
+
+  // A code for Unit B does not grant Unit C.
+  await assertFails(
+    updateDoc(membership, {
+      unitIds: [UNIT_A, UNIT_C],
+      accessCodeHash: HASH_MASTER_B,
+    }),
+  );
+  // A member can never drop the units he already has.
+  await assertFails(
+    updateDoc(membership, {
+      unitIds: [UNIT_B],
+      accessCodeHash: HASH_MASTER_B,
+    }),
+  );
+  // He may re-confirm a unit he already has (the same code entered twice).
+  await assertSucceeds(
+    updateDoc(membership, {
+      accessCodeHash: HASH_MASTER,
+    }),
+  );
 });
 

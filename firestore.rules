@@ -47,6 +47,14 @@ service cloud.firestore {
       return unitMember(workspaceId,unitId) && memberData(workspaceId).role == 'clinical_editor';
     }
 
+    // The units a membership update ADDS. A join may add exactly ONE unit, and
+    // the proof (an access code, an invite, or a unit the caller created) must
+    // be for THAT unit. The unit the document already had may stay the primary
+    // one, so the proof is never compared with the old unitId.
+    function addedUnits(workspaceId) {
+      return request.resource.data.unitIds.removeAll(resource.data.get('unitIds', []));
+    }
+
     // The caller's own unit set (their membership row plus their active team
     // profile). The three sources are exactly the ones unitMember above trusts, so
     // the two can never disagree about which units belong to the caller.
@@ -233,19 +241,35 @@ service cloud.firestore {
            && request.resource.data.workspaceId == workspaceId
            && (
              (
-               ( validAccessCode(request.resource.data.get('accessCodeHash',''), workspaceId)
-                 && accessCodeData(request.resource.data.get('accessCodeHash','')).unitId == request.resource.data.unitId )
-               || ( redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), request.resource.data.unitId) )
-               // Creating a unit adds that unit to the creator's own membership.
-               || ( unitExists(workspaceId, request.resource.data.unitId)
-                    && unitData(workspaceId, request.resource.data.unitId).get('createdBy','') == request.auth.uid )
+               // The proof must cover the unit this update ADDS - not the unit the
+               // document already had. A doctor who joins a second unit keeps his
+               // first unit as the primary one, so the old check (proof == unitId)
+               // refused that join for the wrong reason.
+               (
+                 addedUnits(workspaceId).size() == 1
+                 && (
+                   ( validAccessCode(request.resource.data.get('accessCodeHash',''), workspaceId)
+                     && accessCodeData(request.resource.data.get('accessCodeHash','')).unitId == addedUnits(workspaceId)[0] )
+                   || ( redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), addedUnits(workspaceId)[0]) )
+                   // Creating a unit adds that unit to the creator's own membership.
+                   || ( unitExists(workspaceId, addedUnits(workspaceId)[0])
+                        && unitData(workspaceId, addedUnits(workspaceId)[0]).get('createdBy','') == request.auth.uid )
+                 )
+               )
+               // Nothing new is granted: the doctor simply confirms a unit he
+               // already has (re-entering the access code he used before).
+               || (
+                 addedUnits(workspaceId).size() == 0
+                 && (
+                   ( validAccessCode(request.resource.data.get('accessCodeHash',''), workspaceId)
+                     && request.resource.data.get('unitIds',[]).hasAny([accessCodeData(request.resource.data.get('accessCodeHash','')).unitId]) )
+                   || ( redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), request.resource.data.unitId) )
+                 )
+               )
              )
              && request.resource.data.role == resource.data.role
              && request.resource.data.unitIds.hasAny([request.resource.data.unitId])
              && request.resource.data.unitIds.hasAll(resource.data.get('unitIds', []))
-             // A join may add exactly the one unit it proved. Without this, a
-             // valid proof for one unit would also smuggle in any other id.
-             && request.resource.data.unitIds.removeAll(resource.data.get('unitIds', [])).hasOnly([request.resource.data.unitId])
              && request.resource.data.get('clinicalRoles', {}).keys().hasOnly(request.resource.data.unitIds)
              && request.resource.data.get('clinicalRoles', {}).values().hasOnly(['nurse','resident','specialist'])
              && request.resource.data.active == true
