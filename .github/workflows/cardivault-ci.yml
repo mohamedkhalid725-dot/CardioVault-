@@ -239,11 +239,20 @@ jobs:
             }
             for (const collection of ['units', 'beds', 'patients', 'members', 'team', 'accessCodes']) {
               try {
-                const snapshot = await db.collection('workspaces/cardiovault_master_workspace').collection(collection).get();
+                const snapshot = await db.collection('workspaces').doc('cardiovault_master_workspace').collection(collection).get();
                 lines.push('master workspace ' + collection + ': ' + snapshot.size);
               } catch (error) {
                 lines.push('master workspace ' + collection + ' read failed: ' + String(error && error.message || error));
               }
+            }
+            try {
+              const workspaces = await db.collection('workspaces').get();
+              lines.push('workspaces: ' + workspaces.size);
+              workspaces.docs.forEach(doc => {
+                lines.push('  ' + doc.id + ' ownerUid=' + String(doc.data().ownerUid || '(none)') + ' createdBy=' + String(doc.data().createdBy || '(none)'));
+              });
+            } catch (error) {
+              lines.push('workspaces read failed: ' + String(error && error.message || error));
             }
             try {
               const rulesets = await admin.securityRules().listRulesets();
