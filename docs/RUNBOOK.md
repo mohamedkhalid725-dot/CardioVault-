@@ -230,6 +230,42 @@ Do this in order, and do not delete anything while investigating.
 6. Afterwards: add a test to `test/firestore.rules.test.js` that reproduces the leak, and
    only then change the rules.
 
+## 8b. Emergency: a member doctor cannot see or edit his patients
+
+The opposite emergency, and the more common one. A member is refused by the rules when
+any of the three documents below is not in the shape the rules expect. Read them in the
+Firebase console, under `workspaces/{workspaceId}`:
+
+| Document | What the rules require | Symptom when it is wrong |
+|---|---|---|
+| `members/{uid}` | `active != false`, `forceReauth != true`, `role == "clinical_editor"` (a `view_only` member may never write), and `unitId` or `unitIds` listing his unit | He cannot read or write anything in his unit |
+| `team/{uid}` | the document exists and `status == "active"` | He cannot read or write anything, even with a perfect membership |
+| `units/{unitId}` | the unit document itself exists | Every read of that unit is refused |
+
+`unitMember()` is the gate for all of it, and it is satisfied by **either** the team
+profile's `assignedUnitIds` **or** the membership's `unitId` / `unitIds`. So a member
+whose team profile lists no unit is still fine as long as his membership names the unit.
+
+**What a member with a healthy membership may and may not do:**
+
+| Allowed | Refused |
+|---|---|
+| read his unit, its beds and its patients | move a patient into a unit he is not a member of |
+| admit a patient | add or remove a bed (capacity is owner/consultant only) |
+| edit a patient, discharge him, move him to another bed of the same unit | create a unit, rename a unit (he is not the unit's consultant) |
+| delete a patient file in his unit | change his own team profile beyond `name` / `role` / `status` |
+| change a bed's occupancy | anything at all when the role is `view_only` |
+
+**Repairing a member by hand** (the console is the only place with authority over every
+document): open `members/{uid}`, set `active: true`, `forceReauth: false`,
+`role: "clinical_editor"`, and make sure `unitIds` lists the unit he works in. Then open
+`team/{uid}` and set `status: "active"` and `assignedUnitIds: ["<unitId>"]`. The app
+picks the change up on its next cloud restore; the doctor does not have to reinstall
+anything.
+
+**Do not "fix" a member by giving him the platform owner document.** That document is
+written from the console only and belongs to the owner alone.
+
 ## 9. Quick reference
 
 | Task | Command |
