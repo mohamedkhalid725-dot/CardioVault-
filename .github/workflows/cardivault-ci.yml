@@ -198,6 +198,70 @@ jobs:
             .then(() => console.log('Firestore rules deployed successfully via Firebase Admin SDK.'))
             .catch(error => { console.error(error); process.exit(1); });
           NODE
+      # Read-only production probe. The rules decide who is the platform owner
+      # by the existence of /platformOwners/{uid}, and that document can only be
+      # written from the Firebase console. This step reports what the live
+      # project actually holds, so a customer impact can be judged from facts
+      # instead of from an assumption. It reads ids and counts only: no patient
+      # data is ever printed.
+      - name: Probe the live Firestore state
+        if: ${{ always() && env.HAS_FIREBASE_SERVICE_ACCOUNT != '' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/probe-service-account.json"
+          cd functions
+          npm install --no-audit --no-fund
+          FIREBASE_SERVICE_ACCOUNT_PATH="$RUNNER_TEMP/probe-service-account.json" node <<'NODE'
+          const fs = require('fs');
+          const admin = require('firebase-admin');
+          const serviceAccount = JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH, 'utf8'));
+          admin.initializeApp({ credential: admin.credential.cert(serviceAccount), projectId: 'ccu-notebook' });
+          const db = admin.firestore();
+          const lines = [];
+          (async () => {
+            try {
+              const owners = await db.collection('platformOwners').get();
+              lines.push('platformOwners documents: ' + (owners.size || 0));
+              owners.docs.forEach(doc => lines.push('  uid: ' + doc.id));
+            } catch (error) {
+              lines.push('platformOwners read failed: ' + String(error && error.message || error));
+            }
+            try {
+              const workspace = await db.doc('workspaces/cardiovault_master_workspace').get();
+              const data = workspace.exists ? workspace.data() : {};
+              lines.push('master workspace ownerUid: ' + String(data.ownerUid || '(none)'));
+              lines.push('master workspace createdBy: ' + String(data.createdBy || '(none)'));
+              lines.push('master workspace ownerEmail: ' + String(data.ownerEmail || data.createdByEmail || '(none)'));
+            } catch (error) {
+              lines.push('master workspace read failed: ' + String(error && error.message || error));
+            }
+            for (const collection of ['units', 'beds', 'patients', 'members', 'team', 'accessCodes']) {
+              try {
+                const snapshot = await db.collection('workspaces/cardiovault_master_workspace').collection(collection).get();
+                lines.push('master workspace ' + collection + ': ' + snapshot.size);
+              } catch (error) {
+                lines.push('master workspace ' + collection + ' read failed: ' + String(error && error.message || error));
+              }
+            }
+            try {
+              const rulesets = await admin.securityRules().listRulesets();
+              lines.push('deployed Firestore rulesets: ' + rulesets.length);
+              rulesets.slice(0, 5).forEach(item => {
+                lines.push('  ' + item.name + '  created ' + item.createTime);
+              });
+            } catch (error) {
+              lines.push('ruleset list failed: ' + String(error && error.message || error));
+            }
+            console.log('\n=== LIVE FIRESTORE PROBE ===\n' + lines.join('\n') + '\n=== END PROBE ===');
+            try {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n## Live Firestore probe\n```\n' + lines.join('\n') + '\n```\n');
+            } catch (error) {
+              console.log('Could not write the step summary: ' + String(error && error.message || error));
+            }
+          })().catch(error => { console.error('Probe failed:', error); });
+          NODE
       # Firebase Authentication providers are managed in Firebase Console.
       # The CLI auth deploy currently requires listing Firebase Web apps, which this CI
       # service account does not have permission to do. Keeping auth deployment out of
