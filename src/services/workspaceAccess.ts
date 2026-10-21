@@ -2,6 +2,7 @@ import {Capacitor} from '@capacitor/core';
 import {FirebaseAuthentication} from '@capacitor-firebase/authentication';
 import {FirebaseFirestore} from '@capacitor-firebase/firestore';
 import {webCurrentUser,webDoc,getDoc as webGetDoc,setDoc as webSetDoc,getDocs as webGetDocs,deleteDoc as webDeleteDoc,webCollection} from './webFirebase';
+import { sha256Hex } from './codeHash';
 import { AuthorizationService } from './authorizationService';
 import { UserProfile, ClinicalRole } from '../types/clinical';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
@@ -13,8 +14,10 @@ const ACTIVE_KEY='cardiovault_active_workspace_access_v1';
 const safe=(snapshot:any):any=>{try{return typeof snapshot?.data==='function'?(snapshot.data()||null):(snapshot?.data||null);}catch{return null;}};
 const currentUser=async():Promise<any|null>=>{if(!Capacitor.isNativePlatform())return webCurrentUser();try{return (await FirebaseAuthentication.getCurrentUser()).user||null;}catch{return null;}};
 const uid=async():Promise<string|null>=>{const user=await currentUser();return user?.uid||null;};
+// Exported so the invite and subscription services authenticate through the same
+// Capacitor/web branch instead of duplicating the auth plumbing.
+export const getCurrentUid=uid;
 export async function isMasterAccount():Promise<boolean>{const user=await currentUser();const firebaseEmail=String(user?.email||'').trim().toLowerCase();if(firebaseEmail===MASTER_ACCOUNT_EMAIL)return true;try{const raw=localStorage.getItem('cardiovault_auth_v2');const saved=raw?JSON.parse(raw):null;return String(saved?.userEmail||'').trim().toLowerCase()===MASTER_ACCOUNT_EMAIL;}catch{return false;}}
-const hash=async(value:string)=>{const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value.trim().toUpperCase()));return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');};
 const newCode=()=>{const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const bytes=new Uint8Array(10);crypto.getRandomValues(bytes);const raw=Array.from(bytes).map(b=>alphabet[b%alphabet.length]).join('');return`CV-${raw.slice(0,4)}-${raw.slice(4,8)}-${raw.slice(8)}`;};
 export const getStoredWorkspaceAccess=():WorkspaceAccessState|null=>{try{const value=JSON.parse(localStorage.getItem(ACTIVE_KEY)||'null');return value?.workspaceId?value:null;}catch{return null;}};
 export function getActiveWorkspaceId():string{return getStoredWorkspaceAccess()?.workspaceId||MASTER_WORKSPACE_ID;}
@@ -27,7 +30,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   if(await isMasterAccount())return (await ensureOwnerWorkspace())||{workspaceId:MASTER_WORKSPACE_ID,role:'owner',unitId:null,unitName:null};
   const code=raw.trim().toUpperCase();
   if(code.length<6)throw new Error('Invalid Unit Access Code.');
-  const accessCodeHash=await hash(code);
+  const accessCodeHash=await sha256Hex(code);
   let access:any;
   if(Capacitor.isNativePlatform()){
     const result:any=await FirebaseFirestore.getDocument({reference:`accessCodes/${accessCodeHash}`});
@@ -62,9 +65,7 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   const teamProfile: UserProfile = {...currentProfile,userId:id,name:currentProfile?.name||'Clinician',email:currentProfile?.email||'',role:nextRole as ClinicalRole,departmentId:'dept-cardiology',assignedUnitIds:unitIds,status:'active',updatedAt:new Date().toISOString()};
   AuthorizationService.saveUsers([...AuthorizationService.getUsers().filter(u=>u.userId!==id),teamProfile]);
   try{
-    const teamRef=`workspaces/${targetWorkspace}/team/${id}`;
-    if(Capacitor.isNativePlatform()) await FirebaseFirestore.setDocument({reference:teamRef,data:{...teamProfile,uid:id},merge:true});
-    else await webSetDoc(webDoc(teamRef),{...teamProfile,uid:id},{merge:true});
+    await writeTeamProfile(targetWorkspace,id,teamProfile);
   }catch(error){console.warn('Team directory cloud registration failed:',error);}
   let unitName=String(access.unitName||'');
   try{
@@ -108,7 +109,7 @@ export async function generateUnitAccessCode(unitId:string,unitName:string,role:
   if(!state)throw new Error('Only the Master Account can generate Unit Access Codes.');
   const existing=await getUnitAccessCodes();
   for(const item of existing.filter(x=>x.unitId===unitId&&x.active))await revokeUnitAccessCode(item.code);
-  const code=newCode();const accessCodeHash=await hash(code);const now=new Date().toISOString();
+  const code=newCode();const accessCodeHash=await sha256Hex(code);const now=new Date().toISOString();
   const payload={hash:accessCodeHash,code,workspaceId:state.workspaceId,unitId,unitName,role,active:true,createdAt:now};
   if(Capacitor.isNativePlatform()){
     await FirebaseFirestore.setDocument({reference:`workspaces/${state.workspaceId}/accessCodes/${accessCodeHash}`,data:{...payload,createdBy:state.workspaceId},merge:false});
@@ -122,7 +123,7 @@ export async function generateUnitAccessCode(unitId:string,unitName:string,role:
 export async function revokeUnitAccessCode(code:string):Promise<void>{
   const state=await getActiveOwnerWorkspace();
   if(!state)throw new Error('Only the Master Account can revoke Unit Access Codes.');
-  const accessCodeHash=await hash(code);
+  const accessCodeHash=await sha256Hex(code);
   const revokedAt=new Date().toISOString();
   if(Capacitor.isNativePlatform()){
     await FirebaseFirestore.setDocument({reference:`workspaces/${state.workspaceId}/accessCodes/${accessCodeHash}`,data:{active:false,revokedAt},merge:true});
@@ -422,3 +423,227 @@ export async function createTeamWorkspace(name:string):Promise<WorkspaceAccessSt
   return {workspaceId,role:'view_only',unitId:null,unitName:null};
 }
 export async function joinTeamWorkspace(code:string):Promise<WorkspaceAccessState>{return redeemUnitAccessCode(code);}
+
+// ═══ Units the signed-in member belongs to ═══════════════════════════════════
+// The rules never let a non-owner list the units collection (allow list is
+// owner-only), so the ids come from the caller's own membership document and
+// every unit is then fetched by id. A unit that cannot be read is skipped
+// instead of failing the whole screen.
+export interface MyUnit{id:string;name:string;type:string;totalBeds:number;consultantUid:string;capacityLocked:boolean;createdAtMs:number;createdBy:string;}
+
+const readPath=async(path:string):Promise<any>=>{
+  if(Capacitor.isNativePlatform()){
+    const result:any=await FirebaseFirestore.getDocument({reference:path});
+    const snapshot=result?.snapshot;
+    try{return typeof snapshot?.data==='function'?(snapshot.data()||null):(snapshot?.data||null);}catch{return null;}
+  }
+  const snapshot=await webGetDoc(webDoc(path));
+  return snapshot.exists()?snapshot.data():null;
+};
+const writePath=async(path:string,data:Record<string,any>,merge=true):Promise<void>=>{
+  if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:path,data,merge});
+  else await webSetDoc(webDoc(path),data,{merge});
+};
+// A NEW team profile must carry uid + workspaceId (+ dept/status), because the
+// rules check those on create. An EXISTING one may only change name, role,
+// roleSelectedAt and updatedAt, so the bootstrap fields are written only when the
+// document is being created — adding them later would be an illegal diff.
+const writeTeamProfile=async(workspaceId:string,userId:string,profile:UserProfile):Promise<void>=>{
+  const reference=`workspaces/${workspaceId}/team/${userId}`;
+  let exists=false;
+  try{
+    if(Capacitor.isNativePlatform())exists=!!safe((await FirebaseFirestore.getDocument({reference})).snapshot);
+    else exists=(await webGetDoc(webDoc(reference))).exists();
+  }catch{}
+  const payload:Record<string,any>={...profile,uid:userId,workspaceId,...(exists?{}:{departmentId:'dept-cardiology',status:'active'})};
+  await writePath(reference,payload,true);
+};
+const membershipUnitIds=(membership:any):string[]=>Array.from(new Set([
+  ...(Array.isArray(membership?.unitIds)?membership.unitIds.map(String):[]),
+  ...(membership?.unitId?[String(membership.unitId)]:[]),
+].filter(Boolean)));
+const toMyUnit=(unitId:string,data:any):MyUnit=>({
+  id:String(data?.unitId||unitId),
+  name:String(data?.name||'Unit'),
+  type:String(data?.type||'ward'),
+  totalBeds:Number(data?.totalBeds||0),
+  consultantUid:String(data?.consultantUid||''),
+  capacityLocked:data?.capacityLocked===true,
+  createdAtMs:Number(data?.createdAtMs||0),
+  createdBy:String(data?.createdBy||''),
+});
+export async function getMyUnits():Promise<MyUnit[]>{
+  const id=await getCurrentUid();
+  if(!id)return[];
+  const workspaceId=getActiveWorkspaceId();
+  // The platform owner holds no membership document: ownership itself is the
+  // grant, and the rules let him list the whole units collection.
+  if(await isMasterAccount()){
+    try{
+      const reference=`workspaces/${workspaceId}/units`;
+      if(Capacitor.isNativePlatform()){
+        const result:any=await FirebaseFirestore.getCollection({reference});
+        return (result?.snapshots||[]).map((snapshot:any)=>{
+          const data=safe(snapshot)||{};
+          const unitId=String(snapshot?.id||snapshot?.documentId||data?.id||'');
+          return unitId?toMyUnit(unitId,data):null;
+        }).filter((unit:MyUnit|null):unit is MyUnit=>!!unit);
+      }
+      const result=await webGetDocs(webCollection(reference));
+      return result.docs.map((docSnap:any)=>toMyUnit(docSnap.id,docSnap.data()||{}));
+    }catch(error){
+      console.warn('Owner unit listing failed:',error);
+      return[];
+    }
+  }
+  const membership=await readPath(`workspaces/${workspaceId}/members/${id}`).catch(error=>{console.warn('Own membership read failed:',error);return null;});
+  const unitIds=membershipUnitIds(membership);
+  if(!unitIds.length)return[];
+  const units=await Promise.all(unitIds.map(async unitId=>{
+    try{const data=await readPath(`workspaces/${workspaceId}/units/${unitId}`);return data?toMyUnit(unitId,data):null;}
+    catch(error){console.warn('Unit lookup failed:',unitId,error);return null;}
+  }));
+  return units.filter((unit):unit is MyUnit=>!!unit);
+}
+// Creating a unit makes you its consultant, but access is still granted by the
+// membership document. The rules allow exactly one self-service addition: a unit
+// whose createdBy is the caller. Waiting for the unit document first keeps this
+// ordered behind the sync that creates it.
+export async function registerCreatedUnit(unitId:string):Promise<void>{
+  const clean=String(unitId||'').trim();
+  if(!clean)throw new Error('Select a unit first.');
+  const id=await getCurrentUid();
+  if(!id)throw new Error('A Firebase account must be signed in.');
+  const workspaceId=getActiveWorkspaceId();
+  const unitPath=`workspaces/${workspaceId}/units/${clean}`;
+  let created=false;
+  for(let attempt=0;attempt<10;attempt+=1){
+    const unit=await readPath(unitPath).catch(()=>null);
+    if(unit){created=true;break;}
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  if(!created)throw new Error('The new unit has not reached the cloud yet, so it could not be added to your membership.');
+  const membershipPath=`workspaces/${workspaceId}/members/${id}`;
+  const membership=await readPath(membershipPath);
+  if(!membership)throw new Error('You need a workspace membership before creating a unit.');
+  const unitIds=membershipUnitIds(membership);
+  if(unitIds.includes(clean))return;
+  await writePath(membershipPath,{
+    unitId:clean,
+    unitIds:[...unitIds,clean],
+    role:String(membership.role||'clinical_editor'),
+    clinicalRoles:{...(membership?.clinicalRoles||{})},
+    active:true,
+    forceReauth:false,
+    updatedAt:new Date().toISOString(),
+  },true);
+  const stored=getStoredWorkspaceAccess();
+  if(stored&&stored.workspaceId===workspaceId){
+    setStoredWorkspaceAccess({...stored,unitId:stored.unitId||clean,unitIds:[...new Set([...(stored.unitIds||[]),clean])]});
+  }
+}
+export async function getUnitById(unitId:string):Promise<MyUnit|null>{
+  const clean=String(unitId||'').trim();
+  if(!clean)return null;
+  try{
+    const data=await readPath(`workspaces/${getActiveWorkspaceId()}/units/${clean}`);
+    return data?toMyUnit(clean,data):null;
+  }catch(error){console.warn('Unit lookup failed:',error);return null;}
+}
+// The member's own clinical title lives on the membership document. The rules
+// only accept this write when the affected keys are exactly
+// ['clinicalRoles','updatedAt'] and every role key is a unit the member already
+// belongs to, so the caller must be inside the unit before retitling.
+export async function setUnitClinicalRole(unitId:string,role:SelfClinicalRole):Promise<void>{
+  const clean=String(unitId||'').trim();
+  if(!clean)throw new Error('Select a clinical unit first.');
+  if(!SELF_CLINICAL_ROLES.includes(role))throw new Error('Select a valid clinical role.');
+  const id=await getCurrentUid();
+  if(!id)throw new Error('A Firebase account must be signed in.');
+  const workspaceId=getActiveWorkspaceId();
+  const membershipPath=`workspaces/${workspaceId}/members/${id}`;
+  const membership=await readPath(membershipPath);
+  if(!membership||!membershipUnitIds(membership).includes(clean))throw new Error('You are not a member of this unit.');
+  const clinicalRoles={...(membership?.clinicalRoles||{}),[clean]:role};
+  try{
+    await writePath(membershipPath,{clinicalRoles,updatedAt:new Date().toISOString()});
+  }catch(error:any){
+    console.warn('Clinical title save failed:',error);
+    throw new Error(`Could not save your clinical title for this unit. Check that you still belong to it.\nCode: ${String(error?.code||'unknown')}\nMessage: ${String(error?.message||error||'Unknown Firestore error')}`);
+  }
+}
+// A unit has exactly one consultant: units/{unitId}.consultantUid. There is no
+// 'consultant' clinical title, so claiming is a separate, one-shot update of an
+// EMPTY slot on an existing unit.
+export async function claimUnitConsultant(unitId:string):Promise<void>{
+  const clean=String(unitId||'').trim();
+  if(!clean)throw new Error('Select a clinical unit first.');
+  const id=await getCurrentUid();
+  if(!id)throw new Error('A Firebase account must be signed in.');
+  const unitPath=`workspaces/${getActiveWorkspaceId()}/units/${clean}`;
+  const unit=await readPath(unitPath);
+  if(!unit)throw new Error('This unit no longer exists.');
+  const current=String(unit.consultantUid||'');
+  if(current===id)return;
+  if(current)throw new Error('This unit already has a consultant. Only the platform owner can clear the consultant slot.');
+  try{
+    await writePath(unitPath,{consultantUid:id,updatedAt:new Date().toISOString()});
+  }catch(error:any){
+    console.warn('Consultant slot claim failed:',error);
+    throw new Error(`Could not claim the consultant slot. It may have just been taken by somebody else.\nCode: ${String(error?.code||'unknown')}\nMessage: ${String(error?.message||error||'Unknown Firestore error')}`);
+  }
+}
+export async function clearUnitConsultant(unitId:string):Promise<void>{
+  const clean=String(unitId||'').trim();
+  if(!clean)throw new Error('Select a clinical unit first.');
+  if(!await isMasterAccount())throw new Error('Only the platform owner can clear a unit consultant.');
+  const unitPath=`workspaces/${getActiveWorkspaceId()}/units/${clean}`;
+  const unit=await readPath(unitPath);
+  if(!unit)throw new Error('This unit no longer exists.');
+  await writePath(unitPath,{consultantUid:'',updatedAt:new Date().toISOString()});
+}
+// The unit's consultant may close the bed count during provisioning; only the
+// platform owner may open it again (the rules refuse any other unlock).
+export async function setUnitCapacityLocked(unitId:string,locked:boolean):Promise<void>{
+  const clean=String(unitId||'').trim();
+  if(!clean)throw new Error('Select a clinical unit first.');
+  const owner=await isMasterAccount();
+  const id=await getCurrentUid();
+  if(!id&&!owner)throw new Error('A Firebase account must be signed in.');
+  const unitPath=`workspaces/${getActiveWorkspaceId()}/units/${clean}`;
+  const unit=await readPath(unitPath);
+  if(!unit)throw new Error('This unit no longer exists.');
+  const consultant=String(unit.consultantUid||'');
+  if(locked&&!owner&&consultant!==id)throw new Error("Only this unit's consultant or the platform owner can lock the bed count.");
+  if(!locked&&!owner)throw new Error('Only the platform owner can unlock the bed count. Ask the workspace owner to change capacity.');
+  try{
+    await writePath(unitPath,{capacityLocked:!!locked,updatedAt:new Date().toISOString()});
+  }catch(error:any){
+    console.warn('Unit capacity lock change failed:',error);
+    throw new Error(`The bed-count lock could not be changed.\nCode: ${String(error?.code||'unknown')}\nMessage: ${String(error?.message||error||'Unknown Firestore error')}`);
+  }
+}
+// Hidden units are a presentation-only preference stored on the device. They
+// must never influence permissions or which records can be read.
+const HIDDEN_UNITS_KEY='cardiovault_hidden_units_v1';
+export function getHiddenUnitIds():string[]{
+  try{
+    const parsed=JSON.parse(localStorage.getItem(HIDDEN_UNITS_KEY)||'[]');
+    if(!Array.isArray(parsed))return[];
+    return Array.from(new Set(parsed.map(String).filter(Boolean)));
+  }catch{return[];}
+}
+export function setUnitHidden(unitId:string,hidden:boolean):void{
+  const clean=String(unitId||'').trim();
+  if(!clean)return;
+  const next=new Set(getHiddenUnitIds());
+  if(hidden)next.add(clean);else next.delete(clean);
+  try{localStorage.setItem(HIDDEN_UNITS_KEY,JSON.stringify(Array.from(next)));}catch{}
+}
+// 'consultant' is never stored on the member: it is the unit's consultant slot,
+// so the effective title needs the unit document (and the caller's uid).
+export function effectiveClinicalRole(unitId:string,unit:MyUnit|null,myClinicalRoles:Record<string,string>|null,myUid?:string):'consultant'|SelfClinicalRole{
+  if(myUid&&unit?.consultantUid&&unit.consultantUid===myUid)return 'consultant';
+  const stored=String(myClinicalRoles?.[String(unitId||'')]||'');
+  return SELF_CLINICAL_ROLES.includes(stored as SelfClinicalRole)?stored as SelfClinicalRole:'resident';
+}

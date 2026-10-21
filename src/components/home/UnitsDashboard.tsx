@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   UserPlus,
   Search,
@@ -11,12 +11,20 @@ import {
   BedDouble,
   AlertCircle,
   Users,
+  Eye,
+  EyeOff,
+  X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Unit } from '../../types/clinical';
 import { UnitManagementModal } from '../units/UnitManagementModal';
 import { AddPatientModal } from '../patient/AddPatientModal';
-import { getStoredWorkspaceAccess } from '../../services/workspaceAccess';
+import {
+  getStoredWorkspaceAccess,
+  getMyUnits,
+  getHiddenUnitIds,
+  setUnitHidden,
+} from '../../services/workspaceAccess';
 
 export const UnitsDashboard: React.FC = () => {
   const {
@@ -31,6 +39,49 @@ export const UnitsDashboard: React.FC = () => {
 
   const [showUnitManagementModal, setShowUnitManagementModal] = useState(false);
   const [showAddPatientModal, setShowAddPatientModal] = useState(false);
+
+  // Presentation-only visibility preference. It never affects permissions or the
+  // clinical data that is loaded; a hidden unit stays fully readable.
+  const [hiddenUnitIds, setHiddenUnitIds] = useState<string[]>(() => {
+    try {
+      return getHiddenUnitIds().map(String);
+    } catch {
+      return [];
+    }
+  });
+  const [myUnits, setMyUnits] = useState<Array<{ id: string; name: string }>>([]);
+  const [showUnitVisibility, setShowUnitVisibility] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getMyUnits()
+      .then((list) => {
+        if (!active) return;
+        setMyUnits(
+          (Array.isArray(list) ? list : [])
+            .filter((unit) => !!unit?.id)
+            .map((unit) => ({ id: String(unit.id), name: String(unit.name || unit.id) }))
+        );
+      })
+      .catch((error) => {
+        // No unit list means no extra control: the dashboard stays exactly as it is.
+        console.warn('Could not load my units for the visibility control:', error);
+        if (active) setMyUnits([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggleUnitVisibility = (unitId: string, hidden: boolean) => {
+    try {
+      setUnitHidden(unitId, hidden);
+    } catch (error) {
+      console.warn('Could not save the unit visibility preference:', error);
+      return;
+    }
+    setHiddenUnitIds((prev) => (hidden ? Array.from(new Set([...prev, unitId])) : prev.filter((id) => id !== unitId)));
+  };
 
   // Compute unit statistics (Critical, Unstable, Stable, Empty)
   const getUnitStats = (unitId: string) => {
@@ -77,10 +128,19 @@ export const UnitsDashboard: React.FC = () => {
   const allowedUnitIds = access?.role === 'owner'
     ? null
     : new Set((access?.unitIds?.length ? access.unitIds : access?.unitId ? [access.unitId] : []).map(String));
-  const visibleUnits = units.filter((unit) =>
-    (!allowedUnitIds || allowedUnitIds.has(String(unit.id))) &&
-    beds.some((bed) => bed.unitId === unit.id)
+  const hiddenUnitIdSet = new Set(hiddenUnitIds);
+  const scopedUnits = units.filter((unit) => !allowedUnitIds || allowedUnitIds.has(String(unit.id)));
+  const visibleUnits = scopedUnits.filter((unit) =>
+    beds.some((bed) => bed.unitId === unit.id) && !hiddenUnitIdSet.has(String(unit.id))
   );
+  // Everything the user can toggle: the units the server says belong to them plus
+  // any local unit still inside their workspace scope (so nothing gets stuck hidden).
+  const visibilityEntries = [
+    ...myUnits,
+    ...scopedUnits
+      .filter((unit) => !myUnits.some((entry) => entry.id === String(unit.id)))
+      .map((unit) => ({ id: String(unit.id), name: unit.name })),
+  ];
   const visibleUnitIdSet = new Set(visibleUnits.map(unit => unit.id));
   const visibleBeds = beds.filter(bed => visibleUnitIdSet.has(bed.unitId));
   const visiblePatients = patients.filter(patient => visibleUnitIdSet.has(patient.unitId));
@@ -139,16 +199,76 @@ export const UnitsDashboard: React.FC = () => {
             </p>
           </div>
 
-          <button
-            onClick={() => setShowUnitManagementModal(true)}
-            className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/40"
-          >
-            <Settings className="w-3.5 h-3.5" /> Manage Units
-          </button>
+          <div className="flex items-center gap-2">
+            {myUnits.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowUnitVisibility((visible) => !visible)}
+                  className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60 hover:text-cyan-500 transition-colors"
+                  title="My units"
+                  aria-label="My units"
+                >
+                  {hiddenUnitIds.length > 0 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+                {showUnitVisibility && (
+                  <div className="absolute right-0 top-full mt-2 w-64 z-30 bg-white dark:bg-[#111C2E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-2 space-y-1">
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">My units</span>
+                      <button onClick={() => setShowUnitVisibility(false)} className="text-slate-400" aria-label="Close">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {visibilityEntries.map((entry) => {
+                      const hidden = hiddenUnitIdSet.has(entry.id);
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                              {entry.name}
+                            </div>
+                            <div className="text-[10px] text-slate-400">{hidden ? 'Hidden' : 'Shown'}</div>
+                          </div>
+                          <button
+                            onClick={() => toggleUnitVisibility(entry.id, !hidden)}
+                            title={hidden ? 'Show in my dashboard' : 'Hide from my dashboard'}
+                            className={
+                              hidden
+                                ? 'px-2 py-1 rounded-lg bg-cyan-500/10 text-[10px] font-bold text-cyan-600 dark:text-cyan-400'
+                                : 'px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-300'
+                            }
+                          >
+                            {hidden ? 'Show' : 'Hide'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <p className="px-2 pt-1 text-[10px] text-slate-400">
+                      Hidden units stay in your workspace. This only changes your dashboard.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowUnitManagementModal(true)}
+              className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/40"
+            >
+              <Settings className="w-3.5 h-3.5" /> Manage Units
+            </button>
+          </div>
         </div>
 
         {/* Units Grid (Reference Image 2 style) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {visibleUnits.length === 0 && hiddenUnitIds.length > 0 && (
+            <div className="sm:col-span-2 lg:col-span-3 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3">
+              All your units are hidden. Use the eye button above to show them again.
+            </div>
+          )}
           {visibleUnits.map((unit) => {
             const stats = getUnitStats(unit.id);
 

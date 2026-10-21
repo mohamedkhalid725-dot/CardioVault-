@@ -4,7 +4,9 @@ export const normalizePatientStatus=(value:unknown):PatientStatus=>{switch(value
 export const normalizeBedStatus=(value:unknown):BedStatus=>value==='Empty'?'Empty':normalizePatientStatus(value);
 
 export interface Bed { id:string; unitId:string; bedNumber:string; status:BedStatus; patientId?:string; }
-export interface Unit { id:string; name:string; type:string; totalBeds:number; }
+// Provisioning metadata mirrors the fields the Firestore rules require on
+// workspaces/{ws}/units/{unitId}. Older local records simply omit them.
+export interface Unit { id:string; name:string; type:string; totalBeds:number; createdBy?:string; consultantUid?:string; createdAtMs?:number; capacityLocked?:boolean; }
 export interface ClinicalSummary { chiefComplaint:string; hpi:string; pmh:string[]; psh:string[]; drugHistory:string; allergies:string[]; familyHistory:string; socialHistory:string; }
 export interface HandoverData { situation:string; background:string; assessment:string; recommendation:string; updatedAt?:string; }
 export interface CardiovascularHistory { hypertension:boolean; diabetes:boolean; dyslipidemia:boolean; cad:boolean; previousMI:boolean; heartFailure:boolean; arrhythmias:boolean; valvularDisease:boolean; previousPCI:boolean; previousCABG:boolean; previousStroke:boolean; pvd:boolean; smoking:boolean; alcohol:boolean; previousAdmissions:string; previousICU:string; other:string; }

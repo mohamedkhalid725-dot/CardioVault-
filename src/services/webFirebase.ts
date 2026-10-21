@@ -1,11 +1,12 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject, type FirebaseStorage } from 'firebase/storage';
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject, connectStorageEmulator, type FirebaseStorage } from 'firebase/storage';
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
   browserPopupRedirectResolver,
+  connectAuthEmulator,
   indexedDBLocalPersistence,
   initializeAuth,
   signInWithPopup,
@@ -19,6 +20,7 @@ import {
   type Auth,
 } from 'firebase/auth';
 import {
+  connectFirestoreEmulator,
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
@@ -33,11 +35,37 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 
+// ---------------------------------------------------------------------------
+// Local Firebase Emulator Suite (opt-in)
+// ---------------------------------------------------------------------------
+// Set VITE_FIREBASE_EMULATOR=true (see .env.emulator, loaded by `vite --mode
+// emulator`) to point the web build at the local Firestore / Auth / Storage
+// emulators instead of the production project. When the flag is off every
+// value below falls back to the exact production configuration as before.
+export const FIREBASE_EMULATOR_ENABLED = import.meta.env.VITE_FIREBASE_EMULATOR === 'true';
+export const FIREBASE_EMULATOR_PROJECT_ID = String(
+  import.meta.env.VITE_FIREBASE_EMULATOR_PROJECT_ID || 'cardiovault-emulator-test',
+);
+
+const EMULATOR_HOST = '127.0.0.1';
+const EMULATOR_AUTH_PORT = 9099;
+const EMULATOR_FIRESTORE_PORT = 8080;
+const EMULATOR_STORAGE_PORT = 9199;
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDo3vyGKW_Uf9qOWiiAe68euTaOA92xrmw',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'ccu-notebook.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'ccu-notebook',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'ccu-notebook.firebasestorage.app',
+  authDomain: FIREBASE_EMULATOR_ENABLED
+    ? `${FIREBASE_EMULATOR_PROJECT_ID}.firebaseapp.com`
+    : import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'ccu-notebook.firebaseapp.com',
+  // The emulators are started with --project cardiovault-emulator-test and they
+  // reject requests carrying a different project id, so the id is swapped when
+  // the emulator flag is on.
+  projectId: FIREBASE_EMULATOR_ENABLED
+    ? FIREBASE_EMULATOR_PROJECT_ID
+    : import.meta.env.VITE_FIREBASE_PROJECT_ID || 'ccu-notebook',
+  storageBucket: FIREBASE_EMULATOR_ENABLED
+    ? `${FIREBASE_EMULATOR_PROJECT_ID}.firebasestorage.app`
+    : import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'ccu-notebook.firebasestorage.app',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '963615758407',
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:963615758407:web:1450d70d93670dc350b962',
 };
@@ -64,24 +92,51 @@ function getWebAuth(): Auth {
       persistence: [indexedDBLocalPersistence, browserLocalPersistence],
       popupRedirectResolver: browserPopupRedirectResolver,
     });
+    // The emulator connection must be established before the first auth call.
+    if (FIREBASE_EMULATOR_ENABLED) {
+      connectAuthEmulator(webAuthInstance, `http://${EMULATOR_HOST}:${EMULATOR_AUTH_PORT}`, {
+        disableWarnings: true,
+      });
+    }
   }
   return webAuthInstance;
 }
 
 function getWebStorage(): FirebaseStorage {
   assertWebPlatform();
-  if (!webStorageInstance) webStorageInstance = getStorage(firebaseApp);
+  if (!webStorageInstance) {
+    webStorageInstance = getStorage(firebaseApp);
+    if (FIREBASE_EMULATOR_ENABLED) {
+      connectStorageEmulator(webStorageInstance, EMULATOR_HOST, EMULATOR_STORAGE_PORT);
+    }
+  }
   return webStorageInstance;
 }
 
 function getWebDb(): Firestore {
   assertWebPlatform();
   if (!webDbInstance) {
-    webDbInstance = initializeFirestore(firebaseApp, {
+    // The emulator does not support the default websocket transport reliably, so
+    // it needs long polling. The production path keeps its exact current options.
+    const firestoreSettings = {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-    });
+      ...(FIREBASE_EMULATOR_ENABLED ? { experimentalAutoDetectLongPolling: true } : {}),
+    };
+    webDbInstance = initializeFirestore(firebaseApp, firestoreSettings);
+    if (FIREBASE_EMULATOR_ENABLED) {
+      connectFirestoreEmulator(webDbInstance, EMULATOR_HOST, EMULATOR_FIRESTORE_PORT);
+    }
   }
   return webDbInstance;
+}
+
+// Wire the emulator suite exactly once, at module init, before any read or
+// write can reach the production project. The instances are singletons, so the
+// connect* calls above run a single time per session.
+if (FIREBASE_EMULATOR_ENABLED && !Capacitor.isNativePlatform()) {
+  getWebAuth();
+  getWebDb();
+  getWebStorage();
 }
 
 export async function webGoogleSignIn(): Promise<User> {

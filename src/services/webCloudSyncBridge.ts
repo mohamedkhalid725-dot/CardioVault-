@@ -219,7 +219,15 @@ export async function webSyncCurrentUserNow(){
         for(const item of remote)if(!current.has(String(item.id)))await deleteDoc(webDoc(`${path(access.workspaceId,name)}/${item.id}`));
       }
     };
-    if(access.role==='owner')await sync('units',StorageService.getUnits(),false);
+    if(access.role==='owner'){
+      await sync('units',StorageService.getUnits(),false);
+    }else{
+      // A member owns only the units on their membership plus any unit they created
+      // themselves (the rules make the creator that unit's consultant). Pushing the
+      // whole local list would be denied for every unit they do not belong to.
+      const myUid=String(user.uid);
+      await sync('units',StorageService.getUnits().filter(u=>allowedUnitIds.has(String(u.id))||String((u as any).createdBy||'')===myUid),false);
+    }
     await sync('beds',StorageService.getBeds(),access.role!=='owner');
     await sync('patients',StorageService.getPatients(),access.role!=='owner');
     localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);setSyncPending(false);return true;
@@ -281,22 +289,38 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
       listenCollection('units');
       listenCollection('beds');
       listenCollection('patients');
-    } else if (access.unitId) {
-      const unitRef = webDoc(`${path(access.workspaceId,'units')}/${access.unitId}`);
-      const unsubscribeUnit = onSnapshot(unitRef, snap => {
-        const values:Unit[] = snap.exists() ? [{...snap.data(), id:snap.id} as Unit] : [];
-        localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
-        try { StorageService.saveUnits(values); }
-        finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
-        localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());
-        onRefresh?.();
-      }, error => {
-        localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
-        localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
-      });
-      webRealtimeUnsubscribes.push(unsubscribeUnit);
-      listenCollection('beds',String(access.unitId));
-      listenCollection('patients',String(access.unitId));
+    } else {
+      // A member can see every unit on their own membership (the rules allow a get
+      // per unit, never a list). Merge each snapshot into the local list instead of
+      // replacing it, otherwise a second unit would erase the first.
+      const memberUnitIds=[...new Set([...(access.unitIds||[]),access.unitId].filter(Boolean).map(String))];
+      for (const unitId of memberUnitIds) {
+        const unitRef = webDoc(`${path(access.workspaceId,'units')}/${unitId}`);
+        const unsubscribeUnit = onSnapshot(unitRef, snap => {
+          if (!snap.exists()) return;
+          const incoming={...snap.data(), id:snap.id} as Unit;
+          localStorage.setItem('cardiovault_cloud_restore_in_progress','1');
+          try {
+            const local=StorageService.getUnits();
+            const exists=local.some(u=>String(u.id)===String(incoming.id));
+            StorageService.saveUnits(exists?local.map(u=>String(u.id)===String(incoming.id)?incoming:u):[...local,incoming]);
+          }
+          finally { localStorage.removeItem('cardiovault_cloud_restore_in_progress'); }
+          localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());
+          onRefresh?.();
+        }, error => {
+          localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+          localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+        });
+        webRealtimeUnsubscribes.push(unsubscribeUnit);
+      }
+      // The bed/patient listeners persist a whole collection snapshot, so they are
+      // only safe when there is a single unit to scope them to. Multi-unit members
+      // still get a full pull on load and on demand.
+      if (memberUnitIds.length===1) {
+        listenCollection('beds',memberUnitIds[0]);
+        listenCollection('patients',memberUnitIds[0]);
+      }
     }
   } catch (error:any) {
     localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());

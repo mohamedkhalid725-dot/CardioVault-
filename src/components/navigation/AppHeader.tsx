@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { CardioLogo } from '../CardioLogo';
 import { NotificationsCenterModal } from './NotificationsCenterModal';
 import { ClinicalWorkflowService } from '../../services/clinicalWorkflowService';
+import { WorkspaceStatusBanner } from '../settings/WorkspaceStatusBanner';
 
 export const AppHeader: React.FC = () => {
   const { theme, toggleTheme, auth, logout, setIsSearchOpen, syncNow, isSyncing, lastSyncTime, currentView, setCurrentView, currentUnitId, getUnitById, patients, currentUser } = useApp();
@@ -85,6 +86,9 @@ export const AppHeader: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* In-flow (never fixed) so it pushes content down instead of covering it. */}
+      <WorkspaceStatusBanner />
 
       {/* Account dropdown: fixed panel above ALL content (patient sticky bar is
           z-40, modals are z-[80]). Previously `absolute` inside the sticky
