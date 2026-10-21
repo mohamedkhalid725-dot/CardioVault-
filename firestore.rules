@@ -51,7 +51,7 @@ service cloud.firestore {
     // the proof (an access code, an invite, or a unit the caller created) must
     // be for THAT unit. The unit the document already had may stay the primary
     // one, so the proof is never compared with the old unitId.
-    function addedUnits(workspaceId) {
+    function addedUnits() {
       return request.resource.data.unitIds.removeAll(resource.data.get('unitIds', []));
     }
 
@@ -113,9 +113,6 @@ service cloud.firestore {
     // The top-level /invites/{hash} document is a routing index only (it tells a
     // signed-in account which workspace and unit a code belongs to). The
     // authoritative state lives in workspaces/{ws}/invites/{hash}.
-    function inviteIndexExists(hash) { return hash != '' && exists(/databases/$(database)/documents/invites/$(hash)); }
-    function inviteIndexData(hash) { return get(/databases/$(database)/documents/invites/$(hash)).data; }
-
     function invitePath(workspaceId,inviteId) { return /databases/$(database)/documents/workspaces/$(workspaceId)/invites/$(inviteId); }
     function inviteExists(workspaceId,inviteId) { return inviteId != '' && exists(invitePath(workspaceId,inviteId)); }
     function inviteData(workspaceId,inviteId) { return get(invitePath(workspaceId,inviteId)).data; }
@@ -246,20 +243,20 @@ service cloud.firestore {
                // first unit as the primary one, so the old check (proof == unitId)
                // refused that join for the wrong reason.
                (
-                 addedUnits(workspaceId).size() == 1
+                 addedUnits().size() == 1
                  && (
                    ( validAccessCode(request.resource.data.get('accessCodeHash',''), workspaceId)
-                     && accessCodeData(request.resource.data.get('accessCodeHash','')).unitId == addedUnits(workspaceId)[0] )
-                   || ( redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), addedUnits(workspaceId)[0]) )
+                     && accessCodeData(request.resource.data.get('accessCodeHash','')).unitId == addedUnits()[0] )
+                   || ( redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), addedUnits()[0]) )
                    // Creating a unit adds that unit to the creator's own membership.
-                   || ( unitExists(workspaceId, addedUnits(workspaceId)[0])
-                        && unitData(workspaceId, addedUnits(workspaceId)[0]).get('createdBy','') == request.auth.uid )
+                   || ( unitExists(workspaceId, addedUnits()[0])
+                        && unitData(workspaceId, addedUnits()[0]).get('createdBy','') == request.auth.uid )
                  )
                )
                // Nothing new is granted: the doctor simply confirms a unit he
                // already has (re-entering the access code he used before).
                || (
-                 addedUnits(workspaceId).size() == 0
+                 addedUnits().size() == 0
                  && (
                    ( validAccessCode(request.resource.data.get('accessCodeHash',''), workspaceId)
                      && request.resource.data.get('unitIds',[]).hasAny([accessCodeData(request.resource.data.get('accessCodeHash','')).unitId]) )
