@@ -59,20 +59,26 @@ const replaceCollection=(collection:'units'|'beds'|'patients',event:any)=>{const
 
 const AppContent:React.FC=()=>{const{auth,currentView,setCurrentView,setCurrentPatientId,setActivePatientSection,toasts,dismissToast,syncNow}=useApp();const[accessReady,setAccessReady]=useState(false);const[online,setOnline]=useState(()=>typeof navigator==='undefined'?true:navigator.onLine);const handlingPop=useRef(false);const[booted,setBooted]=useState(false);const[fading,setFading]=useState(false);
 // Boot splash readiness (replaces the old unconditional 5s timer):
-//   ready  = auth state resolved AND the first data-load attempt has finished
-//   floor  = ~600ms so the branded splash never flickers for one frame
-//   ceiling= ~5s so a stalled network can never trap the user on the splash,
-//            while still giving the native session restore its full window (a
-//            shorter ceiling could flash the Login screen at a returning user)
-const SPLASH_MIN_VISIBLE_MS=600, SPLASH_MAX_VISIBLE_MS=5000, SPLASH_FADE_MS=280;
+//   ready  = the session state is known AND the first data-load attempt has
+//            finished (or the data wait expired), with a short floor
+//   floor  = ~500ms so the branded splash never flickers for one frame
+//   data   = ~2s max wait for the first cloud read after the session is known
+//   ceiling= ~8s absolute safety net, so a dead network can never trap the user
+// The session state is NEVER forced by the ceiling while it is still unknown:
+// that is what used to flash the Login screen at a returning doctor.
+const SPLASH_MIN_VISIBLE_MS=500, SPLASH_DATA_WAIT_MS=2000, SPLASH_MAX_VISIBLE_MS=8000, SPLASH_FADE_MS=280;
 const persistedSessionAtBoot=useState(()=>!!StorageService.getAuth()?.isAuthenticated)[0];
 const[authResolved,setAuthResolved]=useState(()=>!persistedSessionAtBoot);
 const[firstDataAttemptDone,setFirstDataAttemptDone]=useState(()=>!persistedSessionAtBoot);
+const[dataWaitExpired,setDataWaitExpired]=useState(()=>!persistedSessionAtBoot);
 const[minVisibleElapsed,setMinVisibleElapsed]=useState(false);
 useEffect(()=>{const floorTimer=setTimeout(()=>setMinVisibleElapsed(true),SPLASH_MIN_VISIBLE_MS);return()=>clearTimeout(floorTimer);},[]);
 useEffect(()=>{if(auth.isAuthenticated||auth.isLocked)setAuthResolved(true);},[auth.isAuthenticated,auth.isLocked]);
-useEffect(()=>{if(booted)return;const ceilingTimer=setTimeout(()=>{setAuthResolved(true);setFirstDataAttemptDone(true);setMinVisibleElapsed(true);},SPLASH_MAX_VISIBLE_MS);return()=>clearTimeout(ceilingTimer);},[booted]);
-useEffect(()=>{if(booted||!authResolved||!firstDataAttemptDone||!minVisibleElapsed)return;setFading(true);const fadeTimer=setTimeout(()=>setBooted(true),SPLASH_FADE_MS);return()=>clearTimeout(fadeTimer);},[booted,authResolved,firstDataAttemptDone,minVisibleElapsed]);
+// The data wait only starts once the session state is known, so the splash
+// never ends into a half-restored session.
+useEffect(()=>{if(!authResolved||firstDataAttemptDone||dataWaitExpired)return;const dataTimer=setTimeout(()=>setDataWaitExpired(true),SPLASH_DATA_WAIT_MS);return()=>clearTimeout(dataTimer);},[authResolved,firstDataAttemptDone,dataWaitExpired]);
+useEffect(()=>{if(booted)return;const ceilingTimer=setTimeout(()=>{setAuthResolved(true);setFirstDataAttemptDone(true);setDataWaitExpired(true);setMinVisibleElapsed(true);},SPLASH_MAX_VISIBLE_MS);return()=>clearTimeout(ceilingTimer);},[booted]);
+useEffect(()=>{if(booted||!authResolved||!minVisibleElapsed||(!firstDataAttemptDone&&!dataWaitExpired))return;setFading(true);const fadeTimer=setTimeout(()=>setBooted(true),SPLASH_FADE_MS);return()=>clearTimeout(fadeTimer);},[booted,authResolved,firstDataAttemptDone,dataWaitExpired,minVisibleElapsed]);
  // Firebase Authentication is the session source of truth. The old cardiovault_auth_v2
  // localStorage flag was removed with local clinical persistence, so relying on it
  // keeps successfully authenticated users trapped on the Login screen.
