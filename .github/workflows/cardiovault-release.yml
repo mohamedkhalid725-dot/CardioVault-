@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   HAS_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -222,7 +222,7 @@ jobs:
       - name: Upload Production APK
         uses: actions/upload-artifact@v4
         with:
-          name: CardioVault-2.0.0-release-apk
+          name: CardioVault-2.1.0-release-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -230,7 +230,25 @@ jobs:
       - name: Upload Google Play AAB
         uses: actions/upload-artifact@v4
         with:
-          name: CardioVault-2.0.0-release-aab
+          name: CardioVault-2.1.0-release-aab
           path: android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 30
+
+      # Release assets live in their own quota, so the APK is still reachable
+      # when the Actions artifact storage is full. This is the file that goes
+      # to APKPure: same package, same keystore, versionCode 21.
+      - name: Publish the production APK as a release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v2.1.0"
+          mkdir -p release-out
+          cp android/app/build/outputs/apk/release/app-release.apk "release-out/CardioVault-2.1.0-release.apk"
+          cp android/app/build/outputs/bundle/release/app-release.aab "release-out/CardioVault-2.1.0-release.aab"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "CardioVault 2.1.0 (production release)" --notes "Signed production build: versionCode 21, versionName 2.1.0, package com.cardiovault.app. This is the file published to APKPure." --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" release-out/* --clobber
+          echo "Production APK and AAB published to the release $TAG."
