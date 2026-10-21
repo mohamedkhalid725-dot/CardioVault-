@@ -95,6 +95,7 @@ Top level:
 | `/platformOwners/{uid}` | The single owner registry. The document's *existence* is what makes an account the platform owner. | Firebase console only |
 | `/accessCodes/{sha256(code)}` | Routing copy of a unit access code, so a fresh device can find which workspace the code belongs to. | Owner (admin) |
 | `/invites/{sha256(code)}` | Routing index for a temporary invite. Never trusted for state. | Invite creator |
+| `/userWorkspaces/{uid}/workspaces/{workspaceId}` | The team index of one account: which teams it belongs to. A hint for the team picker only — it grants nothing. | The account itself (only for teams it is really a member of) |
 
 Inside a workspace, `/workspaces/{workspaceId}`:
 
@@ -105,13 +106,13 @@ Inside a workspace, `/workspaces/{workspaceId}`:
 | `workspaces/{ws}/members/{uid}/units/{unitId}` | Per-unit receipt, used by the revoke flow |
 | `workspaces/{ws}/accessCodes/{hash}` | Authoritative unit access codes (owner-managed) |
 | `workspaces/{ws}/invites/{hash}` | Authoritative, single-use, expiring invites |
-| `workspaces/{ws}/team/{uid}` | Team directory profile: name, clinical role, `assignedUnitIds[]`, status. **This collection is workspace-wide readable — the residual leak, see SECURITY-MODEL.md.** |
+| `workspaces/{ws}/team/{uid}` | Team directory profile: name, clinical role, `assignedUnitIds[]`, status. Owner-only for `list`; colleagues are read from the per-unit roster. |
 | `workspaces/{ws}/units/{unitId}` | A clinical unit: `name`, `type`, `totalBeds`, `createdBy`, `consultantUid`, `createdAtMs`, `capacityLocked` |
 | `workspaces/{ws}/units/{unitId}/tasks/{taskId}` | Unit-shared task board |
-| `workspaces/{ws}/units/{unitId}/roster/{uid}` | Unit-scoped roster (service exists in `unitRoster.ts`; **no Firestore rule yet**) |
-| `workspaces/{ws}/units/{unitId}/audit/{eventId}` | Unit-scoped audit (service exists in `unitAudit.ts`; **no Firestore rule yet**) |
+| `workspaces/{ws}/units/{unitId}/roster/{uid}` | Unit-scoped roster: who works in this unit. The only directory a non-owner screen may read. |
+| `workspaces/{ws}/units/{unitId}/audit/{eventId}` | Unit-scoped audit trail: append-only, readable by that unit's members. |
 | `workspaces/{ws}/beds/{bedId}` | Bed: `unitId`, `bedNumber`, `status`, `patientId` |
-| `workspaces/{ws}/patients/{patientId}` | The whole clinical file of one patient, including every section (history, vitals, labs, ECG, imaging lists, notes) |
+| `workspaces/{ws}/patients/{patientId}` | The whole clinical file of one patient, including every section (history, vitals, labs, ECG, imaging lists, notes). `unitIds[]` lists every unit allowed to read it, so one file can be shared by two units. |
 | `workspaces/{ws}/media/{mediaId}` + `/chunks/{chunkId}` | Clinical images as base64 chunks of ~600 KB inside Firestore (Firebase Storage is not used) |
 | `workspaces/{ws}/metadata/cloud` | Sync bookkeeping (`lastClientSync`, `schemaVersion`, platform). Owner-only per rules. |
 | `workspaces/{ws}/audit/{eventId}` | Workspace audit trail: append-only, owner-read only. Used today for `invite.redeemed` events. |

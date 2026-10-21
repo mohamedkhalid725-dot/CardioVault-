@@ -7,7 +7,7 @@ import { ClinicalWorkflowService } from '../../services/clinicalWorkflowService'
 import { WorkspaceStatusBanner } from '../settings/WorkspaceStatusBanner';
 
 export const AppHeader: React.FC = () => {
-  const { theme, toggleTheme, auth, logout, setIsSearchOpen, syncNow, isSyncing, lastSyncTime, currentView, setCurrentView, currentUnitId, getUnitById, patients, currentUser } = useApp();
+  const { theme, toggleTheme, auth, logout, setIsSearchOpen, syncNow, isSyncing, lastSyncTime, currentView, setCurrentView, currentUnitId, getUnitById, patients, currentUser, openTeamPicker, myWorkspaces } = useApp();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -112,6 +112,7 @@ export const AppHeader: React.FC = () => {
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
               <button onClick={() => { setShowProfileMenu(false); setShowAccountSettings(true); }} className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-xs flex items-center gap-2"><User className="w-3.5 h-3.5 text-cyan-500" />Account Settings</button>
               <button onClick={() => { setShowProfileMenu(false); setCurrentView('settings'); }} className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-xs flex items-center gap-2"><ShieldCheck className="w-3.5 h-3.5" />System Settings</button>
+              {myWorkspaces.length > 1 && <button onClick={() => { setShowProfileMenu(false); openTeamPicker(); }} className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-xs flex items-center gap-2"><Building2 className="w-3.5 h-3.5 text-cyan-500" />Switch Team</button>}
               <button onClick={() => { closePanels(); logout(); }} className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2"><LogOut className="w-3.5 h-3.5" />Sign Out</button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { sha256Hex } from './codeHash';
 import { AuthorizationService } from './authorizationService';
 import { UserProfile, ClinicalRole } from '../types/clinical';
 import { listRosterForUnits, upsertRosterEntry, removeRosterEntry } from './unitRoster';
+import { registerWorkspaceInIndex, readWorkspaceName } from './workspaceIndex';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
 export interface WorkspaceAccessState{workspaceId:string;role:WorkspaceRole;unitId:string|null;unitName:string|null;unitIds?:string[];unitNames?:Record<string,string>;}
 export interface UnitAccessCode{unitId:string;unitName:string;code:string;role:Exclude<WorkspaceRole,'owner'>;active:boolean;}
@@ -95,6 +96,13 @@ export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessSt
   }catch{}
   const state={workspaceId:targetWorkspace,role:(access.role==='view_only'?'view_only':'clinical_editor') as WorkspaceRole,unitId:String(access.unitId),unitName,unitIds,unitNames:{[String(access.unitId)]:unitName}};
   setStoredWorkspaceAccess(state);
+  // The team index (B3): a doctor can work in several teams with one account, so
+  // every team he joins is listed in his own index. The index grants nothing -
+  // it only tells the picker which teams exist for this account.
+  try{
+   const workspaceName=await readWorkspaceName(targetWorkspace);
+   await registerWorkspaceInIndex(id,{workspaceId:targetWorkspace,name:workspaceName||targetWorkspace,unitNames:Object.values(state.unitNames||{})});
+  }catch(error){console.warn('Team index registration failed:',error);}
   return state;
   }catch(error){
     setStoredWorkspaceAccess(previousAccess);

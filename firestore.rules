@@ -166,6 +166,24 @@ service cloud.firestore {
       allow update, delete: if adminOf(resource.data.workspaceId) || request.auth.uid == resource.data.createdBy;
     }
 
+    // ═══ Team index (one account, several teams) ═══════════════════════════
+    // A doctor can work in more than one team with the same Google account. The
+    // index only records WHICH teams exist for this account - it grants nothing:
+    // opening a team still needs a real membership document, exactly as before.
+    match /userWorkspaces/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if false;
+      match /workspaces/{workspaceId} {
+        // Your own index, and only the teams you are really a member of.
+        allow get, list: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && exists(memberPath(workspaceId))
+          && get(memberPath(workspaceId)).data.active != false;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+    }
+
     // ═══ Workspaces ═════════════════════════════════════════════════════════
     match /workspaces/{workspaceId} {
       // Any signed-in account may bootstrap a customer team workspace, but the

@@ -191,7 +191,9 @@ owner saying so. "Open" means a real question is still unanswered.
   change: read is allowed if the caller belongs to **any** unit in that array. A
   cross-unit lookup is only performed across units the caller already belongs to; a unit
   he is not in is never queried, so the prompt itself can never leak.
-- **Status:** locked (not implemented yet)
+- **Status:** locked — **implemented** in `v2.1-build` (patient documents carry `unitIds`;
+  the rules read a shared file for any unit the caller belongs to; the admission
+  screen asks before it writes anything).
 
 ## D17 — A workspace picker is needed (B3)
 
@@ -202,4 +204,6 @@ owner saying so. "Open" means a real question is still unanswered.
   joins a team, and the app shows a team chooser after sign-in when the index has more
   than one entry. The picker only lists indexed teams, and opening a team still requires a
   real membership document — the index is a hint, never an authorisation.
-- **Status:** locked (not implemented yet)
+- **Status:** locked — **implemented** in `v2.1-build` (`userWorkspaces/{uid}/workspaces/{workspaceId}`;
+  the picker opens when the account belongs to more than one team, and the index
+  grants nothing on its own).

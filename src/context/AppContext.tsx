@@ -8,7 +8,8 @@ import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {webCurrentUser,webGoogleSignIn,checkWebRedirectResult,webEmailSignIn,webEmailCreate,webSignOut} from'../services/webFirebase';
 import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
-import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit} from '../services/workspaceAccess';
+import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid } from '../services/workspaceAccess';
+import {listIndexedWorkspaces,registerWorkspaceInIndex,readWorkspaceName,type IndexedWorkspace } from '../services/workspaceIndex';
 import {getSubscription} from '../services/workspaceSubscription';
 import {notifyClinicalData} from'../services/clinicalNotifications';
 import {formatLocalAdmissionDate,formatLocalAdmissionTime,toLocalIsoTimestamp}from'../services/patientAdmission';
@@ -71,6 +72,14 @@ export interface AppContextType{
   setPrivacySafeMonitor:(v:boolean)=>void;
   favoritePatientIds:string[];
   toggleFavoritePatient:(id:string)=>void;
+  // Team picker (one account, several teams)
+  myWorkspaces:IndexedWorkspace[];
+  isTeamPickerOpen:boolean;
+  isSwitchingTeam:boolean;
+  openTeamPicker:()=>void;
+  closeTeamPicker:()=>void;
+  refreshWorkspaceIndex:()=>Promise<IndexedWorkspace[]>;
+  switchWorkspace:(workspaceId:string)=>Promise<void>;
 }
 export const AppContext=createContext<AppContextType|undefined>(undefined);
 
@@ -116,6 +125,11 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[units,setUnits]=useState<Unit[]>([]);const[beds,setBeds]=useState<Bed[]>([]);const[patients,setPatients]=useState<Patient[]>([]);
  const[isSearchOpen,setIsSearchOpen]=useState(false);const[isSyncing,setIsSyncing]=useState(false);const[lastSyncTime,setLastSyncTime]=useState('');const[toasts,setToasts]=useState<ToastInfo[]>([]);
  const[privacySafeMonitor,setPrivacySafeMonitor]=useState<boolean>(false);
+ // Team picker (B3): the teams this account belongs to.
+ const[myWorkspaces,setMyWorkspaces]=useState<IndexedWorkspace[]>([]);
+ const[isTeamPickerOpen,setIsTeamPickerOpen]=useState(false);
+ const[isSwitchingTeam,setIsSwitchingTeam]=useState(false);
+ const teamPickerShown=useRef(false);
  const[favoritePatientIds,setFavoritePatientIds]=useState<string[]>(()=>{
    try { const raw = localStorage.getItem('cardiovault_fav_patients'); return raw ? JSON.parse(raw) : []; } catch { return []; }
  });
@@ -127,6 +141,58 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
      return next;
    });
  };
+ // ─── Team picker (B3) ─────────────────────────────────────────────────────
+ // The index only says which teams exist for this account. Opening a team still
+ // goes through its membership document, so the picker can never reach a team
+ // the doctor does not belong to.
+ const refreshWorkspaceIndex=async():Promise<IndexedWorkspace[]>=>{
+  const accountUid=await getCurrentUid();
+  if(!accountUid){setMyWorkspaces([]);return[];}
+  const entries=await listIndexedWorkspaces(accountUid);
+  const activeId=getActiveWorkspaceId();
+  let list=entries;
+  if(activeId&&!entries.some(entry=>entry.workspaceId===activeId)){
+   // The team in use must always be listed, even when it was joined before the
+   // index existed. If the rules refuse the write, this account is not really a
+   // member of that team, so it must not be listed either.
+   const access=getStoredWorkspaceAccess();
+   const name=await readWorkspaceName(activeId);
+   const unitNames=access?.unitNames?Object.values(access.unitNames).map(String):[];
+   const registered=await registerWorkspaceInIndex(accountUid,{workspaceId:activeId,name:name||activeId,unitNames});
+   if(registered)list=[...entries,{workspaceId:activeId,name:name||activeId,unitNames}];
+  }
+  setMyWorkspaces(list);
+  return list;
+ };
+ const openTeamPicker=()=>{teamPickerShown.current=true;setIsTeamPickerOpen(true);};
+ const closeTeamPicker=()=>{setIsTeamPickerOpen(false);};
+ const switchWorkspace=async(workspaceId:string)=>{
+  if(!workspaceId||isSwitchingTeam)return;
+  setIsSwitchingTeam(true);
+  try{
+   // The other team's clinical data must never stay on the screen.
+   clearActiveClinicalWorkspace();
+   setStoredWorkspaceAccess({workspaceId,role:'clinical_editor',unitId:null,unitName:null});
+   const cloud=await loadCurrentUserFromCloud();
+   if(cloud?.access)setStoredWorkspaceAccess(cloud.access);
+   hydrateClinicalState();
+   await refreshWorkspaceIndex();
+   setIsTeamPickerOpen(false);
+   setCurrentView('home');
+   showToast('Team switched.','success');
+  }catch(error){console.warn('Team switch failed:',error);showToast('Could not switch team. Please try again.','error');}
+  finally{setIsSwitchingTeam(false);}
+ };
+ useEffect(()=>{
+  if(!auth.isAuthenticated||auth.isLocked)return;
+  let active=true;
+  void (async()=>{
+   const list=await refreshWorkspaceIndex();
+   if(!active)return;
+   if(list.length>1&&!teamPickerShown.current){teamPickerShown.current=true;setIsTeamPickerOpen(true);}
+  })();
+  return()=>{active=false;};
+ },[auth.isAuthenticated,auth.isLocked]);
 
  const setCurrentUser=(user:UserProfile)=>{
    setCurrentUserState(user);
@@ -279,6 +345,6 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const syncNow=async()=>{setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
  const resetDatabase=()=>{if(patients.length>0||units.length>0){const answer=window.prompt('This ERASES all units, beds and patients. Type RESET to confirm.');if(String(answer||'').trim().toUpperCase()!=='RESET'){showToast('Reset cancelled.','info');return;}}StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
- return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,updateUnit,lockUnitCapacity,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient}}>{children}</AppContext.Provider>;
+ return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,updateUnit,lockUnitCapacity,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
 };
 export const useApp=()=>{const c=useContext(AppContext);if(!c)throw new Error('useApp must be used inside AppProvider');return c;};

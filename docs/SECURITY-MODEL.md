@@ -69,7 +69,23 @@ Creating a code also revokes the previous live code for that unit
 The index carries `workspaceId`, `unitId`, `unitName`, role, expiry. It never carries
 the plain code. The rules never trust it for state.
 
-## 6. `workspaces/{workspaceId}` — the tenant document
+## 5b. `/userWorkspaces/{uid}/workspaces/{workspaceId}` — the team index
+
+A doctor can work in more than one team with the same Google account. This index
+only records **which teams exist** for the account.
+
+| Operation | Allowed | Why |
+|---|---|---|
+| `get`, `list` | The account itself | Nobody reads another account's teams |
+| `create`, `update` | The account itself **and** `workspaces/{workspaceId}/members/{uid}` exists and is active | You can only index a team you really belong to |
+| `delete` | The account itself | |
+| `list` of `/userWorkspaces` | Nobody | The index of every account is never a directory |
+
+The index grants **nothing**: opening a team still goes through the membership
+document of that team, exactly as before. It is a hint for the team picker and
+nothing else. Rules tests 58–62 cover it.
+
+## 6. `workspaces/{workspaceId}` - the tenant document
 
 | Operation | Allowed | Why |
 |---|---|---|
@@ -155,14 +171,28 @@ the platform owner can clear it.
 
 | Operation | Allowed | Why |
 |---|---|---|
-| `get`, `list` | `adminOf` or `unitMember(ws, resource.unitId)` | A member reads only patients of his units |
-| `create` | `adminOf` or `clinicalEditor(ws, new unitId)` | View-only accounts cannot admit |
-| `update` | `adminOf`, or `clinicalEditor` on the **new** unit **and** (`unitId` unchanged **or** `clinicalEditor` on the **old** unit) | Blocks cross-unit tampering by rewriting `unitId` while keeping legitimate transfers possible |
+| `get`, `list` | `adminOf`, or `unitMember(ws, resource.unitId)`, or the caller belongs to **any** unit in `resource.data.unitIds` | A member reads the patients of his units, including a file shared with one of them |
+| `create` | `adminOf`, or `clinicalEditor(ws, new unitId)` **and** every id on `unitIds` is one of the caller's own units | A member can never hand a file to a unit he is not in |
+| `update` | `adminOf`, or `clinicalEditor` on the **new** unit **and** (`unitId` unchanged **or** `clinicalEditor` on the **old** unit) **and** the units **added** to `unitIds` are the caller's own units | Blocks cross-unit tampering by rewriting `unitId`, and blocks smuggling a file into a foreign unit |
 | `delete` | `adminOf` or `clinicalEditor` of the patient's unit | |
 
 `list` is filtered by `resource.data.unitId`, which is why the client must query
 patients with a `where('unitId', '==', ...)` filter for non-owners. Collection-group
 queries are covered by rules test 13.
+
+### 11b. A file shared by two units (`unitIds`)
+
+One clinical file can be visible to more than one unit — the common case is the same
+department split across floors. The document stays **one** document:
+
+- `unitId` = the unit the patient is physically in (the bed's unit);
+- `unitIds` = every unit allowed to read the file, always containing `unitId`.
+
+Reading needs membership of one of the units on that list, so a unit the caller does
+not belong to is never reached. Sharing is additive and bounded: the units **added**
+by an update must be units the caller belongs to, which is what stops a member from
+pushing a file into a unit he is not in. Legacy documents have no `unitIds` and keep
+behaving exactly as before. Rules tests 53–57 cover the whole matrix.
 
 ## 12. `workspaces/{ws}/units/{unitId}/tasks/{taskId}` — task board
 

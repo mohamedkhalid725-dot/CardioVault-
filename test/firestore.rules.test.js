@@ -327,6 +327,40 @@ async function seed() {
         unitId: UNIT_X,
         label: "FAKE X",
       }),
+      // A doctor who works in two teams with the same account: member of the
+      // master workspace AND of Team Bravo. This is the workspace-picker case.
+      setDoc(doc(db, path("members", "userI")), {
+        uid: "userI",
+        workspaceId: WORKSPACE,
+        active: true,
+        forceReauth: false,
+        role: "clinical_editor",
+        unitId: UNIT_A,
+        unitIds: [UNIT_A],
+      }),
+      setDoc(doc(db, path("team", "userI")), {
+        uid: "userI",
+        workspaceId: WORKSPACE,
+        role: "resident",
+        status: "active",
+        assignedUnitIds: [UNIT_A],
+      }),
+      setDoc(doc(db, "workspaces", WS_B, "members", "userI"), {
+        uid: "userI",
+        workspaceId: WS_B,
+        active: true,
+        forceReauth: false,
+        role: "clinical_editor",
+        unitId: UNIT_X,
+        unitIds: [UNIT_X],
+      }),
+      setDoc(doc(db, "workspaces", WS_B, "team", "userI"), {
+        uid: "userI",
+        workspaceId: WS_B,
+        role: "resident",
+        status: "active",
+        assignedUnitIds: [UNIT_X],
+      }),
       setDoc(doc(db, "accessCodes", HASH_TEAM_B), {
         workspaceId: WS_B,
         unitId: UNIT_X,
@@ -2094,5 +2128,73 @@ test("57. a legacy patient without unitIds stays readable by its own unit only",
   await assertFails(
     getDocs(query(collection(dbFor("userH"), path("patients")), where("unitIds", "array-contains", UNIT_A))),
   );
+});
+
+// ═══ Team index (one account, several teams) ═══════════════════════════════
+
+test("58. an account writes and reads its own team index", async () => {
+  const i = dbFor("userI");
+  await assertSucceeds(
+    setDoc(doc(i, "userWorkspaces", "userI", "workspaces", WORKSPACE), {
+      workspaceId: WORKSPACE,
+      name: "CardioVault",
+    }),
+  );
+  await assertSucceeds(
+    setDoc(doc(i, "userWorkspaces", "userI", "workspaces", WS_B), {
+      workspaceId: WS_B,
+      name: "Team Bravo",
+    }),
+  );
+  await assertSucceeds(getDoc(doc(i, "userWorkspaces", "userI", "workspaces", WORKSPACE)));
+  await assertSucceeds(getDocs(collection(i, "userWorkspaces", "userI", "workspaces")));
+});
+
+test("59. an account cannot read or write another account's team index", async () => {
+  const b = dbFor("userB");
+  await assertFails(getDoc(doc(b, "userWorkspaces", "userI", "workspaces", WORKSPACE)));
+  await assertFails(getDocs(collection(b, "userWorkspaces", "userI", "workspaces")));
+  await assertFails(
+    setDoc(doc(b, "userWorkspaces", "userI", "workspaces", WORKSPACE), { workspaceId: WORKSPACE }),
+  );
+  // Nobody lists the index of every account.
+  await assertFails(getDocs(collection(b, "userWorkspaces")));
+});
+
+test("60. an account cannot index a team it is not a member of", async () => {
+  const b = dbFor("userB");
+  await assertFails(
+    setDoc(doc(b, "userWorkspaces", "userB", "workspaces", WS_B), { workspaceId: WS_B }),
+  );
+  await assertSucceeds(
+    setDoc(doc(b, "userWorkspaces", "userB", "workspaces", WORKSPACE), { workspaceId: WORKSPACE }),
+  );
+});
+
+test("61. the team index grants nothing: a team still needs a real membership", async () => {
+  // userB indexed the master workspace, but Team Bravo is not his team.
+  const b = dbFor("userB");
+  await assertFails(getDoc(doc(b, "workspaces", WS_B, "patients", PATIENT_X)));
+  await assertFails(getDocs(collection(b, "workspaces", WS_B, "patients")));
+  await assertFails(getDoc(doc(b, "workspaces", WS_B)));
+  await assertFails(getDoc(doc(b, "workspaces", WS_B, "members", "userI")));
+});
+
+test("62. the team index never exposes the teams of another account", async () => {
+  const i = dbFor("userI");
+  const b = dbFor("userB");
+  // userI is a member of both teams; userB only of the master workspace.
+  await assertSucceeds(
+    setDoc(doc(i, "userWorkspaces", "userI", "workspaces", WORKSPACE), { workspaceId: WORKSPACE }),
+  );
+  await assertSucceeds(
+    setDoc(doc(i, "userWorkspaces", "userI", "workspaces", WS_B), { workspaceId: WS_B }),
+  );
+  await assertFails(getDoc(doc(b, "userWorkspaces", "userI", "workspaces", WS_B)));
+  const mine = await getDocs(collection(i, "userWorkspaces", "userI", "workspaces"));
+  assert.equal(mine.docs.length, 2);
+  // The other account sees only its own index (empty).
+  const theirs = await getDocs(collection(b, "userWorkspaces", "userB", "workspaces"));
+  assert.equal(theirs.docs.length, 0);
 });
 
