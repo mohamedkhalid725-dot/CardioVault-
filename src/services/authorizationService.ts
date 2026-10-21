@@ -109,6 +109,30 @@ export const AuthorizationService = {
   },
 
   /**
+   * Promotes the authenticated account to the platform owner profile after the
+   * /platformOwners document confirmed ownership. Ownership is a document, not an
+   * e-mail address, so this is the async half of the check in the sync resolver.
+   */
+  applyPlatformOwner(firebaseUser: { uid: string; email?: string | null; displayName?: string | null }): UserProfile {
+    const ownerProfile: UserProfile = {
+      userId: firebaseUser.uid,
+      name: firebaseUser.displayName || 'Dr. Mohamed Khalid',
+      email: (firebaseUser.email || '').trim().toLowerCase(),
+      role: 'department_admin',
+      departmentId: 'dept-cardiology',
+      assignedUnitIds: [],
+      status: 'active',
+      permissions: ['all'],
+      createdAt: '2026-09-01T08:00:00.000Z',
+      updatedAt: new Date().toISOString(),
+    };
+    const users = this.getUsers().filter(user => user.userId !== ownerProfile.userId && String(user.email || '').toLowerCase() !== ownerProfile.email);
+    this.saveUsers([...users, ownerProfile]);
+    this.setCurrentUser(ownerProfile);
+    return ownerProfile;
+  },
+
+  /**
    * Resolves or creates a clinical UserProfile strictly from an authenticated Firebase user.
    * Enforces: Firebase Authentication -> Firebase UID -> UserProfile -> Role -> Department -> Unit Scope.
    */
@@ -401,6 +425,13 @@ export const AuthorizationService = {
     if (user.role === 'department_admin') {
       return units;
     }
+    // The platform owner sees every unit whether or not a local clinical profile
+    // lists them: ownership is the grant, the roster is not. Read the stored
+    // workspace access directly to avoid importing workspaceAccess (cycles).
+    try {
+      const ownerState = JSON.parse(localStorage.getItem('cardiovault_active_workspace_access_v1') || 'null');
+      if (ownerState?.role === 'owner' && ownerState?.workspaceId) return units;
+    } catch { /* fall through to the roster filter */ }
     return units.filter(unit => {
       if (user.assignedUnitIds.includes(unit.id)) return true;
       if (this.hasValidTemporaryUnit(user, unit.id)) return true;

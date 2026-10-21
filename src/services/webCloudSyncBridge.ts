@@ -4,7 +4,7 @@ import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where } from './webFirebase';
-import { MASTER_ACCOUNT_EMAIL, ensureOwnerWorkspace, getActiveWorkspaceId, type WorkspaceAccessState } from './workspaceAccess';
+import { ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId, type WorkspaceAccessState } from './workspaceAccess';
 
 const SCHEMA_VERSION=12;
 const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
@@ -46,8 +46,9 @@ function mergeClinicalMedia(localPatient:any, cloudPatient:any): any {
 }
 
 async function accessForUser(uid:string):Promise<WorkspaceAccessState|null>{
-  const user=webCurrentUser();
-  if(user?.email?.toLowerCase()===MASTER_ACCOUNT_EMAIL.toLowerCase()){
+  // Ownership is the /platformOwners document (the same check the rules make),
+  // not the e-mail address: a renamed or migrated owner account keeps working.
+  if(await isMasterAccount()){
     // Master bootstrap stays pinned to the legacy master workspace.
     const ownerState=await ensureOwnerWorkspace();
     if(!ownerState)return null;

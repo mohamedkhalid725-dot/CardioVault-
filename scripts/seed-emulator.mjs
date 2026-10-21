@@ -4,26 +4,53 @@
  *
  *   1. npm run emulators:start     (Firestore 8080, Auth 9099, Storage 9199)
  *   2. npm run emulators:seed
+ *   3. npm run dev:emulator        (Vite on http://localhost:5173, emulator mode)
  *
  * Everything written here is synthetic: the patients are called "DEMO PATIENT A/B/C",
  * the hospital is "Demo Hospital Cardiology" and the accounts use @emulator.test
  * addresses. No real patient data is ever involved.
+ *
+ * The shape mirrors the current security contract:
+ *   - ownership is /platformOwners/{uid}, never a membership row;
+ *   - the platform owner is NOT in any unit's team roster;
+ *   - unit capacity is a bed document set plus the provisioning window;
+ *   - a unit's consultant is a single slot (units/{id}.consultantUid);
+ *   - invites are hashed, single-use and mirrored in /invites/{hash}.
  *
  * The Firestore emulator accepts `Authorization: Bearer owner` to bypass the
  * security rules, so plain fetch against the emulator REST API is enough and no
  * extra npm dependency is required.
  */
 
+import { createHash } from 'node:crypto';
+
 const PROJECT_ID = 'cardiovault-emulator-test';
 const FIRESTORE_HOST = 'http://127.0.0.1:8080';
 const AUTH_HOST = 'http://127.0.0.1:9099';
+// The Auth emulator serves the Identity Toolkit API under this prefix; the bare
+// root only answers the emulator admin endpoints.
+const AUTH_API = `${AUTH_HOST}/identitytoolkit.googleapis.com/v1`;
 const API_KEY = 'fake-api-key';
 const OWNER_TOKEN = 'owner';
 
-const DOCTOR = { email: 'doctor@emulator.test', password: 'Test1234!' };
-const NURSE = { email: 'nurse@emulator.test', password: 'Test1234!' };
+const PASSWORD = 'Test1234!';
+const OWNER = { email: 'doctor@emulator.test', password: PASSWORD };
+const RESIDENT = { email: 'resident@emulator.test', password: PASSWORD };
+const NURSE = { email: 'nurse@emulator.test', password: PASSWORD };
+const NEWCOMER = { email: 'newcomer@emulator.test', password: PASSWORD };
 
-const WORKSPACE_ID = 'ws_demo_hospital';
+// Must match MASTER_WORKSPACE_ID in src/services/workspaceAccess.ts so the
+// owner's boot sequence lands on the seeded data instead of creating an empty one.
+const WORKSPACE_ID = 'cardiovault_master_workspace';
+
+const CCU = 'unit-ccu-1';
+const ICU = 'unit-icu-1';
+
+// Plain-text demo codes, hashed below exactly like the client does.
+const ACCESS_CODE = 'CV-DEMO-CCU1-2026';
+const INVITE_CODE = 'CV-JOIN-ICU-2026';
+
+const DAY = 86400000;
 
 /** Firestore REST API value encoding. */
 function toValue(value) {
@@ -76,74 +103,33 @@ async function readJson(response) {
 
 /** Looks up an existing emulator account so repeated seeds stay idempotent. */
 async function findExistingUid(email, password) {
-  // 1) The emulator admin account listing is the cheapest lookup.
   try {
-    const response = await fetch(`${AUTH_HOST}/emulator/v1/projects/${PROJECT_ID}/accounts`);
-    if (response.ok) {
-      const body = await readJson(response);
-      const users = Array.isArray(body?.users) ? body.users : [];
-      const match = users.find(
-        (user) => String(user?.email || '').toLowerCase() === email.toLowerCase(),
-      );
-      if (match?.localId) return match.localId;
-    }
-  } catch {
-    // fall through to the identity toolkit endpoints
-  }
-
-  // 2) accounts:lookup by email.
-  try {
-    const response = await fetch(`${AUTH_HOST}/accounts:lookup?key=${API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: [email] }),
-    });
-    const body = await readJson(response);
-    const match = Array.isArray(body?.users) ? body.users[0] : null;
-    if (match?.localId) return match.localId;
-  } catch {
-    // fall through to the sign-in fallback
-  }
-
-  // 3) Sign in and look the account up with the returned id token.
-  try {
-    const signIn = await fetch(`${AUTH_HOST}/accounts:signInWithPassword?key=${API_KEY}`, {
+    const response = await fetch(`${AUTH_API}/accounts:signInWithPassword?key=${API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, returnSecureToken: true }),
     });
-    const signInBody = await readJson(signIn);
-    if (signIn.ok && signInBody?.idToken) {
-      const response = await fetch(`${AUTH_HOST}/accounts:lookup?key=${API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: signInBody.idToken }),
-      });
-      const body = await readJson(response);
-      const match = Array.isArray(body?.users) ? body.users[0] : null;
-      if (match?.localId) return match.localId;
-    }
+    const body = await readJson(response);
+    if (body?.localId) return body.localId;
   } catch {
-    // no usable account found
+    // fall through
   }
-
-  throw new Error(`Could not resolve an emulator uid for ${email}.`);
+  return null;
 }
 
 /** Creates the account, or reuses it when the emulator already knows it. */
 async function ensureUser({ email, password }) {
-  const response = await fetch(`${AUTH_HOST}/accounts:signUp?key=${API_KEY}`, {
+  const response = await fetch(`${AUTH_API}/accounts:signUp?key=${API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password, returnSecureToken: true }),
   });
   const body = await readJson(response);
-  if (response.ok && body?.localId) {
-    return { uid: body.localId, created: true };
-  }
+  if (response.ok && body?.localId) return { uid: body.localId, created: true };
   const message = String(body?.error?.message || body?.message || response.statusText);
   if (/EMAIL_EXISTS/i.test(message)) {
-    return { uid: await findExistingUid(email, password), created: false };
+    const uid = await findExistingUid(email, password);
+    if (uid) return { uid, created: false };
   }
   throw new Error(`Could not create the emulator account ${email}: ${message}`);
 }
@@ -157,7 +143,7 @@ async function assertEmulatorsReachable() {
     try {
       await fetch(target.url, { method: 'GET' });
     } catch (error) {
-      console.error(`\n✖ The ${target.name} emulator is not reachable at ${target.url}.`);
+      console.error(`\n[!] The ${target.name} emulator is not reachable at ${target.url}.`);
       console.error('  Start the emulators first:  npm run emulators:start');
       console.error(`  (${String(error?.message || error)})\n`);
       process.exit(1);
@@ -165,12 +151,17 @@ async function assertEmulatorsReachable() {
   }
 }
 
+const sha256 = (text) => createHash('sha256').update(text).digest('hex');
+
 async function main() {
   await assertEmulatorsReachable();
 
-  const now = new Date().toISOString();
-  const doctor = await ensureUser(DOCTOR);
+  const now = Date.now();
+  const iso = new Date(now).toISOString();
+  const owner = await ensureUser(OWNER);
+  const resident = await ensureUser(RESIDENT);
   const nurse = await ensureUser(NURSE);
+  const newcomer = await ensureUser(NEWCOMER);
 
   const written = [];
   const write = async (path, data) => {
@@ -178,85 +169,139 @@ async function main() {
     written.push(path);
   };
 
-  // Workspace -------------------------------------------------------------
+  // Ownership ------------------------------------------------------------
+  // The only thing that grants administrative authority. Written from the
+  // console in production; here the seed plays the console's role.
+  await write(`platformOwners/${owner.uid}`, {
+    email: OWNER.email,
+    grantedAt: iso,
+    note: 'Emulator demo owner - synthetic account',
+  });
+
+  // Workspace ------------------------------------------------------------
   await write(`workspaces/${WORKSPACE_ID}`, {
-    ownerUid: doctor.uid,
-    ownerEmail: DOCTOR.email,
     name: 'Demo Hospital Cardiology',
     schemaVersion: 12,
-    createdAt: now,
+    createdAt: iso,
+    createdBy: owner.uid,
+    createdByEmail: OWNER.email,
   });
 
-  // Members ---------------------------------------------------------------
-  await write(`workspaces/${WORKSPACE_ID}/members/${doctor.uid}`, {
-    uid: doctor.uid,
-    workspaceId: WORKSPACE_ID,
-    role: 'owner',
-    active: true,
-    forceReauth: false,
-    unitIds: [],
-    unitId: '',
-    accessCodeHash: '',
-    accessCodeHashes: [],
-    joinedAt: now,
-    updatedAt: now,
-  });
+  // Membership + team profiles -------------------------------------------
+  // The owner has NO membership row and NO unit assignment: he sees every unit
+  // through /platformOwners, and must never appear in a unit's roster.
+  const members = [
+    {
+      account: resident,
+      name: 'Dr. Demo Resident',
+      role: 'resident',
+      units: [CCU, ICU],
+    },
+    {
+      account: nurse,
+      name: 'Nurse Demo',
+      role: 'nurse',
+      units: [CCU],
+    },
+  ];
 
-  await write(`workspaces/${WORKSPACE_ID}/members/${nurse.uid}`, {
-    uid: nurse.uid,
-    workspaceId: WORKSPACE_ID,
-    role: 'clinical_editor',
-    active: true,
-    forceReauth: false,
-    unitId: 'unit-ccu-1',
-    unitIds: ['unit-ccu-1'],
-    joinedAt: now,
-    updatedAt: now,
-  });
+  for (const member of members) {
+    const { uid } = member.account;
+    await write(`workspaces/${WORKSPACE_ID}/members/${uid}`, {
+      uid,
+      workspaceId: WORKSPACE_ID,
+      role: 'clinical_editor',
+      active: true,
+      forceReauth: false,
+      unitId: member.units[0],
+      unitIds: member.units,
+      accessCodeHash: '',
+      accessCodeHashes: [],
+      joinedAt: iso,
+      updatedAt: iso,
+    });
+    await write(`workspaces/${WORKSPACE_ID}/team/${uid}`, {
+      uid,
+      userId: uid,
+      workspaceId: WORKSPACE_ID,
+      name: member.name,
+      email: member.account.email,
+      role: member.role,
+      departmentId: 'dept-cardiology',
+      assignedUnitIds: member.units,
+      status: 'active',
+      updatedAt: iso,
+    });
+  }
 
-  // Team directory --------------------------------------------------------
-  await write(`workspaces/${WORKSPACE_ID}/team/${doctor.uid}`, {
-    uid: doctor.uid,
-    userId: doctor.uid,
-    name: 'Dr. Demo Owner',
-    email: DOCTOR.email,
-    role: 'department_admin',
-    departmentId: 'dept-cardiology',
-    assignedUnitIds: ['unit-ccu-1'],
-    status: 'active',
-    updatedAt: now,
-  });
+  // Units ----------------------------------------------------------------
+  // createdAtMs is hours in the past so the one-hour bed provisioning window is
+  // closed: capacity already belongs to the owner on these units.
+  const units = [
+    {
+      id: CCU,
+      name: 'CCU 1 (Demo)',
+      type: 'ccu',
+      totalBeds: 6,
+      // The single consultant slot is taken, so the join screen must NOT offer
+      // the Consultant option for this unit.
+      consultantUid: resident.uid,
+      consultantName: 'Dr. Demo Resident',
+    },
+    {
+      id: ICU,
+      name: 'ICU 1 (Demo)',
+      type: 'icu',
+      totalBeds: 4,
+      // Free slot: a newcomer may claim Consultant on first join.
+      consultantUid: '',
+      consultantName: '',
+    },
+  ];
 
-  await write(`workspaces/${WORKSPACE_ID}/team/${nurse.uid}`, {
-    uid: nurse.uid,
-    userId: nurse.uid,
-    name: 'Nurse Demo',
-    email: NURSE.email,
-    role: 'nurse',
-    departmentId: 'dept-cardiology',
-    assignedUnitIds: ['unit-ccu-1'],
-    status: 'active',
-    updatedAt: now,
-  });
+  for (const unit of units) {
+    await write(`workspaces/${WORKSPACE_ID}/units/${unit.id}`, {
+      unitId: unit.id,
+      id: unit.id,
+      name: unit.name,
+      type: unit.type,
+      totalBeds: unit.totalBeds,
+      createdBy: owner.uid,
+      createdAtMs: now - 3 * 60 * 60 * 1000,
+      capacityLocked: true,
+      consultantUid: unit.consultantUid,
+      consultantName: unit.consultantName,
+      updatedAt: iso,
+    });
+  }
 
-  // Units -----------------------------------------------------------------
-  await write(`workspaces/${WORKSPACE_ID}/units/unit-ccu-1`, {
-    unitId: 'unit-ccu-1',
-    name: 'CCU 1 (Demo)',
-    type: 'ccu',
-  });
+  // Beds live in ONE workspace-level collection with a unitId, which is what the
+  // app reads and what capacity is counted from - not per-unit subcollections.
+  const bedOccupant = {
+    [`${CCU}:1`]: 'demo-patient-1',
+    [`${CCU}:2`]: 'demo-patient-2',
+    [`${ICU}:1`]: 'demo-patient-3',
+  };
+  for (const unit of units) {
+    for (let index = 1; index <= unit.totalBeds; index += 1) {
+      const patientId = bedOccupant[`${unit.id}:${index}`] || '';
+      await write(`workspaces/${WORKSPACE_ID}/beds/bed-${unit.id}-${index}`, {
+        id: `bed-${unit.id}-${index}`,
+        unitId: unit.id,
+        bedNumber: String(index),
+        status: patientId ? 'Stable' : 'Empty',
+        ...(patientId ? { patientId } : {}),
+        schemaVersion: 12,
+      });
+    }
+  }
 
-  await write(`workspaces/${WORKSPACE_ID}/units/unit-icu-1`, {
-    unitId: 'unit-icu-1',
-    name: 'ICU 1 (Demo)',
-    type: 'icu',
-  });
-
-  // Patients (obviously fake) ---------------------------------------------
+  // Patients (obviously fake) --------------------------------------------
   const patients = [
     {
       id: 'demo-patient-1',
-      unitId: 'unit-ccu-1',
+      unitId: CCU,
+      bedId: `bed-${CCU}-1`,
       name: 'DEMO PATIENT A',
       age: 61,
       gender: 'male',
@@ -264,7 +309,8 @@ async function main() {
     },
     {
       id: 'demo-patient-2',
-      unitId: 'unit-ccu-1',
+      unitId: CCU,
+      bedId: `bed-${CCU}-2`,
       name: 'DEMO PATIENT B',
       age: 54,
       gender: 'female',
@@ -272,7 +318,8 @@ async function main() {
     },
     {
       id: 'demo-patient-3',
-      unitId: 'unit-icu-1',
+      unitId: ICU,
+      bedId: `bed-${ICU}-1`,
       name: 'DEMO PATIENT C',
       age: 70,
       gender: 'male',
@@ -283,38 +330,88 @@ async function main() {
   for (const patient of patients) {
     await write(`workspaces/${WORKSPACE_ID}/patients/${patient.id}`, {
       patientId: patient.id,
+      fullName: patient.name,
       name: patient.name,
       unitId: patient.unitId,
+      bedId: patient.bedId,
       age: patient.age,
       gender: patient.gender,
       diagnosis: patient.diagnosis,
-      status: 'admitted',
-      admissionDate: now,
-      createdAt: now,
-      updatedAt: now,
+      status: 'Stable',
+      isArchived: false,
+      admissionDate: iso,
+      createdAt: iso,
+      updatedAt: iso,
+      schemaVersion: 12,
     });
   }
 
-  // Access code -----------------------------------------------------------
-  await write('accessCodes/demo-hash-demo', {
+  // Subscription clock ---------------------------------------------------
+  // An active paid period, so the app is writable and the card can be renewed.
+  await write(`workspaces/${WORKSPACE_ID}/subscription/current`, {
+    status: 'active',
+    plan: 'standard',
+    trialStartedAtMs: now - 40 * DAY,
+    trialEndsAtMs: now - 37 * DAY,
+    periodEndMs: now + 20 * DAY,
+    graceEndsAtMs: now + 22 * DAY,
+    updatedBy: owner.uid,
+    updatedAtMs: now,
+  });
+
+  // Access code (permanent, per unit) ------------------------------------
+  const accessCodeHash = sha256(ACCESS_CODE);
+  await write(`accessCodes/${accessCodeHash}`, {
     workspaceId: WORKSPACE_ID,
-    unitId: 'unit-ccu-1',
+    unitId: CCU,
     unitName: 'CCU 1 (Demo)',
     role: 'clinical_editor',
     active: true,
+    createdBy: owner.uid,
+    createdAtMs: now,
   });
 
-  console.log('\n✔ Emulator seed complete (project: ' + PROJECT_ID + ')');
+  // Temporary invite (single use, expires) -------------------------------
+  const inviteHash = sha256(INVITE_CODE);
+  await write(`workspaces/${WORKSPACE_ID}/invites/${inviteHash}`, {
+    workspaceId: WORKSPACE_ID,
+    unitId: ICU,
+    unitName: 'ICU 1 (Demo)',
+    role: 'clinical_editor',
+    clinicalRole: 'consultant',
+    createdBy: resident.uid,
+    createdAtMs: now,
+    expiresAtMs: now + 7 * DAY,
+    used: false,
+    revoked: false,
+    code: INVITE_CODE,
+  });
+  await write(`invites/${inviteHash}`, {
+    workspaceId: WORKSPACE_ID,
+    unitId: ICU,
+    unitName: 'ICU 1 (Demo)',
+    role: 'clinical_editor',
+    clinicalRole: 'consultant',
+    createdBy: resident.uid,
+    createdAtMs: now,
+    expiresAtMs: now + 7 * DAY,
+  });
+
+  console.log(`\n[ok] Emulator seed complete (project: ${PROJECT_ID})`);
   console.log(`  Documents written: ${written.length}`);
-  for (const path of written) console.log(`    - ${path}`);
-  console.log('\n  Login accounts:');
-  console.log(`    owner / clinical editor : ${DOCTOR.email} / ${DOCTOR.password}  (uid ${doctor.uid}${doctor.created ? '' : ', reused'})`);
-  console.log(`    clinical editor         : ${NURSE.email} / ${NURSE.password}  (uid ${nurse.uid}${nurse.created ? '' : ', reused'})`);
-  console.log(`    workspace               : ${WORKSPACE_ID}`);
-  console.log('  All seeded data is synthetic demo data - no real patient information.\n');
+  console.log(`  Workspace: ${WORKSPACE_ID}`);
+  console.log('\n  Login accounts (email / password):');
+  console.log(`    Platform owner   : ${OWNER.email} / ${PASSWORD}   (uid ${owner.uid})`);
+  console.log(`    Resident         : ${RESIDENT.email} / ${PASSWORD}   (uid ${resident.uid})`);
+  console.log(`    Nurse            : ${NURSE.email} / ${PASSWORD}   (uid ${nurse.uid})`);
+  console.log(`    Newcomer (no unit): ${NEWCOMER.email} / ${PASSWORD}   (uid ${newcomer.uid})`);
+  console.log('\n  Demo codes:');
+  console.log(`    Unit access code (CCU)  : ${ACCESS_CODE}`);
+  console.log(`    Temp invite (ICU, 7d)   : ${INVITE_CODE}   single use`);
+  console.log('\n  All seeded data is synthetic demo data - no real patient information.\n');
 }
 
 main().catch((error) => {
-  console.error('\n✖ Seeding failed: ' + String(error?.message || error) + '\n');
+  console.error(`\n[!] Seeding failed: ${String(error?.message || error)}\n`);
   process.exit(1);
 });
