@@ -101,20 +101,33 @@ deletable by the owner.
 from every membership that used it. A member with no units left gets
 `active: false` + `forceReauth: true`, which makes `member()` false immediately.
 
-## 8. `workspaces/{ws}/team/{uid}` — team directory (**residual leak**)
+## 8. `workspaces/{ws}/team/{uid}` — the account directory
 
 | Operation | Allowed | Why |
 |---|---|---|
-| `get`, `list` | `adminOf` **or `member(workspaceId)`** | Currently: any member of the workspace |
+| `get` | `adminOf`, or the account itself | A member may read his own profile only |
+| `list` | `adminOf` only | **A member can no longer enumerate the workspace** |
 | `create` | Owner, or the member himself, only as a non-privileged profile (`pending` / `nurse` / `resident` / `specialist`), `departmentId == 'dept-cardiology'`, `status == 'active'`, and `assignedUnitIds` a subset of his own membership units | The unit list is an access path, so it may not be inflated |
 | `update` | Owner, or the member changing only `name`, `role`, `roleSelectedAt`, `updatedAt` to a self-selectable title (`nurse`/`resident`/`specialist`) | No self-promotion to consultant / admin |
 | `delete` | `adminOf` | |
 
-**Why this is a leak:** `list` is workspace-wide. A member of Unit A can list the name
-and role of every colleague in Unit B. The intended replacement is the per-unit roster
-(`units/{unitId}/roster`), which is written as a service (`unitRoster.ts`) but has no
-Firestore rule yet, so it is currently denied. Until that rule lands, the Team screen
-for non-owner accounts is still fed from this collection. Flagged in the gaps section.
+This collection is now the owner's management surface, not a member directory. The
+workspace-wide leak it used to carry is closed: colleagues are read from the per-unit
+roster below.
+
+## 8b. `workspaces/{ws}/units/{unitId}/roster/{uid}` — who works in this unit
+
+| Operation | Allowed | Why |
+|---|---|---|
+| `get`, `list` | `adminOf`, a member of that unit, or the account itself | A roster is readable only inside its own unit |
+| `create`, `update` | `canWrite` + `request.resource.data.uid == uid` + (`adminOf`, or the account writing **its own** entry while already a member of the unit) | A member cannot add somebody else; the owner can write anybody's |
+| `delete` | `adminOf` | |
+
+This is the only directory a non-owner screen may use. Entries are written when a unit is
+granted (access code or invite redemption), when the owner edits a member, and when a
+member creates a unit. Removing a member from a unit deletes his roster entry, so a person
+who left stops appearing in that unit's directory.
+
 
 ## 9. `workspaces/{ws}/units/{unitId}` — units
 
@@ -183,6 +196,16 @@ cannot attach a chunk to another unit's image.
 | `create` | `canWrite` + (`adminOf` or `member(ws)`) + `actorUid == request.auth.uid` + `workspaceId == ws` | A member may record his own action; nobody can attribute an event to somebody else |
 | `update`, `delete` | Never | Append-only |
 
+## 15b. `workspaces/{ws}/units/{unitId}/audit/{eventId}` — unit audit
+
+| Operation | Allowed | Why |
+|---|---|---|
+| `get`, `list` | `adminOf` or a member of that unit | The unit's own trail |
+| `create` | `canWrite` + a member of that unit + `actorUid == request.auth.uid` + `data.unitId == unitId` + `data.workspaceId == ws` | You can only append, in your own name, to your own unit |
+| `update`, `delete` | Never | Append-only |
+
+The workspace-level trail (§15) stays for membership-level events and is owner-readable.
+
 ## 16. `workspaces/{ws}/subscription/{documentId}` — subscription clock
 
 | Operation | Allowed | Why |
@@ -210,50 +233,51 @@ workspace, while the platform owner keeps working. **No data is deleted on expir
 match /{document=**} { allow read, write: if false; }
 ```
 
-Everything not matched above — including `units/{unitId}/roster`,
-`units/{unitId}/audit`, the old top-level `/tasks` collection and any new collection
-somebody forgets to declare — is refused.
+Everything not matched above — including the old top-level `/tasks` collection and any new
+collection somebody forgets to declare — is refused. `appConfig/{documentId}` is the one
+exception: a signed-in account may `get` a release document (never `list`, never write), so
+the app can show a "new version available" banner without a server.
 
 ## 18. Hard rules, and exactly how far they go
 
 **"A member never sees members of units he does not belong to."**
 Enforced for clinical data (patients, beds, media, tasks) through
-`unitMember(workspaceId, unitId)`. Enforced for the membership collection by making
-`members` list owner-only. **Not yet enforced for `team`**: `list` there is
-`member(workspaceId)`. The per-unit roster that fixes this (`unitRoster.ts`) has no rule
-yet, so it is denied today. This is the largest remaining isolation gap.
+`unitMember(workspaceId, unitId)`; for the membership collection by making `members` list
+owner-only; and for people by making `team` list owner-only and feeding every non-owner
+directory from `units/{unitId}/roster`, whose `list` is itself unit-scoped. Rules tests
+43–52 cover this.
 
 **"No audit event is ever written for a unit that is not yours."**
-The workspace audit rule checks the actor and the workspace, but it does **not** check
-a `unitId` field, and the unit-scoped audit collection (`units/{unitId}/audit`) has no
-rule at all (default deny). So today: a member can append an event to the workspace
-trail naming any unit id, and cannot use the unit trail at all. The per-unit rule still
-has to be written.
+The unit trail (`units/{unitId}/audit`) requires membership of that exact unit, an
+`actorUid` equal to the caller, and a `unitId` field equal to the path. The workspace
+trail (`/audit`) stays for membership-level events and checks the actor, not a unit.
+
 
 ## 19. Known gaps / not covered yet
 
-1. **Team directory is workspace-wide readable.** See §8 and §18. Fix = rules for
-   `units/{unitId}/roster` + switch the Team screen to it for non-owner accounts.
-2. **Unit-scoped roster and unit-scoped audit have no rules.** Both services exist and
-   both are refused by the default-deny tail.
-3. **Workspace audit does not validate `unitId`.** A member can attach any unit id to an
-   event in the (owner-read) workspace trail.
-4. **No rate limiting on access codes or invites.** `/accessCodes/{hash}` and
+1. **No rate limiting on access codes or invites.** `/accessCodes/{hash}` and
    `/invites/{hash}` allow `get` to any signed-in account. Guessing is limited only by
    code entropy (10 characters from a 32-symbol alphabet, ~50 bits), not by throttling.
    Firebase App Check would raise the cost of guessing; it is **not** enforced in the
    rules (there is no `request.app` check anywhere).
-5. **Trial abuse is possible.** Workspace creation only needs a signed-in account, and
+2. **Trial abuse is possible.** Workspace creation only needs a signed-in account, and
    the creator may open a trial for each new workspace he creates. Nothing limits how
    many workspaces one account creates.
-6. **`/users/{uid}` is still fully writable by its own account.** No clinical data should
+3. **`/users/{uid}` is still fully writable by its own account.** No clinical data should
    be written there any more, but the rule still allows it.
-7. **No automated audit retention.** Append-only means nothing is deleted; the 24-month
+4. **No automated audit retention.** Append-only means nothing is deleted; the 24-month
    hot + yearly export policy is manual (and needs the Blaze plan).
-8. **Content is not validated, only identity and unit scope.** The rules check who you
+5. **Content is not validated, only identity and unit scope.** The rules check who you
    are and which unit a document belongs to; they do not check payload size, required
    clinical fields, or bed-count minimums (the 3-bed minimum is a product rule, not a
    rule in Firestore).
-9. **Expired invites are never cleaned up.** Clients filter them out; the documents stay.
-10. **No server-side audit of reads.** Reads are not logged, so "who opened this file"
-    cannot be answered from Firestore alone.
+6. **Expired invites are never cleaned up.** Clients filter them out; the documents stay.
+7. **No server-side audit of reads.** Reads are not logged, so "who opened this file"
+   cannot be answered from Firestore alone.
+8. **Rosters are not backfilled.** An account that joined before the roster existed sees
+   an empty Team screen until it redeems a code again or the owner saves it. That is a
+   visible gap, not a leak — the old workspace-wide list is no longer readable.
+9. **Roster removal is best-effort.** If deleting a person from a unit fails after his
+   membership was removed, a stale roster row can remain; it is still visible only to
+   that unit's members, and disappears the next time the owner saves that member.
+

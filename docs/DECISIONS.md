@@ -73,10 +73,8 @@ owner saying so. "Open" means a real question is still unanswered.
   cost the same, because pricing by bed would punish the units that need the app most.
 - **Consequence:** A unit's price is a property of the unit, not of its bed count. A
   clinic is a special unit shape priced at two normal units locally.
-- **Status:** **open** — the local and international prices are not equivalent
-  (1000 EGP ≈ USD 20 only at ~50 EGP/USD). Either the EGP price moves with the exchange
-  rate, or the two markets are deliberately priced differently. Not resolved here, do
-  not silently "fix" it in code.
+- **Status:** **locked** — USD 20 internationally is a deliberate premium over the local
+  price, confirmed by the owner on 2026-10-21. Do not "fix" the asymmetry in code.
 - **Also open:** what happens to a unit whose payment lapses while it holds patients —
   read-only (consistent with D5) is the assumption, but it has not been written down as
   a separate decision.
@@ -86,12 +84,12 @@ owner saying so. "Open" means a real question is still unanswered.
 - **Decision / Why:** The member who creates a unit sets its details and its bed count at
   creation. The unit stays **pending** until its payment is confirmed, and is then
   activated exactly as specified — same name, type and bed count, nothing silently
-  changed. **Minimum 3 beds per unit.**
+  changed. **Minimum 3 beds per unit, maximum 200.**
 - **Consequence:** A pending unit must be visible to its creator (and the owner) only.
   Payment confirmation is currently manual (the owner presses renew); automated
   confirmation needs Cloud Functions, i.e. the Blaze plan.
-- **Status:** locked — except the **maximum** bed count, which is **open** (not yet
-  decided, and not enforced anywhere in the rules).
+- **Status:** locked (minimum 3 and maximum 200, confirmed 2026-10-21). Neither bound is
+  enforced in the rules yet — it is a client rule until the unit-creation flow is built.
 
 ## D8 — Offline mode is read-only
 
@@ -177,3 +175,31 @@ owner saying so. "Open" means a real question is still unanswered.
   `deploy-department-system-v1-pages.yml`, and it appears in several branch lists) — they
   should be treated as legacy, not as live deployment paths.
 - **Status:** locked
+
+## D16 — A patient file can be shared across units, not copied
+
+- **Decision / Why:** When a member adds a patient whose normalised name already exists in
+  **another unit he belongs to**, the app shows the same English prompt as for a
+  same-unit match, naming the unit and the existing MRN: *"A patient with this name is
+  already registered in {unit} ({MRN}). Do you want this patient to share the same file?"*
+  If he accepts, the **same clinical file becomes visible to both units** (option B chosen
+  by the owner on 2026-10-21). The clinical reason: most shared members are the same
+  department split across floors, so one file is the truth.
+- **Consequence:** Every member of the second unit can read the whole file, including the
+  first unit's notes, results and media. That is accepted deliberately. It requires a
+  `unitIds` array on the patient document (the set of units that may see it) and a rules
+  change: read is allowed if the caller belongs to **any** unit in that array. A
+  cross-unit lookup is only performed across units the caller already belongs to; a unit
+  he is not in is never queried, so the prompt itself can never leak.
+- **Status:** locked (not implemented yet)
+
+## D17 — A workspace picker is needed (B3)
+
+- **Decision / Why:** The owner confirmed he really does have clinicians who work in more
+  than one team with the same Google account. Without a picker, the app can only hold one
+  active team per device and switching means leaving the current one.
+- **Consequence:** Each account gets a small `userWorkspaces/{uid}` index, written when it
+  joins a team, and the app shows a team chooser after sign-in when the index has more
+  than one entry. The picker only lists indexed teams, and opening a team still requires a
+  real membership document — the index is a hint, never an authorisation.
+- **Status:** locked (not implemented yet)

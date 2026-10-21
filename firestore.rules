@@ -482,6 +482,15 @@ service cloud.firestore {
       }
     }
 
+    // ═══ App release metadata ═══════════════════════════════════════════════
+    // One document the signed-in client reads to decide whether a newer build
+    // exists on the store. Written from the console only, so no account can
+    // advertise a fake update to another account.
+    match /appConfig/{documentId} {
+      allow get: if signedIn();
+      allow list, create, update, delete: if false;
+    }
+
     // ═══ Platform owner registry ════════════════════════════════════════════
     // Written only from the Firebase console: no client may create, modify or
     // list it. A uid can read its own entry so the app knows which screens to

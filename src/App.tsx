@@ -61,8 +61,10 @@ const AppContent:React.FC=()=>{const{auth,currentView,setCurrentView,setCurrentP
 // Boot splash readiness (replaces the old unconditional 5s timer):
 //   ready  = auth state resolved AND the first data-load attempt has finished
 //   floor  = ~600ms so the branded splash never flickers for one frame
-//   ceiling= ~3s so a stalled network can never trap the user on the splash
-const SPLASH_MIN_VISIBLE_MS=600, SPLASH_MAX_VISIBLE_MS=3000, SPLASH_FADE_MS=280;
+//   ceiling= ~5s so a stalled network can never trap the user on the splash,
+//            while still giving the native session restore its full window (a
+//            shorter ceiling could flash the Login screen at a returning user)
+const SPLASH_MIN_VISIBLE_MS=600, SPLASH_MAX_VISIBLE_MS=5000, SPLASH_FADE_MS=280;
 const persistedSessionAtBoot=useState(()=>!!StorageService.getAuth()?.isAuthenticated)[0];
 const[authResolved,setAuthResolved]=useState(()=>!persistedSessionAtBoot);
 const[firstDataAttemptDone,setFirstDataAttemptDone]=useState(()=>!persistedSessionAtBoot);
