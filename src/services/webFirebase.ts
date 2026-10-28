@@ -43,37 +43,64 @@ import {
 // emulator`) to point the web build at the local Firestore / Auth / Storage
 // emulators instead of the production project. When the flag is off every
 // value below falls back to the exact production configuration as before.
-export const FIREBASE_EMULATOR_ENABLED = import.meta.env.VITE_FIREBASE_EMULATOR === 'true';
-export const FIREBASE_EMULATOR_PROJECT_ID = String(
-  import.meta.env.VITE_FIREBASE_EMULATOR_PROJECT_ID || 'cardiovault-emulator-test',
-);
+// Fail-fast before any config value is computed: a local preview without the
+// emulator flag would inherit the production fallbacks below and write live data.
+import { assertNoProductionFirebase } from '../config/localPreview';
+import {
+  derivedFirebaseHosts,
+  isEmulatorEnv,
+  isLocalPreviewEnv,
+  resolveFirebaseProjectId,
+} from '../config/firebaseProject.ts';
+
+// Defence in depth: the resolver below is the real gate, but a preview entry
+// point that forgot to configure the emulator still fails here first.
+assertNoProductionFirebase();
+
+const ENV = import.meta.env;
+
+export const LOCAL_PREVIEW_ENABLED = isLocalPreviewEnv(ENV);
+export const FIREBASE_EMULATOR_ENABLED = isEmulatorEnv(ENV);
+
+// Resolves (or throws) before any other config value is derived. A preview or
+// dev session can never silently inherit the production project any more.
+export const FIREBASE_PROJECT_ID = resolveFirebaseProjectId({
+  env: ENV,
+  isDevServer: ENV.DEV === true,
+});
+export const FIREBASE_EMULATOR_PROJECT_ID = FIREBASE_PROJECT_ID;
 
 const EMULATOR_HOST = '127.0.0.1';
 const EMULATOR_AUTH_PORT = 9099;
 const EMULATOR_FIRESTORE_PORT = 8080;
 const EMULATOR_STORAGE_PORT = 9199;
 
+// Auth domain / storage bucket are derived from the resolved project id unless
+// they are set explicitly, so they can never point at a different project than
+// the Firestore instance that is actually used.
+const derived = derivedFirebaseHosts(FIREBASE_PROJECT_ID);
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDo3vyGKW_Uf9qOWiiAe68euTaOA92xrmw',
+  apiKey: ENV.VITE_FIREBASE_API_KEY || 'AIzaSyDo3vyGKW_Uf9qOWiiAe68euTaOA92xrmw',
   authDomain: FIREBASE_EMULATOR_ENABLED
-    ? `${FIREBASE_EMULATOR_PROJECT_ID}.firebaseapp.com`
-    : import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'ccu-notebook.firebaseapp.com',
-  // The emulators are started with --project cardiovault-emulator-test and they
-  // reject requests carrying a different project id, so the id is swapped when
-  // the emulator flag is on.
-  projectId: FIREBASE_EMULATOR_ENABLED
-    ? FIREBASE_EMULATOR_PROJECT_ID
-    : import.meta.env.VITE_FIREBASE_PROJECT_ID || 'ccu-notebook',
+    ? `${FIREBASE_PROJECT_ID}.firebaseapp.com`
+    : ENV.VITE_FIREBASE_AUTH_DOMAIN || derived.authDomain,
+  projectId: FIREBASE_PROJECT_ID,
   storageBucket: FIREBASE_EMULATOR_ENABLED
-    ? `${FIREBASE_EMULATOR_PROJECT_ID}.firebasestorage.app`
-    : import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'ccu-notebook.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '963615758407',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:963615758407:web:1450d70d93670dc350b962',
+    ? `${FIREBASE_PROJECT_ID}.firebasestorage.app`
+    : ENV.VITE_FIREBASE_STORAGE_BUCKET || derived.storageBucket,
+  messagingSenderId: ENV.VITE_FIREBASE_MESSAGING_SENDER_ID || '963615758407',
+  appId: ENV.VITE_FIREBASE_APP_ID || '1:963615758407:web:1450d70d93670dc350b962',
 };
 
 // The native Android/iOS builds use the Capacitor Firebase plugins.
 // Do not initialize Firebase Web Auth/Firestore/Storage inside the native WebView.
 // Keeping the Web SDK lazy also prevents IndexedDB persistence from touching startup.
+if (LOCAL_PREVIEW_ENABLED && firebaseConfig.projectId === 'ccu-notebook') {
+  throw new Error(
+    'LOCAL PREVIEW BLOCKED: resolved Firebase project is the production project (ccu-notebook).',
+  );
+}
 export const firebaseApp: FirebaseApp = initializeApp(firebaseConfig);
 
 let webAuthInstance: Auth | null = null;
