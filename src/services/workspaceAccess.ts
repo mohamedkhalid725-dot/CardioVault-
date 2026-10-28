@@ -7,6 +7,7 @@ import { AuthorizationService } from './authorizationService';
 import { UserProfile, ClinicalRole } from '../types/clinical';
 import { listRosterForUnits, upsertRosterEntry, removeRosterEntry } from './unitRoster';
 import { registerWorkspaceInIndex, readWorkspaceName } from './workspaceIndex';
+import { isLocalPreview } from '../config/localPreview';
 export type WorkspaceRole='owner'|'view_only'|'clinical_editor';
 export interface WorkspaceAccessState{workspaceId:string;role:WorkspaceRole;unitId:string|null;unitName:string|null;unitIds?:string[];unitNames?:Record<string,string>;}
 export interface UnitAccessCode{unitId:string;unitName:string;code:string;role:Exclude<WorkspaceRole,'owner'>;active:boolean;}
@@ -452,6 +453,9 @@ export async function removeTeamDirectoryMember(userId:string):Promise<void>{
   AuthorizationService.saveUsers(users);
 }
 export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
+  // The isolated local preview never validates against a workspace document:
+  // there is no cloud session by design (mock data only).
+  if(isLocalPreview())return true;
   const id=await uid();
   if(!id)return null;
   if(await isMasterAccount())return !!(await ensureOwnerWorkspace());

@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ShieldAlert,
   FlaskConical,
+  Crown,
 } from 'lucide-react';
 import { useApp, AppView } from '../../context/AppContext';
 
@@ -24,6 +25,15 @@ interface MoreDrawerModalProps {
 
 export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClose }) => {
   const { currentUser, setCurrentView, currentView } = useApp();
+
+  const ownerOnly = (() => {
+    try {
+      const raw = localStorage.getItem('cardiovault_active_workspace_access_v1');
+      return String(raw ? JSON.parse(raw)?.role || '' : '') === 'owner';
+    } catch {
+      return false;
+    }
+  })();
 
   if (!isOpen) return null;
 
@@ -60,6 +70,49 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
       subtitle: 'Department staff, roles, and shift coverage',
       icon: Users2,
       color: 'text-indigo-500 bg-indigo-500/10',
+    },
+    {
+      id: 'operation-waiting',
+      title: 'Patient Waiting List',
+      subtitle: 'Patient intake, unit waiting requests, operation preparation and booking',
+      icon: ClipboardList,
+      color: 'text-orange-500 bg-orange-500/10',
+    },
+    {
+      id: 'master-file',
+      title: 'Patient File & Archive',
+      subtitle: 'Longitudinal patient identity, visit timeline and historical admissions',
+      icon: Archive,
+      color: 'text-amber-500 bg-amber-500/10',
+    },
+    {
+      id: 'clinic',
+      title: 'Clinic Mode',
+      subtitle: 'Clinic dashboard, appointments, consultations and billing records',
+      icon: Pill,
+      color: 'text-rose-500 bg-rose-500/10',
+    },
+    {
+      id: 'owner-requests',
+      title: 'Owner Panel',
+      subtitle: 'Subscription requests, approvals and 30-day codes (owner)',
+      icon: Crown,
+      color: 'text-violet-500 bg-violet-500/10',
+      adminOnly: true,
+    },
+    {
+      id: 'institution-setup',
+      title: 'Institution Setup',
+      subtitle: 'Institution, unit types, beds and plan — local draft',
+      icon: Building2,
+      color: 'text-sky-500 bg-sky-500/10',
+    },
+    {
+      id: 'payments',
+      title: 'Subscription & Payment',
+      subtitle: 'Lifecycle states and manual InstaPay reference (Pending only)',
+      icon: ShieldCheck,
+      color: 'text-emerald-500 bg-emerald-500/10',
     },
     {
       id: 'protocols',
@@ -122,7 +175,7 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {menuItems.map(item => {
+          {menuItems.filter(item => !item.adminOnly || ownerOnly).map(item => {
             const Icon = item.icon;
             const active = currentView === item.id;
             return (

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Download, Sparkles, X } from 'lucide-react';
 import { checkForUpdate, dismissUpdate, isUpdateDismissed, openUpdateUrl, UpdateAvailable } from '../../services/updateService';
+import { isLocalPreview } from '../../config/localPreview';
 
 /**
  * Top-of-app "new version available" notice. Mounted once by App.tsx inside the
@@ -12,6 +13,9 @@ export const UpdateBanner: React.FC = () => {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    // The isolated local preview must never read the 'appConfig/release' document:
+    // there is no cloud session in the preview by design.
+    if (isLocalPreview()) return;
     let active = true;
     const run = async () => {
       const found = await checkForUpdate();

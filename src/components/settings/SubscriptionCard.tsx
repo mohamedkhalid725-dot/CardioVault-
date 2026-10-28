@@ -3,6 +3,7 @@ import {CreditCard,Loader2,RefreshCw,AlertTriangle}from 'lucide-react';
 import {useApp}from'../../context/AppContext';
 import {getSubscription,renewSubscription,ensureTrialStarted}from'../../services/workspaceSubscription';
 import {isMasterAccount}from'../../services/workspaceAccess';
+import {isLocalPreview}from'../../config/localPreview';
 
 const localDate=(ms:any)=>{const value=Number(ms||0);return value>0?new Date(value).toLocaleString():'—';};
 const daysText=(value:number)=>`${value} ${value===1?'day':'days'}`;
@@ -20,11 +21,14 @@ export const SubscriptionCard:React.FC=()=>{
  const[retrying,setRetrying]=useState(false);
 
  const refresh=async()=>{
+  // Preview has no cloud workspace: the real subscription document does not exist
+  // and must never be read from Firebase in the isolated local preview.
+  if(isLocalPreview()){setLoading(false);return;}
   try{const next=await getSubscription();setSub(next);setError('');}
   catch(readError:any){setError(String(readError?.message||'Could not read the workspace subscription.'));}
  };
 
- useEffect(()=>{let active=true;(async()=>{
+ useEffect(()=>{let active=true;{if(isLocalPreview()){setLoading(false);return;}}(async()=>{
   try{
    const [state,isOwner]=await Promise.all([getSubscription(),isMasterAccount().catch(()=>false)]);
    if(!active)return;
@@ -74,7 +78,11 @@ export const SubscriptionCard:React.FC=()=>{
  return <div className={card}>
   <h2 className="text-base font-bold flex items-center gap-2"><CreditCard className="w-5 h-5 text-cyan-500"/> Workspace Subscription</h2>
 
-  {loading?<div className="mt-3 flex items-center gap-2 text-xs text-slate-500"><Loader2 className="w-3.5 h-3.5 animate-spin"/>Reading the subscription clock…</div>
+  {isLocalPreview()?<div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
+    <div className="font-bold">Cloud subscription controls are disabled in this local preview.</div>
+    <p className="mt-1">Use the local Department Team owner panel to review preview requests and issue local test codes. These records stay on this device and do not activate a production subscription.</p>
+   </div>
+   :loading?<div className="mt-3 flex items-center gap-2 text-xs text-slate-500"><Loader2 className="w-3.5 h-3.5 animate-spin"/>Reading the subscription clock…</div>
    :error?<div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-700 dark:text-rose-300">
     <div className="font-bold flex items-center gap-2"><AlertTriangle className="w-4 h-4"/>Subscription could not be read</div>
     <div className="mt-1 break-words">{error}</div>
@@ -82,7 +90,7 @@ export const SubscriptionCard:React.FC=()=>{
    </div>
    :<div className="mt-3 space-y-3">
     <p className="text-sm font-semibold">{statusLine()}</p>
-    {status==='locked'&&<p dir="rtl" className="text-sm font-bold text-rose-600 dark:text-rose-400">تم توقف الاشتراك ويرجى تجديده</p>}
+    {status==='locked'&&<p className="text-sm font-bold text-rose-600 dark:text-rose-400">The subscription has ended. Renew to restore write access.</p>}
     {renewalDue&&<div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Renewal is due in {daysText(daysLeft)}</div>}
 
     {owner&&<div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">

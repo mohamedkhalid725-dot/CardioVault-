@@ -1,6 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {AlertTriangle,Lock}from 'lucide-react';
 import {getSubscription}from'../../services/workspaceSubscription';
+import {isLocalPreview}from'../../config/localPreview';
 
 // Slim, in-flow banner shown under the header. It is informational only: the
 // platform owner sees it too, because ownership still allows writes while the
@@ -10,6 +11,8 @@ export const WorkspaceStatusBanner:React.FC=()=>{
  const[daysLeft,setDaysLeft]=useState(0);
 
  useEffect(()=>{
+  // Preview has no cloud workspace: never ask Firebase for a clock here.
+  if(isLocalPreview())return;
   let active=true;
   const load=async()=>{
    try{
@@ -33,7 +36,7 @@ export const WorkspaceStatusBanner:React.FC=()=>{
  if(status==='locked'){
   return <div className="w-full border-b border-rose-500/30 bg-rose-500/10 px-3 sm:px-4 py-2 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
    <Lock className="w-3.5 h-3.5 shrink-0"/>
-   <span className="font-semibold"><span dir="rtl">تم توقف الاشتراك ويرجى تجديده</span> — the workspace is read-only.</span>
+   <span className="font-semibold">The subscription has ended. Renew to restore write access.</span>
   </div>;
  }
 
