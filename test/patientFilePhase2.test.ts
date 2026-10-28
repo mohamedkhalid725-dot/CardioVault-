@@ -170,7 +170,17 @@ test('examination defaults are not counted as section data', () => {
 test('formatPhase2Timestamp uses a readable local date/time', () => {
   const formatted = formatPhase2Timestamp('2026-10-06T11:00:00Z');
   assert.ok(formatted);
-  assert.match(formatted!, /2026|Oct|10/);
+  // The formatter deliberately follows the *system* locale, so this test must
+  // not assume English month names or Latin digits (an ar-DJ machine renders
+  // "٠٦‏/١٠‏/٢٠٢٦، ٢:٠٠ م"). Compare against the same Intl call and require a
+  // real localized date-time rather than the raw ISO input.
+  const expected = new Date(Date.parse('2026-10-06T11:00:00Z')).toLocaleString([], {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  assert.equal(formatted, expected);
+  assert.notEqual(formatted, '2026-10-06T11:00:00Z');
+  assert.ok(formatted!.length > 6);
 });
 
 test('section status handles empty sections and different timestamps', () => {
