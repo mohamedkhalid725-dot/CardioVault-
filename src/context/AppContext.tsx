@@ -12,6 +12,7 @@ import {clearUnitBedsPending,desiredBeds,markUnitBedsPending,normalizeBedCount,U
 import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,setUnitCapacityLocked,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid } from '../services/workspaceAccess';
 import {listIndexedWorkspaces,registerWorkspaceInIndex,readWorkspaceName,type IndexedWorkspace } from '../services/workspaceIndex';
 import {getSubscription} from '../services/workspaceSubscription';
+import {syncMemberSubscriptionFromCloud} from '../services/subscriptionRequestCloud';
 import {notifyClinicalData} from'../services/clinicalNotifications';
 import {formatLocalAdmissionDate,formatLocalAdmissionTime,toLocalIsoTimestamp}from'../services/patientAdmission';
 import {resetForNewAdmission,AdmissionHistoryTooLargeError,normalizeDischargeReason,prepareDischargedPatient}from'../services/admissionEpisode';
@@ -253,6 +254,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   let active=true;
   const check=async()=>{
    try{
+    // Owner decisions and activation codes are written on the owner's device.
+    // Pull them before reading the clock so every screen sees the same state.
+    if(auth.isAuthenticated)await syncMemberSubscriptionFromCloud().catch(()=>null);
     const [sub,owner]=await Promise.all([getSubscription(),isMasterAccount()]);
     if(active)setSubscriptionLocked(sub.status==='locked'&&!owner);
    }catch(error){console.warn('Subscription lock check failed:',error);}
@@ -260,7 +264,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   void check();
   const timer=window.setInterval(()=>void check(),60000);
   return()=>{active=false;window.clearInterval(timer);};
- },[]);
+ }, [auth.isAuthenticated]);
  // The rules already refuse every write in a locked workspace; this stops the UI
  // from offering actions that are guaranteed to be denied.
  const guardWrite=():boolean=>{

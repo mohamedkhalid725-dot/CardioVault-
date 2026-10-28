@@ -252,6 +252,20 @@ const writeRequests = (requests: SubscriptionRequest[], storage?: SubscriptionSt
 const writeCodes = (codes: SubscriptionCodeRecord[], storage?: SubscriptionStorage): boolean =>
   writeRaw(resolveSubscriptionStorage(storage), SUB_CODES_STORAGE_KEY, JSON.stringify(codes));
 
+/**
+ * Replaces the device cache of requests. Used by the cloud layer after a merge:
+ * Firestore holds the authoritative copy, localStorage is only the offline
+ * cache that every existing screen keeps reading synchronously.
+ */
+export function cacheRequests(requests: SubscriptionRequest[], storage?: SubscriptionStorage | null): boolean {
+  return writeRequests(Array.isArray(requests) ? requests : [], storage ?? undefined);
+}
+
+/** Same contract as `cacheRequests`, for the activation-code cache. */
+export function cacheCodes(codes: SubscriptionCodeRecord[], storage?: SubscriptionStorage | null): boolean {
+  return writeCodes(Array.isArray(codes) ? codes : [], storage ?? undefined);
+}
+
 /** True once ANY request or code exists — the honest "history exists" signal. */
 export function subscriptionHistoryExists(storage?: SubscriptionStorage | null, subscriberId?: string): boolean {
   const memberId = clean(subscriberId);
