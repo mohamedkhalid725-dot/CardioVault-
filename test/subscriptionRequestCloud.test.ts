@@ -128,12 +128,72 @@ test('buildCloudRequestDoc satisfies every create predicate in firestore.rules',
   assert.equal(doc.amount, 1000, 'two units at EGP 500');
 });
 
-test('buildCloudRequestDoc refuses a clinic-only request without a unit', () => {
+test('buildCloudRequestDoc delivers a priced clinic-only request', () => {
   const request = clinicOnlyRequest();
   assert.deepEqual(requestUnitIds(request), []);
   const built = buildCloudRequestDoc(request, { workspaceId: WORKSPACE, subscriberId: UID });
-  assert.equal(built.ok, false);
-  assert.equal(built.reason, 'units-required');
+  assert.equal(built.ok, true);
+  const doc = built.data as Record<string, any>;
+  // match /subscriptionRequests/{requestId} -> create || clinicOnlyRequest()
+  assert.deepEqual(doc.unitIds, []);
+  assert.equal(doc.requestType, 'clinic');
+  assert.equal(doc.doctorsCount, 3);
+  assert.equal(doc.method, 'visa');
+  assert.equal(doc.currency, 'USD');
+  assert.equal(doc.amount, 60, 'three doctors at USD 20');
+  assert.equal(doc.status, 'pending');
+  assert.ok(String(doc.phone).length >= 7);
+  assert.ok(String(doc.institutionName).length >= 2);
+  assert.ok((doc.clinicServices as any[]).length <= 20);
+});
+
+test('buildCloudRequestDoc refuses a clinic-only request that the rules would deny', () => {
+  const request = clinicOnlyRequest();
+  const prices = request.lineItems;
+
+  // Doctor count outside 1-200.
+  assert.equal(
+    buildCloudRequestDoc({ ...request, doctorsCount: 0 }, { workspaceId: WORKSPACE, subscriberId: UID }).reason,
+    'doctors-count-invalid',
+  );
+  assert.equal(
+    buildCloudRequestDoc({ ...request, doctorsCount: 201 }, { workspaceId: WORKSPACE, subscriberId: UID }).reason,
+    'doctors-count-invalid',
+  );
+
+  // Right count, wrong money: the rules compare the exact published price.
+  const cheap = { ...request, lineItems: [{ ...prices[0], subtotal: 40 }] };
+  assert.equal(
+    buildCloudRequestDoc(cheap, { workspaceId: WORKSPACE, subscriberId: UID }).reason,
+    'amount-invalid',
+  );
+
+  // Right amount, wrong currency for the method.
+  const wrongCurrency = {
+    ...request,
+    lineItems: [{ ...prices[0], currency: 'EGP' as const }],
+  };
+  assert.equal(
+    buildCloudRequestDoc(wrongCurrency, { workspaceId: WORKSPACE, subscriberId: UID }).reason,
+    'amount-invalid',
+  );
+
+  // A department request may not use the clinic-only branch.
+  const departmentWithoutUnits = { ...departmentRequest(), unitDrafts: [] };
+  assert.equal(
+    buildCloudRequestDoc(departmentWithoutUnits, { workspaceId: WORKSPACE, subscriberId: UID }).reason,
+    'units-required',
+  );
+
+  // The rules cap the clinic service list at 20 entries.
+  const longServices = {
+    ...request,
+    clinicServices: Array.from({ length: 21 }, (_, index) => `Service ${index + 1}`),
+  };
+  assert.equal(
+    buildCloudRequestDoc(longServices, { workspaceId: WORKSPACE, subscriberId: UID }).reason,
+    'clinic-services-invalid',
+  );
 });
 
 test('buildCloudRequestDoc refuses mismatched subscriber, bad method and verified requests', () => {
@@ -298,7 +358,7 @@ test('mirrorSubscriptionRequest writes the doc and the private id index', async 
 
 test('mirrorSubscriptionRequest reports a skip instead of writing an invalid document', async () => {
   const { io, writes } = fakeIo();
-  const result = await mirrorSubscriptionRequest(clinicOnlyRequest(), {
+  const result = await mirrorSubscriptionRequest({ ...departmentRequest(), unitDrafts: [] }, {
     io,
     workspaceId: WORKSPACE,
     subscriberId: UID,
@@ -306,6 +366,19 @@ test('mirrorSubscriptionRequest reports a skip instead of writing an invalid doc
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'units-required');
   assert.equal(writes.length, 0);
+});
+
+test('mirrorSubscriptionRequest delivers a clinic-only request without any unit', async () => {
+  const { io, writes, docs } = fakeIo();
+  const result = await mirrorSubscriptionRequest(clinicOnlyRequest(), {
+    io,
+    workspaceId: WORKSPACE,
+    subscriberId: UID,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.indexed, true);
+  assert.equal(writes.length, 2, 'the request plus the private id index');
+  assert.deepEqual(docs.get(cloudRequestPath(WORKSPACE, result.requestId as string))?.unitIds, []);
 });
 
 test('mirrorSubscriptionRequest never throws when the cloud refuses the write', async () => {
@@ -461,6 +534,8 @@ test('every skip reason has a distinct user-facing explanation', () => {
   const reasons = [
     'cloud-disabled',
     'units-required',
+    'doctors-count-invalid',
+    'clinic-services-invalid',
     'no-workspace',
     'no-subscriber',
     'subscriber-mismatch',

@@ -103,7 +103,7 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
     {
       id: 'institution-setup',
       title: 'Institution Setup',
-      subtitle: 'Institution, unit types, beds and plan — local draft',
+      subtitle: 'Institution, unit types, beds and plan - creates the real units',
       icon: Building2,
       color: 'text-sky-500 bg-sky-500/10',
     },

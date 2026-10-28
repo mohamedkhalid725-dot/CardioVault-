@@ -99,6 +99,35 @@ service cloud.firestore {
     // and only the owner can clear it.
     function selfClinicalRole(role) { return role in ['nurse','resident','specialist']; }
 
+    // ═══ Subscription requests ══════════════════════════════════════════════
+    // A clinic subscription has no department unit, so a clinic-only request has
+    // an empty unitIds list. That case gets its own, deliberately narrow branch:
+    // the request type must be exactly 'clinic', the doctor count must be a real
+    // 1-200 seat count, and the amount must be the published 30-day price
+    // (EGP 500 per doctor on InstaPay, USD 20 per doctor on Visa) in the currency
+    // that method implies. Everything else is already checked by the caller of
+    // this helper (workspace, subscriber, pending status, method, payment flag).
+    function clinicOnlyRequest() {
+      return request.resource.data.get('unitIds', []).size() == 0
+        && request.resource.data.get('requestType', '') == 'clinic'
+        && request.resource.data.doctorsCount is int
+        && request.resource.data.doctorsCount >= 1
+        && request.resource.data.doctorsCount <= 200
+        && request.resource.data.get('clinicServices', []).size() <= 20
+        && request.resource.data.get('phone', '') is string
+        && request.resource.data.get('phone', '').size() >= 7
+        && request.resource.data.get('institutionName', '') is string
+        && request.resource.data.get('institutionName', '').size() >= 2
+        && (
+          ( request.resource.data.method == 'instapay'
+            && request.resource.data.get('currency', '') == 'EGP'
+            && request.resource.data.amount == request.resource.data.doctorsCount * 500 )
+          || ( request.resource.data.method == 'visa'
+            && request.resource.data.get('currency', '') == 'USD'
+            && request.resource.data.amount == request.resource.data.doctorsCount * 20 )
+        );
+    }
+
     // ═══ Unit access codes ══════════════════════════════════════════════════
     function accessCodePath(hash) { return /databases/$(database)/documents/accessCodes/$(hash); }
     function accessCodeExists(hash) { return hash != '' && exists(accessCodePath(hash)); }
@@ -187,6 +216,22 @@ service cloud.firestore {
           && get(memberPath(workspaceId)).data.active != false;
         allow delete: if signedIn() && request.auth.uid == uid;
       }
+    }
+
+    // ═══ Owner dashboard preferences ════════════════════════════════════════
+    // One document per platform owner holding presentation-only preferences
+    // (today: which unit cards the owner hides on their own dashboard). It grants
+    // nothing: no unit is deleted, no membership is changed, no subscription
+    // field is derived from it, and a hidden unit stays fully readable for every
+    // account that could read it before. Only the platform owner can read or
+    // write their own document.
+    match /ownerPreferences/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid && platformOwner();
+      allow list: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid && platformOwner()
+        && request.resource.data.hiddenUnitIds is list
+        && request.resource.data.hiddenUnitIds.size() <= 200;
+      allow delete: if signedIn() && request.auth.uid == uid && platformOwner();
     }
 
     // ═══ Workspaces ═════════════════════════════════════════════════════════
@@ -493,12 +538,19 @@ service cloud.firestore {
       }
 
       // ─── Subscription requests (cross-device) ────────────────────────────
-      // A member files a request for the unit(s) they are renewing; the
-      // platform owner is the only account that reads the queue or decides it.
+      // A member files a request for the unit(s) they are renewing; the platform
+      // owner is the only account that reads the queue or decides it.
       // Deliberately NOT gated by canWrite(): a workspace whose trial or
       // subscription already expired must still be able to ask for a renewal.
       // The client never writes `paymentVerified` itself - the owner sets it
       // after checking the transfer by hand.
+      //
+      // Two create shapes are accepted:
+      //   1. a department/both request that names only units the caller belongs
+      //      to (the original path, unchanged);
+      //   2. a clinic-only request with no unit at all, which must match
+      //      clinicOnlyRequest() above. An empty unitIds list is never accepted
+      //      for a department or combined request, so nothing gets broader.
       match /subscriptionRequests/{requestId} {
         allow get: if adminOf(workspaceId)
           || (signedIn() && resource.data.subscriberId == request.auth.uid);
@@ -508,10 +560,13 @@ service cloud.firestore {
           && request.resource.data.subscriberId == request.auth.uid
           && request.resource.data.status == 'pending'
           && request.resource.data.method in ['instapay', 'visa']
-          && request.resource.data.unitIds.size() > 0
-          && request.resource.data.unitIds.hasOnly(memberUnits(workspaceId))
+          && request.resource.data.get('unitIds', []).hasOnly(memberUnits(workspaceId))
           && request.resource.data.amount > 0
-          && request.resource.data.get('paymentVerified', false) == false;
+          && request.resource.data.get('paymentVerified', false) == false
+          && (
+            request.resource.data.get('unitIds', []).size() > 0
+            || clinicOnlyRequest()
+          );
         // The owner decides a request. The requester may only withdraw their
         // own pending request, and may never move it to approved.
         allow update: if (

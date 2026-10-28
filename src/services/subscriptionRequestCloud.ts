@@ -33,10 +33,13 @@
 //     is covered by the pre-existing owner-of-account rule
 //     (`match /users/{uid}`), so no new rule was needed and the index grants
 //     nothing: it is only a list of ids the same account already created.
-//  2. A request with no department unit has an empty `unitIds` and the rules
-//     refuse to create it. `buildCloudRequestDoc` returns
-//     'units-required' instead of writing a document that would be denied, and
-//     the UI keeps such a request local-only.
+//  2. A DEPARTMENT request must name at least one unit the member really belongs
+//     to, otherwise the rules refuse to create it and `buildCloudRequestDoc`
+//     returns 'units-required' instead of writing a document that would be
+//     denied. A CLINIC request has no department unit at all, so it travels
+//     through the rules' dedicated clinic branch: requestType 'clinic', an empty
+//     unitIds list, a doctor count between 1 and 200 and the exact 30-day price
+//     for the chosen method. Nothing else is relaxed for members.
 //
 // Everything here is non-fatal: any failure resolves to `{ ok: false, reason }`
 // and the caller keeps using the local record. No feature is reported as
@@ -44,7 +47,7 @@
 
 import type { SubscriptionCodeRecord, SubscriptionRequest } from '../types/clinicArea';
 import { isLocalPreview } from '../config/localPreview.ts';
-import { cacheCodes, cacheRequests, loadCodes, loadRequests } from './subscriptionRequests.ts';
+import { PRICE_EGP, PRICE_USD, cacheCodes, cacheRequests, loadCodes, loadRequests } from './subscriptionRequests.ts';
 import type { SubscriptionStorage } from './subscriptionRequests.ts';
 
 export const CLOUD_REQUEST_SCHEMA_VERSION = 1;
@@ -68,6 +71,8 @@ export type CloudSkipReason =
   | 'subscriber-mismatch'
   | 'method-invalid'
   | 'units-required'
+  | 'doctors-count-invalid'
+  | 'clinic-services-invalid'
   | 'amount-invalid'
   | 'already-verified'
   | 'invalid-request';
@@ -132,6 +137,25 @@ export function requestAmount(request: SubscriptionRequest): { amount: number; c
 }
 
 /**
+ * A clinic-only request has no department unit to attach to, so `unitIds` is
+ * empty and `firestore.rules` accepts it through a dedicated branch. That branch
+ * requires a real doctor count and the exact 30-day price for the chosen method,
+ * which is what this function mirrors on the client before any write is tried.
+ */
+export function clinicOnlyAmountMatches(
+  doctorsCount: number,
+  method: string,
+  amount: number,
+  currency: string,
+): boolean {
+  const doctors = Math.trunc(Number(doctorsCount) || 0);
+  if (doctors < 1 || doctors > 200) return false;
+  if (method === 'instapay') return currency === 'EGP' && amount === doctors * PRICE_EGP;
+  if (method === 'visa') return currency === 'USD' && amount === doctors * PRICE_USD;
+  return false;
+}
+
+/**
  * Builds the exact document shape the deployed rules accept.
  *
  * Returns a skip reason instead of a document whenever the rules would deny the
@@ -151,11 +175,24 @@ export function buildCloudRequestDoc(
   if (!subscriberId) return fail('no-subscriber');
   if (clean(request.createdBy) !== subscriberId) return fail('subscriber-mismatch');
   if (request.paymentMethod !== 'instapay' && request.paymentMethod !== 'visa') return fail('method-invalid');
-  if (unitIds.length === 0) return fail('units-required');
+
+  // A clinic request without any department unit is legal in the rules, but only
+  // for the clinic request type and only with a priced doctor count.
+  const clinicOnly = clean(request.requestType) === 'clinic' && unitIds.length === 0;
+  if (unitIds.length === 0 && !clinicOnly) return fail('units-required');
   if (request.paymentVerifiedAtMs) return fail('already-verified');
 
   const { amount, currency } = requestAmount(request);
   if (!(amount > 0)) return fail('amount-invalid');
+  if (clinicOnly) {
+    if (asArray<string>(request.clinicServices).filter((entry) => clean(entry)).length > 20) {
+      return fail('clinic-services-invalid');
+    }
+    if (!clinicOnlyAmountMatches(request.doctorsCount, request.paymentMethod, amount, currency)) {
+      const doctors = Math.trunc(Number(request.doctorsCount) || 0);
+      return fail(doctors < 1 || doctors > 200 ? 'doctors-count-invalid' : 'amount-invalid');
+    }
+  }
 
   const submittedAtMs = intMs(request.submittedAtMs) || Date.now();
   const data: Record<string, any> = {
@@ -653,7 +690,11 @@ export function describeCloudReason(reason?: string): string {
     case 'cloud-disabled':
       return 'Cloud delivery is disabled on this build, so this record stays on this device.';
     case 'units-required':
-      return 'This request lists no department unit, so the security rules keep it on this device. Add a unit to deliver it to the owner.';
+      return 'A department request needs at least one department unit of your membership. Add a unit to deliver it to the owner.';
+    case 'doctors-count-invalid':
+      return 'A clinic request needs a doctor count between 1 and 200 before it can be delivered.';
+    case 'clinic-services-invalid':
+      return 'A clinic request can list at most 20 services. Remove some and try again.';
     case 'no-workspace':
     case 'no-subscriber':
       return 'Sign in to a workspace account to deliver this request to the owner.';

@@ -25,6 +25,18 @@ export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
 interface ToastInfo{id:string;message:string;type:'success'|'info'|'warning'|'error';}
 interface PatientAuditContext { uid?: string; displayName?: string; action?: string; }
+/**
+ * Extra shape a caller may hand to `addUnit`. The setup wizard needs the unit id
+ * it already put in the subscription request (so an owner-issued code and the
+ * real unit agree) and the unit-type capabilities; a manual "add unit" from the
+ * dashboard passes none of this.
+ */
+export interface AddUnitOptions {
+  /** Stable id. Supplying it makes the call idempotent: a retry returns the existing unit. */
+  id?: string;
+  unitTypeId?: Unit['unitTypeId'];
+  config?: Unit['config'];
+}
 export interface AppContextType{
   theme:'dark'|'light';
   setTheme:(theme:'dark'|'light')=>void;
@@ -59,7 +71,7 @@ export interface AppContextType{
   transferPatient:(id:string,unitId:string,bedId:string)=>void;
   readmitPatient:(id:string,unitId:string,bedId:string)=>void;
   deletePatientPermanently:(id:string)=>void;
-  addUnit:(name:string,type:string,initialBedsCount?:number)=>Unit;
+  addUnit:(name:string,type:string,initialBedsCount?:number,options?:AddUnitOptions)=>Unit;
   addPreviewUnits:(units:Unit[])=>number;
   // Uploads a freshly created unit with its beds and then closes its capacity
   // window. It must run after addUnit and before the unit is resized.
@@ -390,18 +402,30 @@ const readmitPatient=(id:string,unitId:string,bedId:string)=>{
   }catch(error){showToast('Re-admission blocked. Nothing was changed.','error');}
  };
  const deletePatientPermanently=(id:string)=>{commitPatients(patients.filter(p=>p.id!==id));commitBeds(beds.map(b=>b.patientId===id?{...b,patientId:undefined,status:'Empty'}:b));};
- const addUnit=(name:string,type:string,initialBedsCount=3):Unit=>{
-  const id=`unit-${Date.now()}`;
+ const addUnit=(name:string,type:string,initialBedsCount=3,options?:AddUnitOptions):Unit=>{
+  const requestedId=String(options?.id||'').trim();
+  // Always work from what is actually saved, not from the render's copy: the
+  // setup wizard may add two units in one pass, and a retry must never append a
+  // second copy of a unit that already exists.
+  const current=StorageService.getUnits();
+  if(requestedId){
+   const existing=current.find(item=>String(item.id)===requestedId);
+   if(existing)return existing;
+  }
+  const id=requestedId||`unit-${Date.now()}`;
   const ownerUid=currentFirebaseUid(currentUser?.userId);
   const totalBeds=normalizeBedCount(initialBedsCount);
   // The rules make the creator the unit's consultant and require these fields.
-  const unit:Unit={id,name:name.trim(),type,totalBeds,createdBy:ownerUid,consultantUid:ownerUid,createdAtMs:Date.now(),capacityLocked:false};
+  const unit:Unit={id,name:name.trim(),type,totalBeds,createdBy:ownerUid,consultantUid:ownerUid,createdAtMs:Date.now(),capacityLocked:false,...(options?.unitTypeId?{unitTypeId:options.unitTypeId}:{}),...(options?.config?{config:options.config}:{})};
   // The bed documents are provisioned by completeUnitSetup after this returns.
   // Registering the unit as pending here is what stops the realtime listeners
   // from replacing these beds with a cloud snapshot taken before they existed,
   // and it is what makes the retry reachable from the Units screen.
   if(!isLocalPreview())markUnitBedsPending(id,totalBeds);
-  commitUnits([...units,unit]);commitBeds([...beds,...desiredBeds(id,totalBeds)]);
+  commitUnits([...current,unit]);
+  // Rebuilding this unit's beds from scratch keeps a retry from duplicating
+  // them: `desiredBeds` is deterministic per unit id and index.
+  commitBeds([...StorageService.getBeds().filter(bed=>bed.unitId!==id),...desiredBeds(id,totalBeds)]);
   if(isLocalPreview()){
    const saved=loadPreviewCreatedUnits();
    savePreviewCreatedUnits([...saved.filter(item=>item.id!==unit.id),unit]);

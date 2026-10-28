@@ -64,6 +64,13 @@ export interface SetupCompanionRecord {
   /** Set on the first successful submission; prevents duplicate requests. */
   lastSubmittedRequestId?: string;
   lastSubmittedAtMs?: number;
+  /**
+   * When the owner-side copy of `lastSubmittedRequestId` was confirmed written.
+   * Unset means "not delivered yet", so pressing Save again retries the delivery
+   * instead of leaving the request on this device. Additive: an older stored
+   * record simply has no value.
+   */
+  lastRequestDeliveredAtMs?: number;
   updatedAtMs: number;
   schemaVersion: number;
 }
@@ -85,6 +92,12 @@ export const MAX_INSTITUTION_NAME = 120;
 export const MIN_ADMIN_NAME = 2;
 export const MAX_ADMIN_NAME = 80;
 export const MAX_TEAM_SIZE = 10_000;
+/**
+ * The clinic service list is stored on the subscription request, and the
+ * security rules accept at most this many entries. Keeping the cap here means
+ * the form can never build a request the rules would refuse.
+ */
+export const MAX_CLINIC_SERVICES = 20;
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface SetupStorage {
@@ -216,6 +229,8 @@ function parseCompanion(raw: string | null): SetupCompanionRecord | null {
     if (lastSubmittedRequestId) record.lastSubmittedRequestId = lastSubmittedRequestId;
     const lastSubmittedAtMs = Math.trunc(safeNumber(parsed.lastSubmittedAtMs, -1));
     if (lastSubmittedAtMs >= 0) record.lastSubmittedAtMs = lastSubmittedAtMs;
+    const lastRequestDeliveredAtMs = Math.trunc(safeNumber(parsed.lastRequestDeliveredAtMs, 0));
+    if (lastRequestDeliveredAtMs > 0) record.lastRequestDeliveredAtMs = lastRequestDeliveredAtMs;
     return record;
   } catch {
     return null;
@@ -240,9 +255,9 @@ export function saveSetupCompanion(
     ...patch,
     id: 'current',
     clinicServices: Array.isArray(patch?.clinicServices)
-      ? patch.clinicServices.map((entry) => clean(entry)).filter(Boolean)
+      ? patch.clinicServices.map((entry) => clean(entry)).filter(Boolean).slice(0, MAX_CLINIC_SERVICES)
       : Array.isArray(current.clinicServices)
-        ? [...current.clinicServices]
+        ? [...current.clinicServices].slice(0, MAX_CLINIC_SERVICES)
         : [],
     receivesOperationsByUnit: {
       ...(current.receivesOperationsByUnit || {}),

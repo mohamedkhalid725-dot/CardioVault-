@@ -742,7 +742,13 @@ export function setUnitHidden(unitId:string,hidden:boolean):void{
   if(!clean)return;
   const next=new Set(getHiddenUnitIds());
   if(hidden)next.add(clean);else next.delete(clean);
-  try{localStorage.setItem(HIDDEN_UNITS_KEY,JSON.stringify(Array.from(next)));}catch{}
+  saveHiddenUnitIds(Array.from(next));
+}
+// Bulk form used when the owner's synced list arrives from the cloud: it
+// replaces the device cache in one write instead of replaying every toggle.
+export function saveHiddenUnitIds(ids:string[]):void{
+  const next=Array.from(new Set((Array.isArray(ids)?ids:[]).map(value=>String(value||'').trim()).filter(Boolean)));
+  try{localStorage.setItem(HIDDEN_UNITS_KEY,JSON.stringify(next));}catch{}
 }
 // 'consultant' is never stored on the member: it is the unit's consultant slot,
 // so the effective title needs the unit document (and the caller's uid).

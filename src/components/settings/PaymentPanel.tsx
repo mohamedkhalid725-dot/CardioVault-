@@ -319,8 +319,10 @@ export const PaymentPanel = () => {
                   </div>
                 )}
                 {clinicNeedsUnit && (
-                  <p className="mt-2 rounded-lg bg-amber-100 px-2.5 py-1.5 text-[11px] text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-                    This account has no clinic unit in its membership. A clinic-only request without a unit cannot be delivered to the owner, so it will stay on this device.
+                  <p className="mt-2 rounded-lg bg-cyan-50 px-2.5 py-1.5 text-[11px] text-cyan-900 dark:bg-cyan-500/10 dark:text-cyan-200">
+                    This clinic is not linked to a department unit, so the request is sent as a clinic-only
+                    request: the owner sees your clinic name, doctor count and services, and approves the clinic
+                    scope on its own.
                   </p>
                 )}
               </div>

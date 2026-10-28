@@ -24,6 +24,7 @@ import type { InstitutionSetupDraft, InstitutionUnitDraft, UnitTypeId } from '..
 import type { PaymentMethodChoice, PricingLineItem, SubscriptionRequestType } from '../../types/clinicArea';
 import { BUILTIN_UNIT_TYPES, defaultBedCountFor } from '../../services/unitCatalog';
 import {
+  MAX_CLINIC_SERVICES,
   REQUIRED_STEPS,
   clearDraft,
   createUnitsFromDraft,
@@ -42,15 +43,25 @@ import {
   type SetupCompanionRecord,
 } from '../../services/institutionSetup';
 import { ReadOnlyAreaError, buildLineItems, loadRequests, submitRequest } from '../../services/subscriptionRequests';
+import { describeCloudReason, mirrorSubscriptionRequest } from '../../services/subscriptionRequestCloud';
+import { planProductionSetupUnits, runProductionSetup } from '../../services/institutionSetupProduction';
+import { StorageService } from '../../services/storage';
+import { isLocalPreview } from '../../config/localPreview';
 
 /**
- * Local-preview institution setup wizard.
+ * Institution setup wizard.
  *
- * This screen exists to prove the flow, not to provision anything: it reads and
- * writes one device-local draft (plus its subscription companion record) and
- * never calls `addUnit`, Firestore or the sync bridge. Creating the real units
- * stays an explicit, separate action so a preview cannot quietly populate a
- * live workspace.
+ * The wizard keeps ONE device-local draft (plus its subscription companion
+ * record) so a reload resumes exactly where the typing stopped. What "Save"
+ * does depends on the build:
+ *
+ *  - Production: submits the subscription request, delivers it to the owner
+ *    through `mirrorSubscriptionRequest`, then creates the configured units and
+ *    their beds through the real `addUnit` / `completeUnitSetup` path. Unit ids
+ *    are the draft `tempId`s, so a retry never duplicates a unit and an
+ *    owner-issued code points at the real unit document.
+ *  - Isolated local preview: keeps the device-only `addPreviewUnits` path, with
+ *    no Firestore write of any kind.
  *
  * Agent C additions (approved plan §7/§8/§19):
  *  - STEP 'request' is the FIRST step: request type (قسم / عيادة / الاثنين
@@ -108,6 +119,8 @@ const AWAITING_CONFIRMATION_NOTE =
   'Subscriptions renew every 30 days. Early renewal adds 30 days after the current expiry; late renewal starts on approval.';
 const TRIAL_NOTICE =
   'The request is saved in this local preview and starts a 3-day trial. This does not confirm payment; the owner must approve it.';
+const PRODUCTION_TRIAL_NOTICE =
+  'The request is sent to the owner and starts a 3-day trial. This is not a payment - the owner checks the transfer by hand before approving.';
 const VISA_NOT_LIVE_NOTE = 'Visa checkout is not connected yet. Contact the owner on WhatsApp to arrange payment.';
 const INSTAPAY_WARNING = 'Opening the link or sending a transfer does not verify payment. The owner confirms payment manually.';
 
@@ -155,13 +168,19 @@ const friendlySaveError = (error: unknown): string => {
 const emptyCompanion: SetupCompanionRecord = { id: 'current', updatedAtMs: 0, schemaVersion: 1 };
 
 export const InstitutionSetupView = () => {
-  const { currentUser, units, addPreviewUnits } = useApp();
+  const { currentUser, units, addUnit: createUnit, addPreviewUnits, completeUnitSetup } = useApp();
   const [draft, setDraft] = useState<InstitutionSetupDraft>(() => loadDraft());
   const [companion, setCompanion] = useState<SetupCompanionRecord>(() => loadSetupCompanion());
   const [stepIndex, setStepIndex] = useState(0);
   const [saved, setSaved] = useState<{ count: number; totalBeds: number } | null>(null);
   const [actionError, setActionError] = useState('');
+  const [saveNotice, setSaveNotice] = useState('');
+  const [saving, setSaving] = useState(false);
   const [serviceInput, setServiceInput] = useState('');
+  // The wizard itself is identical in both builds; only the save path and the
+  // copy differ. Production writes the request to Firestore and creates real
+  // units; the isolated preview keeps its device-only draft.
+  const previewMode = isLocalPreview();
 
   // Suggest the signed-in name once, without overwriting anything the user typed.
   // The suggestion is persisted immediately so a reload does not lose it.
@@ -214,6 +233,7 @@ export const InstitutionSetupView = () => {
   const unitCount = draft.unitDrafts.length;
   const requestSubmitted = !!companion.lastSubmittedRequestId;
   const canSave = validation.ok && companionSaveCheck.ok;
+  const trialNotice = previewMode ? TRIAL_NOTICE : PRODUCTION_TRIAL_NOTICE;
 
   const update = (patch: Partial<InstitutionSetupDraft>) => {
     setDraft((previous) => saveDraft({ ...previous, ...patch }));
@@ -265,6 +285,11 @@ export const InstitutionSetupView = () => {
   const addService = () => {
     const label = serviceInput.trim();
     if (!label) return;
+    if ((companion.clinicServices || []).length >= MAX_CLINIC_SERVICES) {
+      setActionError(`You can list up to ${MAX_CLINIC_SERVICES} clinic services.`);
+      setServiceInput('');
+      return;
+    }
     if (companion.clinicServices?.includes(label)) {
       setServiceInput('');
       return;
@@ -320,9 +345,12 @@ export const InstitutionSetupView = () => {
 
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     setActionError('');
+    setSaveNotice('');
     if (!canSave) return;
+    setSaving(true);
     try {
       const previousRequest = loadRequests().find((request) => request.id === companion.lastSubmittedRequestId);
       const alreadyCreated = new Set(units.map((unit) => unit.id));
@@ -332,9 +360,13 @@ export const InstitutionSetupView = () => {
       );
       const isFirstRequest = !previousRequest;
       const shouldSubmit = isFirstRequest || unrequestedUnits.length > 0;
+      let deliveredRequestId =
+        (companion.lastRequestDeliveredAtMs || 0) > 0 ? String(companion.lastSubmittedRequestId || '') : '';
 
-      // A follow-up request covers only newly added units, so it cannot restart
-      // the trial clock for units that were already submitted or approved.
+      // 1) The request goes first: the owner must see it even if creating the
+      //    units fails afterwards. A follow-up request covers only newly added
+      //    units, so it cannot restart another unit's trial clock.
+      let currentRequest = previousRequest || null;
       if (shouldSubmit) {
         const requestUnits = isFirstRequest ? draft.unitDrafts : unrequestedUnits;
         const newRequestType: SubscriptionRequestType = isFirstRequest
@@ -358,27 +390,100 @@ export const InstitutionSetupView = () => {
           actorName: currentUser?.name,
           actorEmail: currentUser?.email,
         });
-        const updated = saveSetupCompanion({
-          lastSubmittedRequestId: request.id,
-          lastSubmittedAtMs: request.submittedAtMs,
-        });
-        setCompanion(updated);
+        currentRequest = request;
+        deliveredRequestId = '';
+        setCompanion(
+          saveSetupCompanion({
+            lastSubmittedRequestId: request.id,
+            lastSubmittedAtMs: request.submittedAtMs,
+            lastRequestDeliveredAtMs: 0,
+          }),
+        );
       }
 
-      // 2) Create preview units and beds in this browser only. The cloud sync
-      //    bridge is disabled in local preview, and stable IDs keep renewal
-      //    scopes attached to their unit.
-      const created = createUnitsFromDraft(draft, units, undefined, currentUser?.userId);
-      const createdCount = addPreviewUnits(created);
-      const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
-      setDraft(saveDraft(withSteps));
-      setSaved({
-        count: createdCount,
-        totalBeds: created.reduce((sum, unit) => sum + (Number(unit.totalBeds) || 0), 0),
+      // 2) Deliver the request to the owner when this build can reach Firestore.
+      //    A request whose delivery never confirmed is retried here, including
+      //    after a unit-creation failure, so nothing is silently left on device.
+      let cloudNotice = '';
+      if (!previewMode && currentRequest && currentRequest.id !== deliveredRequestId) {
+        const mirror = await mirrorSubscriptionRequest(currentRequest, {
+          subscriberId: currentUser?.userId,
+        });
+        if (mirror.ok) {
+          deliveredRequestId = currentRequest.id;
+          setCompanion(saveSetupCompanion({ lastRequestDeliveredAtMs: Date.now() }));
+          cloudNotice =
+            'Request delivered to the owner and visible from any signed-in device. The owner confirms payment by hand.';
+        } else {
+          cloudNotice = `${describeCloudReason(mirror.reason)} Press Save again to retry the delivery - nothing is duplicated.`;
+        }
+        setSaveNotice(cloudNotice);
+      }
+
+      if (previewMode) {
+        // 3a) Isolated preview: device-only units, exactly as before.
+        const created = createUnitsFromDraft(draft, units, undefined, currentUser?.userId);
+        const createdCount = addPreviewUnits(created);
+        const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
+        setDraft(saveDraft(withSteps));
+        setSaved({
+          count: createdCount,
+          totalBeds: created.reduce((sum, unit) => sum + (Number(unit.totalBeds) || 0), 0),
+        });
+        return;
+      }
+
+      // 3b) Production: create the missing units from the saved list (not this
+      //     render's copy), then finish every configured unit. A retry reuses the
+      //     same unit ids, so nothing is created twice.
+      const plan = planProductionSetupUnits(draft, StorageService.getUnits(), currentUser?.userId);
+      if (plan.targets.length === 0) {
+        // A clinic-only request has no department unit to provision; the request
+        // itself is the deliverable.
+        const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
+        setDraft(saveDraft(withSteps));
+        setSaved({ count: 0, totalBeds: 0 });
+        if (!cloudNotice) {
+          setSaveNotice('No department unit was configured, so only the clinic scope was requested.');
+        }
+        return;
+      }
+
+      const outcome = await runProductionSetup({
+        plan,
+        createUnit: (unit) =>
+          createUnit(unit.name, unit.type, unit.totalBeds, {
+            id: unit.id,
+            unitTypeId: unit.unitTypeId,
+            config: unit.config,
+          }),
+        completeUnit: (unitId) => completeUnitSetup(unitId),
       });
+
+      if (outcome.ok) {
+        const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
+        setDraft(saveDraft(withSteps));
+        setSaved({ count: outcome.completed.length, totalBeds: outcome.totalBeds });
+        return;
+      }
+
+      // Partial: keep the draft and the submitted request id so the next Save
+      // finishes only the missing work.
+      setSaved(null);
+      const details = outcome.failures
+        .slice(0, 3)
+        .map((failure) => `${failure.name}: ${failure.message}`)
+        .join(' ');
+      const extra = outcome.failures.length > 3 ? ` (+${outcome.failures.length - 3} more)` : '';
+      setActionError(
+        `${outcome.completed.length} of ${plan.targets.length} units finished. ${details}${extra} ` +
+          'Press Save again - units and beds that already exist are never duplicated.',
+      );
     } catch (error) {
       setSaved(null);
       setActionError(friendlySaveError(error));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -415,10 +520,18 @@ export const InstitutionSetupView = () => {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <div className="rounded-3xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+      <div
+        className={`rounded-3xl border p-4 ${
+          previewMode
+            ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200'
+            : 'border-cyan-300 bg-cyan-50 text-cyan-900 dark:border-cyan-500/40 dark:bg-cyan-500/10 dark:text-cyan-200'
+        }`}
+      >
         <p className="flex items-center gap-2 text-sm font-medium">
           <ShieldCheck className="h-4 w-4 shrink-0" />
-          Local preview data — saved on this device only, not synced.
+          {previewMode
+            ? 'Local preview data - saved on this device only, not synced.'
+            : 'Saved to your workspace: the request goes to the owner, and units and beds are created in the cloud.'}
         </p>
       </div>
 
@@ -426,7 +539,16 @@ export const InstitutionSetupView = () => {
         <div className="rounded-3xl border border-cyan-300 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-500/40 dark:bg-cyan-500/10 dark:text-cyan-200">
           <p className="flex items-center gap-2 text-sm font-medium">
             <ClipboardList className="h-4 w-4 shrink-0" />
-            {TRIAL_NOTICE}
+            {trialNotice}
+          </p>
+        </div>
+      )}
+
+      {saveNotice && (
+        <div className="rounded-3xl border border-slate-300 bg-slate-50 p-4 text-slate-800 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-200">
+          <p className="flex items-start gap-2 text-sm">
+            <ClipboardList className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{saveNotice}</span>
           </p>
         </div>
       )}
@@ -436,7 +558,9 @@ export const InstitutionSetupView = () => {
           <div>
             <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Institution setup</h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Start with a subscription request, add the institution and units, then review. Nothing is created in the cloud.
+              {previewMode
+                ? 'Start with a subscription request, add the institution and units, then review. Nothing is created in the cloud.'
+                : 'Start with a subscription request, add the institution and units, then review. Saving sends the request to the owner and creates the units and their beds.'}
             </p>
           </div>
           <div className="flex gap-2 text-xs">
@@ -493,7 +617,9 @@ export const InstitutionSetupView = () => {
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-white">Subscription request</h2>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Submitting starts a 3-day local preview trial. No payment is recorded; activation requires owner approval.
+                {previewMode
+                  ? 'Submitting starts a 3-day local preview trial. No payment is recorded; activation requires owner approval.'
+                  : 'Submitting sends the request to the owner and starts a 3-day trial. No payment is recorded in the app; activation requires the owner to confirm the transfer.'}
               </p>
             </div>
 
@@ -963,7 +1089,7 @@ export const InstitutionSetupView = () => {
                         {WHATSAPP_LABEL}
                       </a>
                     </p>
-                    <p>No payment is processed in the app. A Visa provider is not connected in this preview.</p>
+                    <p>No payment is processed in the app. A Visa provider is not connected yet.</p>
                   </div>
                 )}
               </div>
@@ -1062,8 +1188,12 @@ export const InstitutionSetupView = () => {
               <p className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
                 <CheckCircle2 className="h-4 w-4" />
                 {requestSubmitted
-                  ? 'Ready to save the units locally (request already submitted).'
-                  : 'Ready to save: the request will be stored locally and a 3-day trial will start.'}
+                  ? previewMode
+                    ? 'Ready to save the units locally (request already submitted).'
+                    : 'Ready: the request is already submitted, so Save only finishes the remaining units and beds.'
+                  : previewMode
+                    ? 'Ready to save: the request will be stored locally and a 3-day trial will start.'
+                    : 'Ready to save: the request is sent to the owner, a 3-day trial starts, and the units are created.'}
               </p>
             ) : (
               <div className="space-y-1 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
@@ -1144,23 +1274,35 @@ export const InstitutionSetupView = () => {
           {saved && (
             <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" />
-              Setup saved locally — {saved.count} {saved.count === 1 ? 'unit' : 'units'} and {saved.totalBeds} beds are now available in this preview.
+              {saved.count === 0
+                ? 'Request delivered - no department unit was configured.'
+                : previewMode
+                  ? `Setup saved locally - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds are now available in this preview.`
+                  : `Setup complete - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds created. Only the owner can change bed counts now.`}
             </span>
           )}
           {saved && requestSubmitted && (
             <span className="inline-flex items-center gap-1 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
               <ClipboardList className="h-4 w-4" />
-              {TRIAL_NOTICE}
+              {trialNotice}
             </span>
           )}
           <button
             type="button"
             onClick={save}
-            disabled={!canSave}
+            disabled={!canSave || saving}
             className="inline-flex items-center gap-1 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
           >
             <Check className="h-4 w-4" />
-            {requestSubmitted ? 'Save setup' : 'Submit request and save setup'}
+            {saving
+              ? 'Saving…'
+              : requestSubmitted
+                ? previewMode
+                  ? 'Save setup'
+                  : 'Finish setup'
+                : previewMode
+                  ? 'Submit request and save setup'
+                  : 'Submit request and create units'}
           </button>
           {saved && (
             <button
