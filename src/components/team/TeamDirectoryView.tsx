@@ -67,7 +67,9 @@ const memberFromProfile = (profile: any): DirectoryMember => {
 const memberFromRoster = (entry: RosterMember): DirectoryMember => ({
   userId: String(entry.uid || ''),
   name: String(entry.name || 'Team member'),
-  role: String(entry.role || 'clinical_editor'),
+  // A colleague's clinical title is what matters on this screen; fall back to the
+  // access level only when they never picked a title.
+  role: String(entry.clinicalRole || (entry.role === 'view_only' ? 'view only' : 'clinical editor')),
   clinicalRole: asClinicalRole(entry.clinicalRole || (entry.role === 'view_only' ? 'viewer' : 'pending')),
   status: entry.status === 'inactive' ? 'inactive' : 'active',
   unitIds: Array.from(new Set((entry.unitIds || []).map(String).filter(Boolean))),
@@ -84,10 +86,11 @@ export const TeamDirectoryView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const isMaster = isOwnerAccess();
-  const isAdmin = currentUser.role === 'department_admin';
-  const isConsultant = currentUser.role === 'consultant';
-  const canManage = isMaster || isAdmin || isConsultant;
-  const canRemove = isMaster || isAdmin;
+  // Editing a member rewrites their unit list, i.e. their clinical access. The
+  // service behind Save (updateTeamDirectoryMember) refuses every account except
+  // the platform owner, so the buttons must not offer an action that always fails.
+  const canManage = isMaster;
+  const canRemove = isMaster;
 
   const access = getStoredWorkspaceAccess();
 
@@ -278,9 +281,6 @@ export const TeamDirectoryView: React.FC = () => {
 
   const renderCard = (key: string, member: DirectoryMember) => {
     const shared = sharedUnitIds(member).map(unitName);
-    // A consultant may not promote or demote a department admin; the platform
-    // owner and department admins may.
-    const protectedTarget = member.role === 'department_admin' || member.clinicalRole === 'department_admin';
     return (
       <div
         key={key}
@@ -318,7 +318,7 @@ export const TeamDirectoryView: React.FC = () => {
               {member.status}
             </span>
           </div>
-          {canManage && (!isConsultant || !protectedTarget) && (
+          {canManage && (
             <>
               <button
                 type="button"
