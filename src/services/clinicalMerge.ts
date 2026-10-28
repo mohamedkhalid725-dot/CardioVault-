@@ -27,14 +27,25 @@ export interface ClinicalCollections {
 }
 
 let pendingLocalChanges = false;
+let pendingGeneration = 0;
 
 /** True while the local registry holds changes the cloud has not confirmed. */
 export function hasPendingLocalChanges(): boolean {
   return pendingLocalChanges;
 }
 
+/**
+ * Counter that moves on every local change. A sync captures it before it starts
+ * and only clears the pending flag when nothing was saved while it was running,
+ * so a write that lands mid-upload is never reported as confirmed.
+ */
+export function pendingChangesGeneration(): number {
+  return pendingGeneration;
+}
+
 export function markPendingLocalChanges(): void {
   pendingLocalChanges = true;
+  pendingGeneration += 1;
 }
 
 export function clearPendingLocalChanges(): void {

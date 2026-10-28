@@ -1,10 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { X, Plus, Trash2, Edit2, Building2, Lock, LockOpen, ShieldCheck } from 'lucide-react';
+import { X, Plus, Trash2, Edit2, Building2, Lock, LockOpen, ShieldCheck, RefreshCw } from 'lucide-react';
 import { Unit } from '../../types/clinical';
 import { useApp } from '../../context/AppContext';
 import { isMasterAccount, getMyUnits, claimUnitConsultant, clearUnitConsultant } from '../../services/workspaceAccess';
+import { isUnitBedsPending } from '../../services/unitBeds';
+import {
+  BUILTIN_UNIT_TYPES,
+  CUSTOM_UNIT_CAPABILITIES,
+  buildUnitFromDraft,
+  defaultBedCountFor,
+  defaultCapabilitiesFor,
+  validateUnitDraft,
+} from '../../services/unitCatalog';
+import type { UnitCapabilities, UnitTypeId } from '../../types/departmentTeam';
 
-const UNIT_TYPE_OPTIONS = ['Intensive Care', 'Coronary Care', 'HDU', 'Step-down', 'Ward', 'Emergency'];
+// Unit types now come from the shared catalog (roadmap item 1): the eight
+// built-in clinical types plus a fully configurable Custom unit. The catalog
+// derives capabilities and validates names/beds without touching old records.
 // Bed creation/deletion is allowed to a unit consultant only during the first hour
 // after the unit document is created; afterwards only the platform owner may resize it.
 const PROVISIONING_WINDOW_MS = 3600000;
@@ -25,10 +37,13 @@ interface Props {
 }
 
 export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { units, beds, patients, addUnit, addBed, updateUnit, deleteUnit, finalizeUnitCreation, syncNow, showToast } = useApp();
+  const { units, beds, patients, addUnit, addBed, updateUnit, deleteUnit, finalizeUnitCreation, completeUnitSetup, syncNow, showToast } = useApp();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('');
+  const [typeId, setTypeId] = useState<UnitTypeId | ''>('');
+  const [customTypeName, setCustomTypeName] = useState('');
+  const [capabilities, setCapabilities] = useState<UnitCapabilities>({ ...CUSTOM_UNIT_CAPABILITIES });
   const [count, setCount] = useState(6);
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -39,6 +54,8 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
   // during that window: the cloud only accepts a bed inside a unit whose
   // capacity is still open.
   const [finalizing, setFinalizing] = useState(false);
+  // The unit whose missing beds are being uploaded right now.
+  const [repairing, setRepairing] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -107,26 +124,69 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const saveAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      showToast('Enter a unit name before saving.', 'error');
+    const chosenType: UnitTypeId = typeId || 'custom';
+    const draft = {
+      name,
+      typeId: chosenType,
+      customTypeName: chosenType === 'custom' ? customTypeName : undefined,
+      beds: count,
+      capabilities,
+    };
+    const validation = validateUnitDraft(draft);
+    if (!validation.ok) {
+      showToast(Object.values(validation.errors)[0] || 'Check the unit fields before saving.', 'error');
       return;
     }
-    if (!type) {
-      showToast('Select a unit type before saving.', 'error');
-      return;
-    }
-    const unit = addUnit(name, type, count);
+    const built = buildUnitFromDraft(draft);
+    const unit = addUnit(built.name, built.type, count);
+    // Additive metadata only: the unit document stays readable by older builds
+    // because unitTypeId/config are optional fields.
+    updateUnit(unit.id, built.name, built.type, {
+      unitTypeId: built.unitTypeId,
+      config: built.config,
+    });
     // The unit and its beds have to reach the cloud before the capacity is
     // closed: the rules refuse a bed inside a unit whose capacity is already
     // locked, so locking here used to leave the unit in the cloud with no beds
     // at all and the bed count came back as zero.
     setName('');
     setType('');
+    setTypeId('');
+    setCustomTypeName('');
     setCount(6);
     setAdding(false);
     setFinalizing(true);
     showToast('Unit created. Uploading its beds to the cloud…', 'info');
     void finalizeUnitCreation(unit.id).finally(() => setFinalizing(false));
+  };
+
+  const pickUnitType = (id: UnitTypeId) => {
+    setTypeId(id);
+    setType(BUILTIN_UNIT_TYPES.find((entry) => entry.id === id)?.label || 'Custom');
+    setCapabilities(defaultCapabilitiesFor(id));
+    const suggested = defaultBedCountFor(id);
+    if (suggested > 0) setCount(suggested);
+  };
+
+  // Retries the bed upload of a unit whose setup did not finish. Safe to run
+  // any number of times: it only creates the bed documents that are missing in
+  // the cloud and then verifies the whole capacity before closing it.
+  const repairSetup = async (unit: Unit) => {
+    if (repairing) return;
+    setRepairing(unit.id);
+    showToast('Checking this unit’s beds in the cloud…', 'info');
+    try {
+      const result = await completeUnitSetup(unit.id);
+      if (result.ok) {
+        showToast(`Unit setup complete. ${result.present} of ${result.expected} beds are in the cloud.`, 'success');
+      } else {
+        showToast(`Still incomplete: ${result.present} of ${result.expected} beds. ${result.message}`, 'error');
+      }
+    } catch (error: any) {
+      showToast(String(error?.message || 'Could not finish this unit’s setup.'), 'error');
+    } finally {
+      setRepairing(null);
+    }
   };
 
   const addOneBed = (unit: Unit) => {
@@ -206,42 +266,69 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
               className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
             />
             <div className="flex flex-wrap gap-2">
-              {UNIT_TYPE_OPTIONS.map((t) => (
+              {BUILTIN_UNIT_TYPES.map((entry) => (
                 <button
-                  key={t}
+                  key={entry.id}
                   type="button"
-                  onClick={() => setType(t)}
+                  onClick={() => pickUnitType(entry.id)}
                   className={
-                    type === t
+                    typeId === entry.id
                       ? 'px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold'
                       : 'px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold'
                   }
                 >
-                  {t}
+                  {entry.label}
                 </button>
               ))}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+              <button
+                type="button"
+                onClick={() => pickUnitType('custom')}
+                className={
+                  typeId === 'custom'
+                    ? 'px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 text-xs font-bold'
+                    : 'px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold'
+                }
               >
-                <option value="">Select type</option>
-                {UNIT_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+                Custom
+              </button>
+            </div>
+            {typeId === 'custom' ? (
+              <input
+                value={customTypeName}
+                onChange={(e) => setCustomTypeName(e.target.value)}
+                placeholder="Custom unit name (e.g. Heart Failure Clinic)"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+              />
+            ) : null}
+            <div className="grid grid-cols-2 gap-3">
               <input
                 type="number"
-                min="1"
-                max="40"
+                min="0"
+                max="200"
                 value={count}
-                onChange={(e) => setCount(Number(e.target.value) || 1)}
+                onChange={(e) => setCount(Number(e.target.value) || 0)}
                 className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                placeholder="Beds"
               />
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center">
+                {typeId ? 'Type and bed count are validated before saving.' : 'Pick a type first.'}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 text-[11px] text-slate-600 dark:text-slate-300">
+              {([
+                ['beds', 'Physical beds'],
+                ['waitingList', 'Waiting list'],
+                ['clinicMode', 'Clinic mode'],
+              ] as Array<[keyof UnitCapabilities, string]>).map(([key, label]) => (
+                <label key={key} className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={capabilities[key]}
+                    onChange={(e) => setCapabilities({ ...capabilities, [key]: e.target.checked })}
+                  />
+                  {label}
+                </label>
+              ))}
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               Only the owner can change the number of beds after the unit is created.
@@ -260,6 +347,12 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
             const unitBeds = beds.filter((b) => b.unitId === u.id);
             const active = activeOnBeds(u.id);
             const isEdit = editing === u.id;
+            // The capacity the unit declares versus the beds that really exist.
+            // A mismatch means the bed upload did not finish, either because a
+            // write was refused or because the cloud snapshot arrived first.
+            const expectedBeds = Number(u.totalBeds) || 0;
+            const missingCount = Math.max(0, expectedBeds - unitBeds.length);
+            const setupIncomplete = missingCount > 0 || isUnitBedsPending(u.id);
             return (
               <div
                 key={u.id}
@@ -276,8 +369,9 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
                     ) : (
                       <>
                         <b className="text-sm text-slate-900 dark:text-white">{u.name}</b>
-                        <p className="text-xs text-slate-400">
-                          {u.type || '—'} • {unitBeds.length} beds • {active.length} active patients
+                        <p className={setupIncomplete ? 'text-xs font-semibold text-amber-600 dark:text-amber-400' : 'text-xs text-slate-400'}>
+                          {u.type || '—'} • {expectedBeds > 0 ? `${unitBeds.length}/${expectedBeds}` : unitBeds.length} beds • {active.length} active patients
+                          {setupIncomplete && ' • setup incomplete'}
                         </p>
                       </>
                     )}
@@ -326,6 +420,17 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {capacityBadge(u)}
+                  {setupIncomplete && (isOwner || isUnitConsultant(u)) && (
+                    <button
+                      onClick={() => void repairSetup(u)}
+                      disabled={repairing !== null}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 text-[10px] font-bold text-amber-600 dark:text-amber-400 disabled:opacity-50"
+                      title="Create the missing beds in the cloud and verify the capacity. Safe to repeat."
+                    >
+                      <RefreshCw className={`w-3 h-3 ${repairing === u.id ? 'animate-spin' : ''}`} />
+                      {missingCount > 0 ? `Finish setup (${missingCount} missing)` : 'Finish setup'}
+                    </button>
+                  )}
                   {canChangeCapacity(u) && (
                     <button
                       onClick={() => addOneBed(u)}

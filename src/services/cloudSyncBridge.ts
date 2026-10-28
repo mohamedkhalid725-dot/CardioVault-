@@ -5,9 +5,11 @@ import { StorageService, stripLegacyDemoData } from './storage';
 import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
 import { WorkspaceAccessState, ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId } from './workspaceAccess';
 import { reconcileClinicalRegistry } from './bedReconciliation';
-import { clearPendingLocalChanges, hasPendingLocalChanges, markPendingLocalChanges, mergeClinicalCollections } from './clinicalMerge';
+import { clearPendingLocalChanges, hasPendingLocalChanges, markPendingLocalChanges, mergeClinicalCollections, pendingChangesGeneration } from './clinicalMerge';
+import { ensureUnitBeds, type CloudBedRecord, type EnsureUnitBedsResult, type UnitBedsIO } from './unitBeds';
 import { webCurrentUser } from './webFirebase';
-import { webLoadCurrentUserFromCloud, webSyncCurrentUserNow } from './webCloudSyncBridge';
+import { ensureWebUnitBeds, webLoadCurrentUserFromCloud, webSyncCurrentUserNow } from './webCloudSyncBridge';
+import { isLocalPreview } from '../config/localPreview';
 
 let installed=false;
 let syncing=false;
@@ -129,7 +131,48 @@ async function resolveAccess():Promise<WorkspaceAccessState|null>{
 async function syncCollection(workspaceId:string,collection:string,records:any[],filter:(record:any)=>boolean,allowRemoteDelete:boolean):Promise<void>{const reference=workspacePath(workspaceId,collection);const currentIds=new Set<string>();for(const record of records){if(!record?.id||!filter(record))continue;const id=String(record.id);currentIds.add(id);const safe=firestoreSafe(record)||{};await withRetry(()=>FirebaseFirestore.setDocument({reference:`${reference}/${id}`,data:{...safe,id,updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},merge:true}));}if(!allowRemoteDelete)return;const remote=await getCollectionDocuments(reference);for(const item of remote){if(filter(item.data)&&!currentIds.has(item.id))await withRetry(()=>FirebaseFirestore.deleteDocument({reference:`${reference}/${item.id}`}));}}
 async function writeMetadata(workspaceId:string,uid:string,access:WorkspaceAccessState){await withRetry(()=>FirebaseFirestore.setDocument({reference:`workspaces/${workspaceId}/metadata/cloud`,data:{workspaceId,ownerUid:uid,lastClientSync:new Date().toISOString(),schemaVersion:SCHEMA_VERSION,role:access.role,unitId:access.unitId||null,platform:Capacitor.getPlatform()},merge:true}));}
 
-async function syncLocalDatabase(uid:string):Promise<void>{const verified=await currentUid();if(!verified||verified!==uid)throw new Error('Firebase authentication session is missing or changed. Sign in again.');const access=await resolveAccess();if(!access)throw new Error('No CardioVault Workspace is assigned to this account. Enter a Unit Access Code.');if(access.role==='view_only')return;if(syncing||suppressSync){syncRequested=true;await waitForIdleSync();return;}syncing=true;syncRequested=false;const run=(async()=>{try{await ensureFirestoreNetwork();const filterUnit=(record:any)=>access.role==='owner'||(Array.isArray(access.unitIds)?access.unitIds.map(String).includes(String(record?.unitId||'')):String(record?.unitId||'')===String(access.unitId||''));const owner=access.role==='owner';const myUnitIds=Array.isArray(access.unitIds)?access.unitIds.map(String):[];const myUid=String(uid);clearPendingLocalChanges();await syncCollection(access.workspaceId,'units',StorageService.getUnits(),record=>owner||myUnitIds.includes(String(record?.id||''))||String(record?.createdBy||'')===myUid,owner);await syncCollection(access.workspaceId,'beds',StorageService.getBeds(),filterUnit,owner);await syncCollection(access.workspaceId,'patients',StorageService.getPatients(),filterUnit,owner);if(owner)await writeMetadata(access.workspaceId,uid,access);localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());clearCloudError();}catch(error){markPendingLocalChanges();recordCloudError(error);throw error;}})();inflightSync=run;try{await run;}finally{syncing=false;if(inflightSync===run)inflightSync=null;if(syncRequested){syncRequested=false;scheduleSync(100);}}}
+async function syncLocalDatabase(uid:string):Promise<void>{
+  const verified=await currentUid();
+  if(!verified||verified!==uid)throw new Error('Firebase authentication session is missing or changed. Sign in again.');
+  const access=await resolveAccess();
+  if(!access)throw new Error('No CardioVault Workspace is assigned to this account. Enter a Unit Access Code.');
+  if(access.role==='view_only')return;
+  if(syncing||suppressSync){syncRequested=true;await waitForIdleSync();return;}
+  syncing=true;syncRequested=false;
+  const generation=pendingChangesGeneration();
+  const run=(async()=>{
+    try{
+      await ensureFirestoreNetwork();
+      const owner=access.role==='owner';
+      const myUnitIds=Array.isArray(access.unitIds)?access.unitIds.map(String):[];
+      const myUid=String(uid);
+      // A unit the caller created is his even before the membership catches up
+      // (the rules make the creator its consultant), and its beds belong to him
+      // for the same reason. Uploading the unit but not its beds is what made a
+      // newly created unit come back with a bed count of zero.
+      const myCreatedUnitIds=new Set(StorageService.getUnits().filter(unit=>String((unit as any).createdBy||'')===myUid).map(unit=>String(unit.id)));
+      const filterUnit=(record:any)=>owner
+        ||myUnitIds.includes(String(record?.unitId||''))
+        ||myCreatedUnitIds.has(String(record?.unitId||''))
+        ||String(record?.unitId||'')===String(access.unitId||'');
+      await syncCollection(access.workspaceId,'units',StorageService.getUnits(),record=>owner||myUnitIds.includes(String(record?.id||''))||String(record?.createdBy||'')===myUid,owner);
+      await syncCollection(access.workspaceId,'beds',StorageService.getBeds(),filterUnit,owner);
+      await syncCollection(access.workspaceId,'patients',StorageService.getPatients(),filterUnit,owner);
+      if(owner)await writeMetadata(access.workspaceId,uid,access);
+      // The workspace only counts as clean when nothing was saved while this
+      // upload was running; otherwise the local copy is still the newest truth.
+      if(pendingChangesGeneration()===generation)clearPendingLocalChanges();
+      localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());
+      clearCloudError();
+    }catch(error){
+      markPendingLocalChanges();
+      recordCloudError(error);
+      throw error;
+    }
+  })();
+  inflightSync=run;
+  try{await run;}finally{syncing=false;if(inflightSync===run)inflightSync=null;if(syncRequested){syncRequested=false;scheduleSync(100);}}
+}
 /** Waits until no automatic sync is running, so the next one really uploads. */
 async function waitForIdleSync():Promise<void>{for(let attempt=0;attempt<100;attempt+=1){if(!syncing)return;const current=inflightSync;if(current){try{await current;}catch{}}await new Promise(resolve=>setTimeout(resolve,100));}}
 function scheduleSync(delay=100){if(suppressSync)return;if(syncTimer)clearTimeout(syncTimer);syncTimer=setTimeout(()=>{syncTimer=null;void(async()=>{const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);try{await syncLocalDatabase(uid);}catch(error){console.warn('Automatic cloud sync failed; changes will be retried on the next local save or manual sync.',error);}})();},delay);}
@@ -174,10 +217,39 @@ export async function loadCurrentUserFromCloud():Promise<{uid:string;found:boole
     const merged=mergeClinicalCollections({units,beds,patients},{units:localUnits,beds:localBeds,patients:localPatients},{keepLocalOnly:hasPendingLocalChanges()});
     units=merged.units; beds=merged.beds; patients=merged.patients;
     const reconciled=reconcileClinicalRegistry(units,beds,patients);units=reconciled.units;beds=reconciled.beds;patients=reconciled.patients;setLocalData(units,beds,patients);localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());clearCloudError();return{uid,found,access};}catch(error){recordCloudError(error);console.warn('Cloud database read failed.',error);return{uid,found:false,access:null};}finally{suppressSync=false;}}
-export async function saveCurrentUserToCloud():Promise<void>{if(!Capacitor.isNativePlatform()){if(webCurrentUser())void webSyncCurrentUserNow();return;}const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);scheduleSync(100);}
+export async function saveCurrentUserToCloud():Promise<void>{if(isLocalPreview())return;if(!Capacitor.isNativePlatform()){if(webCurrentUser())void webSyncCurrentUserNow();return;}const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);scheduleSync(100);}
 export async function syncCurrentUserNow():Promise<boolean>{if(!Capacitor.isNativePlatform())return webSyncCurrentUserNow();let uid=await currentUid();if(!uid)uid=await recoverNativeGoogleSession();if(!uid){recordCloudError(new Error('No native Firebase user is signed in.'));return false;}localStorage.setItem(UID_KEY,uid);try{const access=await resolveAccess();if(!access){const message=await isMasterAccount()?'Master workspace could not be opened or created. Check that the current Google account is the Master Account and that the latest Firestore rules are deployed.':'No Workspace is assigned to this account. Enter a Unit Access Code.';recordCloudError(new Error(message));return false;}await waitForIdleSync();await syncLocalDatabase(uid);return true;}catch(error){recordCloudError(error);console.warn('Manual cloud sync failed:',error);return false;}}
+/**
+ * Creates every bed document a unit is missing and verifies the cloud copy.
+ * The unit document and its beds are separate writes, so the creation flow can
+ * never assume that "the sync succeeded" also means "the beds are there".
+ * Repeating it is safe: existing (possibly occupied) beds are never touched and
+ * the deterministic ids make a duplicate impossible.
+ */
+export async function ensureUnitBedsNow(unitId:string,expected:number):Promise<EnsureUnitBedsResult>{
+  if(!Capacitor.isNativePlatform())return ensureWebUnitBeds(unitId,expected);
+  const uid=await currentUid();
+  if(!uid)throw new Error('A Firebase account must be signed in.');
+  const access=await resolveAccess();
+  if(!access)throw new Error('No CardioVault Workspace is assigned to this account. Enter a Unit Access Code.');
+  const io:UnitBedsIO={
+    async listBeds(id:string){
+      const records=await withTimeout(getCollectionDocuments(workspacePath(access.workspaceId,'beds'),id));
+      return records.map(item=>({id:item.id,data:item.data})) as CloudBedRecord[];
+    },
+    async createBed(_id:string,bed){
+      const reference=`${workspacePath(access.workspaceId,'beds')}/${bed.id}`;
+      const snapshot:any=(await withTimeout<any>(FirebaseFirestore.getDocument({reference}))).snapshot;
+      const data=readSnapshotData(snapshot);
+      if(data&&Object.keys(data).length)return;
+      await withTimeout(FirebaseFirestore.setDocument({reference,data:{...firestoreSafe(bed),id:String(bed.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},merge:true}));
+    },
+  };
+  return ensureUnitBeds({unitId,expected,io});
+}
+
 export function getLastCloudSyncTime(){return localStorage.getItem(LAST_SYNC_KEY)||'';}
 export function getLastCloudSyncErrorTime(){return localStorage.getItem(LAST_ERROR_KEY)||'';}
 export function getLastCloudSyncErrorDetail(){return localStorage.getItem(LAST_ERROR_DETAIL_KEY)||'';}
-export function installCloudSyncBridge(){if(installed)return;installed=true;const originalUnits=StorageService.saveUnits.bind(StorageService);const originalBeds=StorageService.saveBeds.bind(StorageService);const originalPatients=StorageService.savePatients.bind(StorageService);const restoreInProgress=()=>localStorage.getItem('cardiovault_cloud_restore_in_progress')==='1';StorageService.saveUnits=units=>{originalUnits(units);if(!suppressSync&&!restoreInProgress()){markPendingLocalChanges();void saveCurrentUserToCloud();}};StorageService.saveBeds=beds=>{originalBeds(beds);if(!suppressSync&&!restoreInProgress()){markPendingLocalChanges();void saveCurrentUserToCloud();}};StorageService.savePatients=patients=>{originalPatients(patients);if(!suppressSync&&!restoreInProgress()){markPendingLocalChanges();void saveCurrentUserToCloud();}};}
+export function installCloudSyncBridge(){if(installed)return;installed=true;if(isLocalPreview())return;const originalUnits=StorageService.saveUnits.bind(StorageService);const originalBeds=StorageService.saveBeds.bind(StorageService);const originalPatients=StorageService.savePatients.bind(StorageService);const restoreInProgress=()=>localStorage.getItem('cardiovault_cloud_restore_in_progress')==='1';StorageService.saveUnits=units=>{originalUnits(units);if(!suppressSync&&!restoreInProgress()){markPendingLocalChanges();void saveCurrentUserToCloud();}};StorageService.saveBeds=beds=>{originalBeds(beds);if(!suppressSync&&!restoreInProgress()){markPendingLocalChanges();void saveCurrentUserToCloud();}};StorageService.savePatients=patients=>{originalPatients(patients);if(!suppressSync&&!restoreInProgress()){markPendingLocalChanges();void saveCurrentUserToCloud();}};}
 export function clearActiveClinicalWorkspace(){clearLocalClinicalData();localStorage.removeItem('cardiovault_active_workspace_access_v1');}

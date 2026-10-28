@@ -2,7 +2,8 @@ import { StorageService, stripLegacyDemoData } from './storage';
 import { normalizeBedStatus, normalizePatientStatus } from '../types/clinical';
 import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
-import { clearPendingLocalChanges, hasPendingLocalChanges, markPendingLocalChanges, mergeClinicalCollections } from './clinicalMerge';
+import { clearPendingLocalChanges, hasPendingLocalChanges, markPendingLocalChanges, mergeClinicalCollections, pendingChangesGeneration } from './clinicalMerge';
+import { ensureUnitBeds, pendingUnitBedCounts, type CloudBedRecord, type EnsureUnitBedsResult, type UnitBedsIO } from './unitBeds';
 import { onSnapshot } from 'firebase/firestore';
 import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where, or } from './webFirebase';
 import { ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId, type WorkspaceAccessState } from './workspaceAccess';
@@ -211,10 +212,56 @@ export async function webLoadCurrentUserFromCloud(){
     return {uid:user.uid,found:false,access:null};
   }
 }
-export async function webSyncCurrentUserNow(){
+/**
+ * Creates every bed document a unit is missing and verifies the cloud copy.
+ *
+ * The unit document and its beds are separate writes, so the creation flow
+ * cannot assume that pushing "the workspace" also pushed the beds. This is the
+ * step that makes a unit with N declared beds really hold N bed documents, and
+ * repeating it is safe: existing beds are never touched.
+ */
+export async function ensureWebUnitBeds(unitId:string,expected:number):Promise<EnsureUnitBedsResult>{
+  const user=webCurrentUser(); if(!user?.uid)throw new Error('Sign in again to upload this unit.');
+  const access=await accessForUser(user.uid);
+  if(!access)throw new Error('No CardioVault Workspace is assigned to this Firebase account.');
+  const workspaceId=access.workspaceId;
+  const io:UnitBedsIO={
+    async listBeds(id:string){
+      return (await withTimeout(collectionData(path(workspaceId,'beds'),id))) as CloudBedRecord[];
+    },
+    async createBed(_id:string,bed){
+      const reference=webDoc(`${path(workspaceId,'beds')}/${bed.id}`);
+      // Never overwrite a bed that already exists: it may already be occupied.
+      const existing=await withTimeout(getDoc(reference)).catch(()=>null);
+      if(existing?.exists())return;
+      await withTimeout(setDoc(reference,{...safe(bed),id:String(bed.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true}));
+    },
+  };
+  return ensureUnitBeds({unitId,expected,io});
+}
+
+let webSyncRunning=false;
+let webSyncInflight:Promise<boolean>|null=null;
+let webSyncPendingRun:Promise<boolean>|null=null;
+
+async function waitForWebSyncIdle():Promise<void>{
+  for(let attempt=0;attempt<300;attempt+=1){
+    if(!webSyncRunning)return;
+    const current=webSyncInflight;
+    if(current){try{await current;}catch{}}
+    else await new Promise(resolve=>setTimeout(resolve,100));
+  }
+}
+
+async function runWebSync():Promise<boolean>{
   const user=webCurrentUser(); if(!user?.uid)return false;
+  webSyncRunning=true;
+  // The realtime listeners persist snapshots wholesale. While a sync is
+  // running the local state is the doctor's latest intent, so they stay quiet.
+  setSyncPending(true);
+  const generation=pendingChangesGeneration();
+  let uploaded=false;
   try{
-    setSyncPending(true);
     const access=await accessForUser(user.uid);
     if(!access){
       localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
@@ -227,11 +274,15 @@ export async function webSyncCurrentUserNow(){
       return false;
     }
     const allowedUnitIds=new Set((access.unitIds?.length?access.unitIds:[access.unitId]).filter(Boolean).map(String));
-    const sync=async(name:string,records:any[],unitScoped:boolean)=>{
+    // A creator owns the unit and its beds even before the membership catches
+    // up: the rules make him the unit's consultant. Uploading the units but not
+    // their beds left exactly the units he created with a bed count of zero.
+    const myCreatedUnitIds=new Set(StorageService.getUnits().filter(unit=>String((unit as any).createdBy||'')===String(user.uid)).map(unit=>String(unit.id)));
+    const sync=async(name:string,records:any[],unitScoped:boolean,extra?:(record:any)=>boolean)=>{
       const current=new Set<string>();
       for(const record of records){
         if(!record?.id)continue;
-        if(unitScoped&&!allowedUnitIds.has(String(record.unitId||'')))continue;
+        if(unitScoped&&!allowedUnitIds.has(String(record.unitId||''))&&!(extra?.(record)))continue;
         current.add(String(record.id));
         await withTimeout(setDoc(webDoc(`${path(access.workspaceId,name)}/${record.id}`),{...safe(record),id:String(record.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true}));
       }
@@ -241,20 +292,52 @@ export async function webSyncCurrentUserNow(){
       }
     };
     if(access.role==='owner'){
-      clearPendingLocalChanges();
       await sync('units',StorageService.getUnits(),false);
     }else{
       // A member owns only the units on their membership plus any unit they created
       // themselves (the rules make the creator that unit's consultant). Pushing the
       // whole local list would be denied for every unit they do not belong to.
-      const myUid=String(user.uid);
-      clearPendingLocalChanges();
-      await sync('units',StorageService.getUnits().filter(u=>allowedUnitIds.has(String(u.id))||String((u as any).createdBy||'')===myUid),false);
+      await sync('units',StorageService.getUnits().filter(u=>allowedUnitIds.has(String(u.id))||String((u as any).createdBy||'')===String(user.uid)),false);
     }
-    await sync('beds',StorageService.getBeds(),access.role!=='owner');
+    await sync('beds',StorageService.getBeds(),access.role!=='owner',(bed:any)=>myCreatedUnitIds.has(String(bed?.unitId||'')));
     await sync('patients',StorageService.getPatients(),access.role!=='owner');
-    localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);setSyncPending(false);return true;
-  }catch(error:any){markPendingLocalChanges();localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));setSyncPending(true);return false;}
+    // Only a sync that saw no new local write may declare the workspace clean.
+    // A save that landed mid-upload leaves the flag set, so the next sync still
+    // treats the local copy as the doctor's latest intent.
+    if(pendingChangesGeneration()===generation)clearPendingLocalChanges();
+    localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);uploaded=true;return true;
+  }catch(error:any){
+    markPendingLocalChanges();
+    localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
+    localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+    return false;
+  }finally{
+    webSyncRunning=false;
+    webSyncInflight=null;
+    // A failed upload leaves records the cloud has never seen, so the listeners
+    // stay quiet until an upload succeeds; otherwise the next snapshot would
+    // replace them with the older cloud copy.
+    setSyncPending(!uploaded);
+  }
+}
+
+export async function webSyncCurrentUserNow():Promise<boolean>{
+  if(webSyncRunning){
+    // A burst of local saves used to start one full workspace upload each, and
+    // whichever finished first cleared the pending flag while the others were
+    // still writing. Coalesce them into a single follow-up sync instead.
+    if(!webSyncPendingRun){
+      webSyncPendingRun=(async()=>{await waitForWebSyncIdle();return startWebSync();})().finally(()=>{webSyncPendingRun=null;});
+    }
+    return webSyncPendingRun;
+  }
+  return startWebSync();
+}
+
+function startWebSync():Promise<boolean>{
+  const run=runWebSync();
+  webSyncInflight=run;
+  return run;
 }
 
 
@@ -276,6 +359,23 @@ export async function installWebRealtimeCloudSync(onRefresh?:()=>void): Promise<
       if (name==='units') values=stripLegacyDemoData(values, [], []).units;
       if (name==='beds') values=stripLegacyDemoData([], values, []).beds;
       if (name==='patients') values=stripLegacyDemoData([], [], values).patients;
+      // A unit whose bed documents are still on their way to the cloud must not
+      // lose them here. Replacing the local beds with the cloud snapshot wiped
+      // exactly the beds the doctor had just created, and because the clinical
+      // store is memory-only the loss survived every later sync and reload.
+      if (name==='beds') {
+        const owedUnits=Object.keys(pendingUnitBedCounts());
+        if (owedUnits.length) {
+          const incoming=new Set(values.map((value:any)=>String(value.id)));
+          const owed=StorageService.getBeds().filter(
+            (bed)=>owedUnits.includes(String(bed.unitId))&&!incoming.has(String(bed.id)),
+          );
+          if (owed.length) {
+            values=[...values,...owed];
+            void webSyncCurrentUserNow();
+          }
+        }
+      }
       if (access.role==='owner' && name==='units') {
         const localUnits=StorageService.getUnits();
         if (localUnits.length>values.length && values.length>0) {
