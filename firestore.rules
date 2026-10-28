@@ -492,6 +492,76 @@ service cloud.firestore {
         allow delete: if canWrite(workspaceId) && adminOf(workspaceId);
       }
 
+      // ─── Subscription requests (cross-device) ────────────────────────────
+      // A member files a request for the unit(s) they are renewing; the
+      // platform owner is the only account that reads the queue or decides it.
+      // Deliberately NOT gated by canWrite(): a workspace whose trial or
+      // subscription already expired must still be able to ask for a renewal.
+      // The client never writes `paymentVerified` itself - the owner sets it
+      // after checking the transfer by hand.
+      match /subscriptionRequests/{requestId} {
+        allow get: if adminOf(workspaceId)
+          || (signedIn() && resource.data.subscriberId == request.auth.uid);
+        allow list: if adminOf(workspaceId);
+        allow create: if member(workspaceId)
+          && request.resource.data.workspaceId == workspaceId
+          && request.resource.data.subscriberId == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.method in ['instapay', 'visa']
+          && request.resource.data.unitIds.size() > 0
+          && request.resource.data.unitIds.hasOnly(memberUnits(workspaceId))
+          && request.resource.data.amount > 0
+          && request.resource.data.get('paymentVerified', false) == false;
+        // The owner decides a request. The requester may only withdraw their
+        // own pending request, and may never move it to approved.
+        allow update: if (
+            adminOf(workspaceId)
+            && request.resource.data.subscriberId == resource.data.subscriberId
+            && request.resource.data.workspaceId == workspaceId
+            && request.resource.data.status in ['pending', 'approved', 'rejected', 'withdrawn']
+          ) || (
+            signedIn()
+            && resource.data.subscriberId == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'withdrawn'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'withdrawnAt'])
+          );
+        allow delete: if adminOf(workspaceId);
+      }
+
+      // ─── Master patient file ─────────────────────────────────────────────
+      // One durable patient identity per workspace, shared by every unit that
+      // treated the patient. `contextIds` is the unit list allowed to read it,
+      // and a member may only ever add a unit they already belong to.
+      match /masterFiles/{fileId} {
+        allow get, list: if adminOf(workspaceId)
+          || unitMemberAny(workspaceId, resource.data.get('contextIds', []));
+        allow create: if canWrite(workspaceId)
+          && signedIn()
+          && request.resource.data.workspaceId == workspaceId
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.get('contextIds', []).size() > 0
+          && request.resource.data.get('contextIds', []).hasOnly(memberUnits(workspaceId));
+        allow update: if canWrite(workspaceId)
+          && ( adminOf(workspaceId)
+               || unitMemberAny(workspaceId, resource.data.get('contextIds', [])) )
+          && unitMemberAny(workspaceId, request.resource.data.get('contextIds', []));
+        allow delete: if adminOf(workspaceId);
+      }
+
+      // ─── Unit waiting list ───────────────────────────────────────────────
+      // Scoped under the unit so one unit's queue can never be read through
+      // another unit's membership.
+      match /units/{unitId}/waiting/{entryId} {
+        allow get, list: if adminOf(workspaceId) || unitMember(workspaceId, unitId);
+        allow create, update: if canWrite(workspaceId)
+          && ( adminOf(workspaceId) || unitMember(workspaceId, unitId) )
+          && request.resource.data.unitId == unitId
+          && request.resource.data.workspaceId == workspaceId;
+        allow delete: if canWrite(workspaceId)
+          && ( adminOf(workspaceId) || unitMember(workspaceId, unitId) );
+      }
+
       match /metadata/{documentId} { allow read, write: if adminOf(workspaceId); }
 
       // ─── Media ───────────────────────────────────────────────────────────
