@@ -16,11 +16,13 @@
     "cap:sync:ios": "npx cap sync ios",
     "android:debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
     "ios:prepare": "npm run build && npx cap sync ios",
-    "test:firestore-rules": "npx firebase-tools@15.30.2 emulators:exec --only firestore \"node --test test/firestore.rules.test.js\"",
+    "test:firestore-rules": "npx firebase-tools@15.30.2 emulators:exec --only firestore \"node --test test/firestore.rules.test.js test/department-team.rules.test.js\"",
+    "test:firebase-config": "node --test test/firebaseProject.test.ts",
     "emulators:start": "npx firebase-tools@15.30.2 emulators:start --only firestore,auth,storage --project cardiovault-emulator-test",
     "emulators:seed": "node scripts/seed-emulator.mjs",
     "dev:emulator": "vite --mode emulator",
-    "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/patientDedup.test.ts test/clinicalMerge.test.ts test/bedReconciliation.test.ts test/abgHistory.test.ts test/previousAdmissionViewer.test.ts test/voiceProxyAuth.test.ts test/voiceProxyNumbers.test.ts test/voiceProxyPrompt.test.ts test/voiceQueue.test.ts test/voiceProxyLogging.test.ts"
+    "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/patientDedup.test.ts test/clinicalMerge.test.ts test/bedReconciliation.test.ts test/abgHistory.test.ts test/previousAdmissionViewer.test.ts test/voiceProxyAuth.test.ts test/voiceProxyNumbers.test.ts test/voiceProxyPrompt.test.ts test/voiceQueue.test.ts test/voiceProxyLogging.test.ts test/unitBeds.test.ts",
+    "test:department-team": "node --test test/unitCatalog.test.ts test/institutionSetup.test.ts test/waitingList.test.ts test/clinicMode.test.ts test/unitMembership.test.ts test/patientEncounters.test.ts test/subscriptionLifecycle.test.ts test/localAuditLog.test.ts test/masterPatientFile.test.ts test/operationWaiting.test.ts test/subscriptionRequests.test.ts test/clinicDashboard.test.ts"
   },
   "dependencies": {
     "@capacitor-community/speech-recognition": "^7.0.1",
