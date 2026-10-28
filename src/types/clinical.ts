@@ -6,7 +6,9 @@ export const normalizeBedStatus=(value:unknown):BedStatus=>value==='Empty'?'Empt
 export interface Bed { id:string; unitId:string; bedNumber:string; status:BedStatus; patientId?:string; }
 // Provisioning metadata mirrors the fields the Firestore rules require on
 // workspaces/{ws}/units/{unitId}. Older local records simply omit them.
-export interface Unit { id:string; name:string; type:string; totalBeds:number; createdBy?:string; consultantUid?:string; createdAtMs?:number; capacityLocked?:boolean; }
+// `unitTypeId` and `config` are additive (Department Team roadmap): a record
+// written before them stays valid and is normalised at read time, never migrated.
+export interface Unit { id:string; name:string; type:string; totalBeds:number; createdBy?:string; consultantUid?:string; createdAtMs?:number; capacityLocked?:boolean; unitTypeId?:import('./departmentTeam').UnitTypeId; config?:import('./departmentTeam').UnitConfig; features?:string[]; notes?:string; }
 export interface ClinicalSummary { chiefComplaint:string; hpi:string; pmh:string[]; psh:string[]; drugHistory:string; allergies:string[]; familyHistory:string; socialHistory:string; }
 export interface HandoverData { situation:string; background:string; assessment:string; recommendation:string; updatedAt?:string; }
 export interface CardiovascularHistory { hypertension:boolean; diabetes:boolean; dyslipidemia:boolean; cad:boolean; previousMI:boolean; heartFailure:boolean; arrhythmias:boolean; valvularDisease:boolean; previousPCI:boolean; previousCABG:boolean; previousStroke:boolean; pvd:boolean; smoking:boolean; alcohol:boolean; previousAdmissions:string; previousICU:string; other:string; }
@@ -63,6 +65,8 @@ export interface UserProfile {
   email: string;
   username?: string;
   role: ClinicalRole;
+  /** Clinic privileges come from the signed-in account profile, never a screen toggle. */
+  clinicRole?: 'doctor' | 'secretary';
   departmentId: string;
   assignedUnitIds: string[];
   status: 'active' | 'pending' | 'inactive';
