@@ -4,11 +4,15 @@ export const normalizePatientStatus=(value:unknown):PatientStatus=>{switch(value
 export const normalizeBedStatus=(value:unknown):BedStatus=>value==='Empty'?'Empty':normalizePatientStatus(value);
 
 export interface Bed { id:string; unitId:string; bedNumber:string; status:BedStatus; patientId?:string; }
+// A hospital is the stable grouping above units. Units carry `hospitalId` as
+// additive metadata only; unit-based pricing and entitlements stay tied to
+// units, not hospitals. Older unit records simply omit `hospitalId`.
+export interface Hospital { id: string; name: string; createdBy?: string; createdAtMs?: number; updatedAtMs?: number; unitIds?: string[]; schemaVersion?: number; }
 // Provisioning metadata mirrors the fields the Firestore rules require on
 // workspaces/{ws}/units/{unitId}. Older local records simply omit them.
 // `unitTypeId` and `config` are additive (Department Team roadmap): a record
 // written before them stays valid and is normalised at read time, never migrated.
-export interface Unit { id:string; name:string; type:string; totalBeds:number; createdBy?:string; consultantUid?:string; createdAtMs?:number; capacityLocked?:boolean; unitTypeId?:import('./departmentTeam').UnitTypeId; config?:import('./departmentTeam').UnitConfig; features?:string[]; notes?:string; }
+export interface Unit { id:string; name:string; type:string; totalBeds:number; createdBy?:string; consultantUid?:string; createdAtMs?:number; capacityLocked?:boolean; unitTypeId?:import('./departmentTeam').UnitTypeId; config?:import('./departmentTeam').UnitConfig; features?:string[]; notes?:string; hospitalId?:string; }
 export interface ClinicalSummary { chiefComplaint:string; hpi:string; pmh:string[]; psh:string[]; drugHistory:string; allergies:string[]; familyHistory:string; socialHistory:string; }
 export interface HandoverData { situation:string; background:string; assessment:string; recommendation:string; updatedAt?:string; }
 export interface CardiovascularHistory { hypertension:boolean; diabetes:boolean; dyslipidemia:boolean; cad:boolean; previousMI:boolean; heartFailure:boolean; arrhythmias:boolean; valvularDisease:boolean; previousPCI:boolean; previousCABG:boolean; previousStroke:boolean; pvd:boolean; smoking:boolean; alcohol:boolean; previousAdmissions:string; previousICU:string; other:string; }

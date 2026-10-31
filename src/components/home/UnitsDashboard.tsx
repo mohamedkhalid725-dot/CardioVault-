@@ -19,6 +19,7 @@ import { useApp } from '../../context/AppContext';
 import { Unit } from '../../types/clinical';
 import { UnitManagementModal } from '../units/UnitManagementModal';
 import { AddPatientModal } from '../patient/AddPatientModal';
+import { AuthorizationService } from '../../services/authorizationService';
 import {
   getStoredWorkspaceAccess,
   getMyUnits,
@@ -31,10 +32,11 @@ export const UnitsDashboard: React.FC = () => {
     units,
     beds,
     patients,
+    currentUser,
+    groupUnitsByHospital,
     setCurrentUnitId,
     setCurrentView,
     setIsSearchOpen,
-    addUnit,
   } = useApp();
 
   const [showUnitManagementModal, setShowUnitManagementModal] = useState(false);
@@ -129,10 +131,12 @@ export const UnitsDashboard: React.FC = () => {
     ? null
     : new Set((access?.unitIds?.length ? access.unitIds : access?.unitId ? [access.unitId] : []).map(String));
   const hiddenUnitIdSet = new Set(hiddenUnitIds);
-  const scopedUnits = units.filter((unit) => !allowedUnitIds || allowedUnitIds.has(String(unit.id)));
+  const workspaceScopedUnits = units.filter((unit) => !allowedUnitIds || allowedUnitIds.has(String(unit.id)));
+  const scopedUnits = AuthorizationService.filterAuthorizedUnits(workspaceScopedUnits, currentUser);
   const visibleUnits = scopedUnits.filter((unit) =>
     beds.some((bed) => bed.unitId === unit.id) && !hiddenUnitIdSet.has(String(unit.id))
   );
+  const hospitalGroups = groupUnitsByHospital(visibleUnits);
   // Everything the user can toggle: the units the server says belong to them plus
   // any local unit still inside their workspace scope (so nothing gets stuck hidden).
   const visibilityEntries = [
@@ -269,11 +273,18 @@ export const UnitsDashboard: React.FC = () => {
               All your units are hidden. Use the eye button above to show them again.
             </div>
           )}
-          {visibleUnits.map((unit) => {
-            const stats = getUnitStats(unit.id);
+          {hospitalGroups.map(({ hospital, units: groupedUnits }) => (
+            <React.Fragment key={hospital?.id || 'unassigned'}>
+              <div className="sm:col-span-2 lg:col-span-3 flex items-center gap-2 px-1 pt-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                <span>{hospital?.name || 'Unassigned'}</span>
+                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                <span>{groupedUnits.length} unit{groupedUnits.length === 1 ? '' : 's'}</span>
+              </div>
+              {groupedUnits.map((unit) => {
+                const stats = getUnitStats(unit.id);
 
-            return (
-              <button
+                return (
+                  <button
                 key={unit.id}
                 onClick={() => handleSelectUnit(unit.id)}
                 className="group relative bg-white dark:bg-[#111C2E] hover:bg-slate-50 dark:hover:bg-[#16243B] border border-slate-200 dark:border-slate-800/90 hover:border-cyan-500/50 dark:hover:border-cyan-500/50 rounded-2xl p-5 text-left transition-all duration-200 shadow-sm hover:shadow-xl focus:outline-none flex flex-col justify-between min-h-[140px]"
@@ -328,9 +339,11 @@ export const UnitsDashboard: React.FC = () => {
                     {stats.empty} empty
                   </div>
                 </div>
-              </button>
-            );
-          })}
+                  </button>
+                );
+              })}
+            </React.Fragment>
+          ))}
 
           {/* Add Unit Card Button */}
           <button

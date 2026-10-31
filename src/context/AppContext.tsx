@@ -1,5 +1,5 @@
 import React,{createContext,useContext,useEffect,useRef,useState}from'react';
-import {Bed,BedStatus,Patient,PatientSectionId,Unit,AuditEvent,UserProfile}from'../types/clinical';
+import {Bed,BedStatus,Patient,PatientSectionId,Unit,AuditEvent,UserProfile,Hospital}from'../types/clinical';
 import {StorageService}from'../services/storage';
 import {AuthorizationService, PRESET_USERS, ACCESS_DENIED_MESSAGE}from'../services/authorizationService';
 import {DepartmentService}from'../services/departmentService';
@@ -20,6 +20,10 @@ import {isLocalPreview,PREVIEW_USER,PREVIEW_WORKSPACE_ID}from'../config/localPre
 import {loadPreviewCreatedUnits,savePreviewCreatedUnits,seedPreviewData}from'../config/previewSeed';
 import {computeUnitEntitlementState,subscriptionHistoryExists}from'../services/subscriptionRequests';
 import {linkOrCreateForIntake,persistTimelineEvent}from'../services/masterPatientFile';
+import {assignUnitHospitalDocument,createHospitalDocument,loadHospitalsForUnits,newHospitalId,type HospitalDocument}from'../services/hospitalPersistence';
+import {firestoreHospitalPersistence}from'../services/firestoreHospitalPersistence';
+import {firestoreUnitVerificationIO}from'../services/firestoreUnitPersistence';
+import {UnitCloudVerificationError,verifyUnitSetupInCloud}from'../services/unitPersistence';
 
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail'|'results-center'|'institution-setup'|'waiting-list'|'clinic'|'payments'|'master-file'|'operation-waiting'|'owner-requests';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
@@ -36,6 +40,7 @@ export interface AddUnitOptions {
   id?: string;
   unitTypeId?: Unit['unitTypeId'];
   config?: Unit['config'];
+  hospitalId?: string;
 }
 export interface AppContextType{
   theme:'dark'|'light';
@@ -68,8 +73,8 @@ export interface AppContextType{
   addPatient:(data:Partial<Patient>,targetBedId?:string)=>Patient;
   updatePatient:(id:string,updates:Partial<Patient>,auditContext?:PatientAuditContext)=>void;
   dischargePatient:(id:string,reason:string,summary:string)=>void;
-  transferPatient:(id:string,unitId:string,bedId:string)=>void;
-  readmitPatient:(id:string,unitId:string,bedId:string)=>void;
+  transferPatient:(id:string,unitId:string,bedId:string)=>boolean;
+  readmitPatient:(id:string,unitId:string,bedId:string)=>boolean;
   deletePatientPermanently:(id:string)=>void;
   addUnit:(name:string,type:string,initialBedsCount?:number,options?:AddUnitOptions)=>Unit;
   addPreviewUnits:(units:Unit[])=>number;
@@ -82,6 +87,17 @@ export interface AppContextType{
   updateUnit:(id:string,name:string,type:string,extra?:Partial<Unit>)=>void;
   lockUnitCapacity:(id:string)=>void;
   deleteUnit:(id:string)=>boolean;
+  // Hospital grouping (owner manages hospitals; units reference them via hospitalId).
+  hospitals:Hospital[];
+  addHospital:(name:string,id?:string)=>Promise<HospitalDocument|Hospital|undefined>;
+  assignUnitToHospital:(unitId:string,hospitalId:string|null)=>Promise<boolean>;
+  // Pure write-ability check for a single unit (subscription read-only gate,
+  // no toast): mirrors `canWriteTouchedUnits` for one unit.
+  canWriteUnit:(unitId:string)=>boolean;
+  // Groups units by hospital (null = Unassigned). Caller passes units already
+  // filtered to the account's authorized units so members never see hospitals
+  // they have no units in.
+  groupUnitsByHospital:(inputUnits:Unit[])=>{hospital:Hospital|null;units:Unit[]}[];
   addBed:(unitId:string,bedNumber?:string)=>Bed;
   removeBed:(id:string)=>boolean;
   isSearchOpen:boolean;
@@ -152,6 +168,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[privacySafeMonitor,setPrivacySafeMonitor]=useState<boolean>(false);
  // Team picker (B3): the teams this account belongs to.
  const[myWorkspaces,setMyWorkspaces]=useState<IndexedWorkspace[]>([]);
+ // Hospitals are read from the active workspace in Firestore; only the isolated
+ // preview uses its local-only registry.
+ const[hospitals,setHospitals]=useState<Hospital[]>([]);
  const[isTeamPickerOpen,setIsTeamPickerOpen]=useState(false);
  const[isSwitchingTeam,setIsSwitchingTeam]=useState(false);
  const teamPickerShown=useRef(false);
@@ -170,7 +189,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  // The index only says which teams exist for this account. Opening a team still
  // goes through its membership document, so the picker can never reach a team
  // the doctor does not belong to.
- const refreshWorkspaceIndex=async():Promise<IndexedWorkspace[]>=>{
+  const refreshWorkspaceIndex=async():Promise<IndexedWorkspace[]>=>{
   if(isLocalPreview()){
    const localList:IndexedWorkspace[]=[{workspaceId:PREVIEW_WORKSPACE_ID,name:'Local Preview',unitNames:units.map(unit=>unit.name)}];
    setMyWorkspaces(localList);
@@ -191,22 +210,41 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    const registered=await registerWorkspaceInIndex(accountUid,{workspaceId:activeId,name:name||activeId,unitNames});
    if(registered)list=[...entries,{workspaceId:activeId,name:name||activeId,unitNames}];
   }
-  setMyWorkspaces(list);
-  return list;
- };
- const openTeamPicker=()=>{if(isLocalPreview()){showToast('Workspace switching is disabled in the isolated local preview.','info');return;}teamPickerShown.current=true;setIsTeamPickerOpen(true);};
+   setMyWorkspaces(list);
+   return list;
+  };
+  const refreshHospitals=async():Promise<Hospital[]>=>{
+   if(isLocalPreview()){
+    try{const raw=localStorage.getItem('cardiovault_hospitals_v1');const saved:Hospital[]=raw?JSON.parse(raw):[];const safe=Array.isArray(saved)?saved:[];setHospitals(safe);return safe;}catch{setHospitals([]);return[];}
+   }
+   let access=getStoredWorkspaceAccess();
+   if(!access&&await isMasterAccount())access=await ensureOwnerWorkspace();
+   if(!access){setHospitals([]);return[];}
+   const owner=access.role==='owner'&&await isMasterAccount();
+   const allowedIds=new Set((access.unitIds?.length?access.unitIds:access.unitId?[access.unitId]:[]).map(String));
+   const scoped=StorageService.getUnits().filter(unit=>owner||allowedIds.has(String(unit.id)));
+   const authorized=owner?scoped:AuthorizationService.filterAuthorizedUnits(scoped,currentUser);
+   try{
+    const loaded=await loadHospitalsForUnits(firestoreHospitalPersistence,access.workspaceId,authorized,owner);
+    setHospitals(loaded);
+    return loaded;
+   }catch(error){console.warn('Hospital metadata could not be loaded from Firestore:',error);setHospitals([]);return[];}
+  };
+  const openTeamPicker=()=>{if(isLocalPreview()){showToast('Workspace switching is disabled in the isolated local preview.','info');return;}teamPickerShown.current=true;setIsTeamPickerOpen(true);};
  const closeTeamPicker=()=>{setIsTeamPickerOpen(false);};
  const switchWorkspace=async(workspaceId:string)=>{
   if(isLocalPreview()){showToast('Workspace switching is disabled in the isolated local preview.','info');return;}
   if(!workspaceId||isSwitchingTeam)return;
   setIsSwitchingTeam(true);
   try{
-   // The other team's clinical data must never stay on the screen.
-   clearActiveClinicalWorkspace();
-   setStoredWorkspaceAccess({workspaceId,role:'clinical_editor',unitId:null,unitName:null});
-   const cloud=await loadCurrentUserFromCloud();
-   if(cloud?.access)setStoredWorkspaceAccess(cloud.access);
-   hydrateClinicalState();
+    // The other team's clinical data must never stay on the screen.
+    clearActiveClinicalWorkspace();
+    setHospitals([]);
+    setStoredWorkspaceAccess({workspaceId,role:'clinical_editor',unitId:null,unitName:null});
+    const cloud=await loadCurrentUserFromCloud();
+    if(cloud?.access)setStoredWorkspaceAccess(cloud.access);
+    hydrateClinicalState();
+    await refreshHospitals();
    await refreshWorkspaceIndex();
    setIsTeamPickerOpen(false);
    setCurrentView('home');
@@ -236,19 +274,20 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    showToast(`Switched active user to ${user.name} (${user.role.toUpperCase()})`, 'info');
  };
 
- const hydrateClinicalState=()=>{
+  const hydrateClinicalState=()=>{
    const u=StorageService.getUnits();
    const p=StorageService.getPatients();
    const b=DepartmentService.reconcileBedsWithPatients(StorageService.getBeds(),p);
    const repaired=b.map(bed=>{if(bed.patientId)return bed;const owner=p.find(patient=>!patient.isArchived&&patient.bedId===bed.id);return owner?{...bed,patientId:owner.id,status:owner.status}:bed;});
    if(repaired.some((bed,index)=>bed.patientId!==b[index].patientId))StorageService.saveBeds(repaired);
-   setUnits(u);setBeds(repaired);setPatients(p);
-   setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));
-   setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));
- };
+    setUnits(u);setBeds(repaired);setPatients(p);
+    setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));
+    setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));
+    void refreshHospitals();
+  };
  useEffect(()=>{const onRestore=()=>hydrateClinicalState();window.addEventListener('cardiovault-data-restored',onRestore);window.addEventListener('cardiovault-workspace-access-granted',onRestore);return()=>{window.removeEventListener('cardiovault-data-restored',onRestore);window.removeEventListener('cardiovault-workspace-access-granted',onRestore);};},[]);
  useEffect(()=>{if(isLocalPreview()||!Capacitor.isNativePlatform())return;let handle:{remove:()=>Promise<void>}|null=null;const attach=async()=>{try{handle=await FirebaseAuthentication.addListener('authStateChange',async({user}:any)=>{if(!user?.uid){if(Date.now()<authNullGraceUntil.current)return;const saved=StorageService.getAuth();if(!saved.isAuthenticated)return;let recovered:any=null;try{recovered=await waitForNativeFirebaseUser();}catch{}if(recovered?.uid){authNullGraceUntil.current=0;const profile=await resolveProfileFor(recovered);setCurrentUserState(profile);const session={...saved,isAuthenticated:true,isLocked:false,userEmail:recovered.email||saved.userEmail,userName:StorageService.getProfileName()||saved.userName||recovered.displayName||recovered.email?.split('@')[0],pinCode:''};StorageService.saveAuth(session);setAuth(session);return;}const signedOut={...saved,isAuthenticated:false,isLocked:false,pinCode:''};clearActiveClinicalWorkspace();StorageService.saveAuth(signedOut);setAuth(signedOut);setCurrentView('login');return;}authNullGraceUntil.current=0;const profile=await resolveProfileFor(user);setCurrentUserState(profile);setStoredWorkspaceAccess(null);const session={...StorageService.getAuth(),isAuthenticated:true,isLocked:false,userEmail:user.email||'',userName:StorageService.getProfileName()||user.displayName||user.email?.split('@')[0]||'Physician',pinCode:''};StorageService.saveAuth(session);setAuth(session);setCurrentView('home');localStorage.setItem('cardiovault_google_uid',user.uid);void (async()=>{try{if(await isMasterAccount()){await ensureOwnerWorkspace();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}const cloud=await loadCurrentUserFromCloud();if(cloud?.found||cloud?.access)hydrateClinicalState();if(cloud?.access)window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));}catch(error){console.warn('Native auth state cloud restore failed:',error);}})();});}catch(error){console.warn('Native Firebase auth listener failed:',error);}};void attach();return()=>{if(handle)void handle.remove();};},[]);
- useEffect(()=>{let active=true;installCloudSyncBridge();const boot=async()=>{if(isLocalPreview()){const saved=StorageService.getAuth();seedPreviewData();const demo={...saved,isAuthenticated:true,isLocked:false,userEmail:PREVIEW_USER.email,userName:PREVIEW_USER.name,pinCode:''};StorageService.saveAuth(demo);setAuth(demo);setCurrentUserState({userId:PREVIEW_USER.uid,name:PREVIEW_USER.name,email:PREVIEW_USER.email,role:'department_admin',clinicRole:'doctor',departmentId:'dept-cardiology',assignedUnitIds:['unit-preview-cardiology','unit-preview-ccu'],status:'active',updatedAt:new Date().toISOString()});localStorage.setItem('cardiovault_google_uid',PREVIEW_USER.uid);setStoredWorkspaceAccess({workspaceId:PREVIEW_WORKSPACE_ID,role:'owner',unitId:null,unitName:null});hydrateClinicalState();setCurrentView('home');window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}const savedAuth=StorageService.getAuth();setThemeState(StorageService.getTheme());if(!Capacitor.isNativePlatform()){const redirectedUser=await checkWebRedirectResult();const webUser=redirectedUser||webCurrentUser();if(webUser){const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:webUser.email||savedAuth.userEmail,userName:StorageService.getProfileName()||savedAuth.userName||webUser.displayName,pinCode:''};setAuth(session);StorageService.saveAuth(session);localStorage.setItem('cardiovault_google_uid',webUser.uid);setCurrentUserState(await resolveProfileFor(webUser));hydrateClinicalState();setCurrentView('home');void loadCurrentUserFromCloud();}else{setAuth({...savedAuth,isAuthenticated:false,isLocked:false});setCurrentView('login');}return;}const firebaseUser=await waitForNativeFirebaseUser();if(!firebaseUser?.uid){clearActiveClinicalWorkspace();const signedOut={...savedAuth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(signedOut);StorageService.saveAuth(signedOut);setCurrentView('login');return;}const profile=await resolveProfileFor(firebaseUser);setCurrentUserState(profile);setStoredWorkspaceAccess(null);const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:firebaseUser.email||savedAuth.userEmail,userName:StorageService.getProfileName()||savedAuth.userName||firebaseUser.displayName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');try{const cloud=await loadCurrentUserFromCloud();if(!active)return;if(cloud?.found)hydrateClinicalState();setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');}catch(error){console.warn('Cloud session restore failed:',error);}};void boot();return()=>{active=false;};},[]);
+ useEffect(()=>{let active=true;installCloudSyncBridge();const boot=async()=>{if(isLocalPreview()){const saved=StorageService.getAuth();seedPreviewData();const demo={...saved,isAuthenticated:true,isLocked:false,userEmail:PREVIEW_USER.email,userName:PREVIEW_USER.name,pinCode:''};StorageService.saveAuth(demo);setAuth(demo);setCurrentUserState({userId:PREVIEW_USER.uid,name:PREVIEW_USER.name,email:PREVIEW_USER.email,role:'department_admin',clinicRole:'doctor',departmentId:'dept-cardiology',assignedUnitIds:['unit-preview-cardiology','unit-preview-ccu'],status:'active',updatedAt:new Date().toISOString()});localStorage.setItem('cardiovault_google_uid',PREVIEW_USER.uid);setStoredWorkspaceAccess({workspaceId:PREVIEW_WORKSPACE_ID,role:'owner',unitId:null,unitName:null});hydrateClinicalState();setCurrentView('home');window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}const savedAuth=StorageService.getAuth();setThemeState(StorageService.getTheme());if(!Capacitor.isNativePlatform()){const redirectedUser=await checkWebRedirectResult();const webUser=redirectedUser||webCurrentUser();if(webUser){const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:webUser.email||savedAuth.userEmail,userName:StorageService.getProfileName()||savedAuth.userName||webUser.displayName,pinCode:''};setAuth(session);StorageService.saveAuth(session);localStorage.setItem('cardiovault_google_uid',webUser.uid);setCurrentUserState(await resolveProfileFor(webUser));hydrateClinicalState();setCurrentView('home');void loadCurrentUserFromCloud().then(cloud=>{if(active&&(cloud?.found||cloud?.access))hydrateClinicalState();});}else{setAuth({...savedAuth,isAuthenticated:false,isLocked:false});setCurrentView('login');}return;}const firebaseUser=await waitForNativeFirebaseUser();if(!firebaseUser?.uid){clearActiveClinicalWorkspace();const signedOut={...savedAuth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(signedOut);StorageService.saveAuth(signedOut);setCurrentView('login');return;}const profile=await resolveProfileFor(firebaseUser);setCurrentUserState(profile);setStoredWorkspaceAccess(null);const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:firebaseUser.email||savedAuth.userEmail,userName:StorageService.getProfileName()||savedAuth.userName||firebaseUser.displayName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');try{const cloud=await loadCurrentUserFromCloud();if(!active)return;if(cloud?.found)hydrateClinicalState();setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');}catch(error){console.warn('Cloud session restore failed:',error);}};void boot();return()=>{active=false;};},[]);
  useEffect(()=>{if(isLocalPreview()||!auth.isAuthenticated)return;let active=true;const check=async()=>{try{if(await isMasterAccount())return;const valid=await validateCurrentWorkspaceAccess();if(valid===false&&active){logout();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-revoked'));showToast('Your Unit Access Code has been changed or revoked. Please sign in again with the new code.','warning');}}catch(error){console.warn('Workspace access monitor failed:',error);}};const initial=window.setTimeout(()=>void check(),3000);const timer=window.setInterval(()=>void check(),15000);return()=>{active=false;window.clearTimeout(initial);window.clearInterval(timer);};},[auth.isAuthenticated]);
  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},[theme]);
 
@@ -341,9 +380,68 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  };
  const loginWithEmail=async(email:string,user?:any)=>{if(isLocalPreview()){showToast('Sign-in is disabled in the local preview.','info');return;}const clean=email.trim().toLowerCase();if(!clean)return;const firebaseUser=user|| (Capacitor.isNativePlatform() ? (await FirebaseAuthentication.getCurrentUser()).user : webCurrentUser());if(!firebaseUser?.uid)throw new Error('Email authentication completed without a Firebase user.');setStoredWorkspaceAccess(null);const profile=await resolveProfileFor(firebaseUser);setCurrentUserState(profile);const a={...auth,isAuthenticated:true,isLocked:false,pinCode:'',userEmail:firebaseUser.email||clean,userName:StorageService.getProfileName()||auth.userName||firebaseUser.displayName||clean.split('@')[0]};setAuth(a);StorageService.saveAuth(a);localStorage.setItem('cardiovault_google_uid',firebaseUser.uid);setCurrentView('home');void (async()=>{try{if(await isMasterAccount()){await ensureOwnerWorkspace();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}const cloud=await Promise.race([loadCurrentUserFromCloud(),new Promise<'timeout'>(resolve=>window.setTimeout(()=>resolve('timeout'),8000))]);if(cloud==='timeout'){showToast('Signed in. Cloud restore is still pending.','info');return;}if(cloud?.found){hydrateClinicalState();setLastSyncTime(new Date().toLocaleTimeString());showToast('Signed in and cloud data restored.','success');}else if(cloud?.access){hydrateClinicalState();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));showToast('Signed in and workspace access restored.','success');}else{showToast('Signed in. Cloud workspace needs attention.','warning');}}catch(error){console.warn('Post-email-login cloud restore failed:',error);showToast('Signed in. Cloud sync will retry automatically.','warning');}})();};
  const unlockWithPin=(_pin:string)=>{showToast('PIN / Offline access has been disabled. Sign in with your Firebase account.','warning');return false;};const lockApp=()=>{showToast('Offline lock screen is disabled. Use Sign Out to end the session.','info');};
- const logout=()=>{if(isLocalPreview()){showToast('Sign-out is disabled in the local preview. Reload the page to restart the demo.','info');return;}authNullGraceUntil.current=0;void (Capacitor.isNativePlatform()?FirebaseAuthentication.signOut():webSignOut()).catch(error=>console.warn('Firebase sign-out failed:',error));localStorage.removeItem('cardiovault_google_uid');clearActiveClinicalWorkspace();setUnits([]);setBeds([]);setPatients([]);setCurrentUnitId(null);setCurrentPatientId(null);const a={...auth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(a);StorageService.saveAuth(a);setCurrentView('login');};
+ const logout=()=>{if(isLocalPreview()){showToast('Sign-out is disabled in the isolated local preview. Reload the page to restart the demo.','info');return;}authNullGraceUntil.current=0;void (Capacitor.isNativePlatform()?FirebaseAuthentication.signOut():webSignOut()).catch(error=>console.warn('Firebase sign-out failed:',error));localStorage.removeItem('cardiovault_google_uid');clearActiveClinicalWorkspace();setUnits([]);setBeds([]);setPatients([]);setHospitals([]);setCurrentUnitId(null);setCurrentPatientId(null);const a={...auth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(a);StorageService.saveAuth(a);setCurrentView('login');};
  const getPatientById=(id:string)=>patients.find(p=>p.id===id);const getBedsByUnit=(id:string)=>beds.filter(b=>b.unitId===id);const getUnitById=(id:string)=>units.find(u=>u.id===id);const archivedPatients=patients.filter(p=>p.isArchived);
  const canWriteTouchedUnits=(unitIds:string[])=>{const subscriberId=String(currentUser?.userId||'').trim()||undefined;if(!isLocalPreview()||!subscriptionHistoryExists(undefined,subscriberId))return true;const blockedId=Array.from(new Set(unitIds.filter(Boolean))).find(id=>computeUnitEntitlementState(id,undefined,undefined,subscriberId)==='read-only');if(!blockedId)return true;const name=units.find(unit=>unit.id===blockedId)?.name||blockedId;showToast(`${name} is read-only until its own trial or subscription is active.`,'error');return false;};
+ // Single-unit write-ability check used by transfer/re-admit UIs. Authorization
+ // scope is checked separately by those actions; this covers workspace and unit billing locks.
+ const canWriteUnit=(unitId:string)=>{
+  if(!unitId||subscriptionLocked||getStoredWorkspaceAccess()?.role==='view_only')return false;
+  const subscriberId=String(currentUser?.userId||'').trim()||undefined;
+  if(!isLocalPreview()||!subscriptionHistoryExists(undefined,subscriberId))return true;
+  return computeUnitEntitlementState(unitId,undefined,undefined,subscriberId)!=='read-only';
+ };
+ const addHospital=async(name:string,id?:string):Promise<Hospital|undefined>=>{
+  if(guardWrite())return undefined;
+  const trimmed=String(name||'').trim();if(!trimmed)throw new Error('Enter a hospital name.');
+  const stableId=String(id||newHospitalId()).trim();
+  if(isLocalPreview()){
+   const nowMs=Date.now();
+   const previous=(()=>{try{const raw=localStorage.getItem('cardiovault_hospitals_v1');const value=raw?JSON.parse(raw):[];return Array.isArray(value)?value as Hospital[]:[];}catch{return[];}})();
+   const existing=previous.find(item=>item.id===stableId);
+   if(existing){if(existing.name!==trimmed)throw new Error('This hospital ID is already in use. Retry with the same name.');return existing;}
+   const hospital:Hospital={id:stableId,name:trimmed,createdBy:currentUser.userId||PREVIEW_USER.uid,createdAtMs:nowMs,updatedAtMs:nowMs,unitIds:[],schemaVersion:1};
+   const next=[...previous,hospital];localStorage.setItem('cardiovault_hospitals_v1',JSON.stringify(next));setHospitals(next);return hospital;
+  }
+  if(!(await isMasterAccount()))throw new Error('Only the workspace owner can create a hospital.');
+  const access=getStoredWorkspaceAccess()||await ensureOwnerWorkspace();
+  if(!access||access.role!=='owner')throw new Error('The owner workspace is not ready. Reopen the workspace and retry.');
+  const uid=await getCurrentUid();if(!uid)throw new Error('A Firebase account must be signed in.');
+  const saved=await createHospitalDocument(firestoreHospitalPersistence,access.workspaceId,uid,trimmed,stableId);
+  setHospitals(previous=>[...previous.filter(item=>item.id!==saved.id),saved]);
+  return saved;
+ };
+ const assignUnitToHospital=async(unitId:string,hospitalId:string|null):Promise<boolean>=>{
+  if(guardWrite())return false;
+  if(isLocalPreview()){
+   const stableId=String(unitId||'').trim();const targetId=String(hospitalId||'').trim()||null;
+   const localUnits=StorageService.getUnits();const unit=localUnits.find(item=>item.id===stableId);
+   if(!unit)throw new Error('This unit is not available on this device.');
+   if(targetId&&!hospitals.some(item=>item.id===targetId))throw new Error('The selected hospital is not available in this workspace.');
+   const nextHospitals=hospitals.map(item=>({...item,unitIds:Array.from(new Set([...(item.unitIds||[]).map(String).filter(id=>id!==stableId),...(item.id===targetId?[stableId]:[])]))}));
+   const nextUnits=localUnits.map(item=>item.id===stableId?{...item,hospitalId:targetId}:item);
+   localStorage.setItem('cardiovault_hospitals_v1',JSON.stringify(nextHospitals));StorageService.saveUnits(nextUnits);setUnits(nextUnits);setHospitals(nextHospitals);return true;
+  }
+  if(!(await isMasterAccount()))throw new Error('Only the workspace owner can assign units to hospitals.');
+  const access=getStoredWorkspaceAccess();
+  if(!access||access.role!=='owner')throw new Error('The owner workspace is not ready. Reopen the workspace and retry.');
+  const savedUnit=await assignUnitHospitalDocument(firestoreHospitalPersistence,access.workspaceId,unitId,hospitalId);
+  const localUnits=StorageService.getUnits();
+  const nextUnits=localUnits.some(item=>item.id===savedUnit.id)
+   ?localUnits.map(item=>item.id===savedUnit.id?{...item,hospitalId:savedUnit.hospitalId||undefined}:item)
+   :[...localUnits,savedUnit];
+  StorageService.saveUnits(nextUnits);setUnits(nextUnits);await refreshHospitals();return true;
+ };
+ // Groups use persisted hospital metadata only after the caller has filtered units by access.
+ // Unknown or inaccessible hospital references stay Unassigned rather than guessing.
+ const groupUnitsByHospital=(inputUnits:Unit[]):{hospital:Hospital|null;units:Unit[]}[]=>{
+  const byHospital=new Map<string|null,Unit[]>();
+  for(const unit of inputUnits){const known=hospitals.find(hospital=>hospital.id===unit.hospitalId);const key=known?known.id:null;const group=byHospital.get(key)||[];group.push(unit);byHospital.set(key,group);}
+  const named=Array.from(byHospital.entries()).filter(([id])=>id!==null).sort((a,b)=>(hospitals.find(h=>h.id===a[0])?.name||'').localeCompare(hospitals.find(h=>h.id===b[0])?.name||''));
+  const groups=named.map(([id,group])=>({hospital:hospitals.find(h=>h.id===id)||null,units:group}));
+  const unassigned=byHospital.get(null);if(unassigned?.length)groups.push({hospital:null,units:unassigned});
+  return groups;
+ };
  const touchedUnitsForChanges=<T extends {id:string;unitId?:string},>(before:T[],after:T[]):string[]=>{const oldById=new Map(before.map(item=>[item.id,item]));const newById=new Map(after.map(item=>[item.id,item]));const ids:string[]=[];for(const id of new Set([...oldById.keys(),...newById.keys()])){const oldItem=oldById.get(id);const newItem=newById.get(id);if(oldItem!==newItem){if(oldItem?.unitId)ids.push(oldItem.unitId);if(newItem?.unitId)ids.push(newItem.unitId);}}return ids;};
  const changedEntityIds=<T extends {id:string},>(before:T[],after:T[]):string[]=>{const oldById=new Map(before.map(item=>[item.id,item]));const newById=new Map(after.map(item=>[item.id,item]));return [...new Set([...oldById.keys(),...newById.keys()])].filter(id=>oldById.get(id)!==newById.get(id));};
  const commitPatients=(next:Patient[])=>{if(guardWrite()||!canWriteTouchedUnits(touchedUnitsForChanges(patients,next)))return;setPatients(next);StorageService.savePatients(next);};const commitBeds=(next:Bed[])=>{if(guardWrite()||!canWriteTouchedUnits(touchedUnitsForChanges(beds,next)))return;setBeds(next);StorageService.saveBeds(next);};const commitClinicalState=(nextPatients:Patient[],nextBeds:Bed[])=>{const touched=[...touchedUnitsForChanges(patients,nextPatients),...touchedUnitsForChanges(beds,nextBeds)];if(guardWrite()||!canWriteTouchedUnits(touched))return;setPatients(nextPatients);StorageService.savePatients(nextPatients);setBeds(nextBeds);StorageService.saveBeds(nextBeds);};const commitUnits=(next:Unit[])=>{if(guardWrite()||!canWriteTouchedUnits(changedEntityIds(units,next)))return;setUnits(next);StorageService.saveUnits(next);};
@@ -378,30 +476,46 @@ const dischargePatient=(id:string,reason:string,summary:string)=>{
   recordDepartmentLifecycle(next,p.unitId,'Patient discharged',`${p.fullName} was discharged from ${unit?.name||'Unit'}.`,`Reason: ${dischargeReason}. Summary: ${summary||'Not recorded'}.`,stamp.getTime());
   setCurrentView('archive');
  };
-const transferPatient=(id:string,unitId:string,bedId:string)=>{
-  const p=patients.find(x=>x.id===id);const target=beds.find(b=>b.id===bedId&&b.unitId===unitId);
-  if(!p||!target||bedIsOccupied(target)){showToast('Target bed is not available.','error');return;}
-  if(guardWrite()||!canWriteTouchedUnits([p.unitId,unitId]))return;
-  const oldUnitName=units.find(unit=>unit.id===p.unitId)?.name||p.unitId;
-  const newUnitName=units.find(unit=>unit.id===unitId)?.name||unitId;
-  const moved:Patient={...p,unitId,bedId,unitIds:Array.from(new Set([...(p.unitIds||[]),p.unitId,unitId]))};
-  const nextBeds:Bed[]=beds.map(b=>b.id===p.bedId?{...b,patientId:undefined,status:'Empty'}:b.id===bedId?{...b,patientId:id,status:p.status}:b);
-  commitClinicalState(patients.map(patient=>patient.id===id?moved:patient),nextBeds);
-  recordDepartmentLifecycle(moved,unitId,'Patient transferred between units',`${p.fullName} moved from ${oldUnitName} to ${newUnitName}.`,`From: ${oldUnitName}, bed ${p.bedNumber||p.bedId||'Not recorded'}. To: ${newUnitName}, bed ${target.bedNumber||target.id}.`,Date.now());
- };
-const readmitPatient=(id:string,unitId:string,bedId:string)=>{
-  const p=patients.find(x=>x.id===id);const target=beds.find(b=>b.id===bedId&&b.unitId===unitId);
-  if(!p||!target||bedIsOccupied(target)){showToast('Target bed is not available.','error');return;}
-  if(guardWrite()||!canWriteTouchedUnits([unitId]))return;
-  const started=new Date();const date=formatLocalAdmissionDate(started);const time=formatLocalAdmissionTime(started);const oldUnitName=units.find(u=>u.id===p.unitId)?.name||'Unit';
-  try{
-   const next=resetForNewAdmission(p,unitId,bedId,oldUnitName,date,time,toLocalIsoTimestamp(started),DepartmentService.getDepartmentForUnit(unitId)?.id);
-   const nextWithUnits={...next,unitIds:Array.from(new Set([...(p.unitIds||[]),p.unitId,unitId]))};
-   commitClinicalState(patients.map(x=>x.id===id?nextWithUnits:x),beds.map(b=>b.id===bedId?{...b,patientId:id,status:nextWithUnits.status}:b));
-   recordDepartmentLifecycle(nextWithUnits,unitId,'Patient readmitted',`${p.fullName} was readmitted to ${units.find(u=>u.id===unitId)?.name||unitId}.`,`Admission date/time: ${date} ${time}. Bed: ${target.bedNumber||target.id}. Diagnosis: ${nextWithUnits.primaryDiagnosis||'Not recorded'}.`,started.getTime());
-  }catch(error){showToast('Re-admission blocked. Nothing was changed.','error');}
- };
- const deletePatientPermanently=(id:string)=>{commitPatients(patients.filter(p=>p.id!==id));commitBeds(beds.map(b=>b.patientId===id?{...b,patientId:undefined,status:'Empty'}:b));};
+const transferPatient=(id:string,unitId:string,bedId:string):boolean=>{
+ const freshPatients=StorageService.getPatients();const freshBeds=StorageService.getBeds();const freshUnits=StorageService.getUnits();
+ const p=freshPatients.find(patient=>patient.id===id);const target=freshBeds.find(bed=>bed.id===bedId&&bed.unitId===unitId);
+ if(!p||p.isArchived){showToast('This patient is no longer active and cannot be transferred.','error');return false;}
+ if(!target||!freshUnits.some(unit=>unit.id===unitId)){showToast('Target bed is not available.','error');return false;}
+ if(guardWrite()||!canWriteTouchedUnits([p.unitId,unitId]))return false;
+ if(!canWriteUnit(p.unitId)||!canWriteUnit(unitId)||!AuthorizationService.canPerformAction(currentUser,'transfer_patient',{unitId:p.unitId})||!AuthorizationService.canPerformAction(currentUser,'transfer_patient',{unitId})){showToast('You need write access to both the source and destination units.','error');return false;}
+ const occupant=target.patientId&&target.patientId!==id?freshPatients.find(patient=>patient.id===target.patientId):undefined;
+ if(target.patientId&&target.patientId!==id&&(!occupant||!occupant.isArchived)){showToast('Target bed is no longer available. Refresh the census and choose another bed.','error');return false;}
+ const sourceBedId=p.bedId||freshBeds.find(bed=>bed.patientId===id)?.id||'';
+ if(sourceBedId===target.id){showToast('Choose a different bed for the transfer.','error');return false;}
+ const atMs=Date.now();const oldUnitName=freshUnits.find(unit=>unit.id===p.unitId)?.name||p.unitId;const newUnitName=freshUnits.find(unit=>unit.id===unitId)?.name||unitId;
+ const transferEvent={id:`transfer-${atMs}-${Math.random().toString(36).slice(2,7)}`,patientId:p.id,timestamp:new Date(atMs).toISOString(),author:String(currentUser?.name||auth.userName||'Clinician'),role:String(currentUser?.role||'unknown'),eventType:'Transfer' as const,title:'Patient transferred',summary:`${p.fullName} moved from ${oldUnitName} to ${newUnitName}.`,details:{fromUnitId:p.unitId,fromBedId:sourceBedId,toUnitId:unitId,toBedId:target.id,transferredAtMs:atMs}};
+ const moved:Patient={...p,unitId,bedId:target.id,unitIds:Array.from(new Set([...(p.unitIds||[]),p.unitId,unitId])),timelineEvents:[...(p.timelineEvents||[]),transferEvent]};
+ const nextBeds=freshBeds.map(bed=>bed.id===target.id?{...bed,patientId:id,status:p.status}:bed.patientId===id?{...bed,patientId:undefined,status:'Empty' as BedStatus}:bed);
+ const nextPatients=freshPatients.map(patient=>patient.id===id?moved:patient);
+ setPatients(nextPatients);StorageService.savePatients(nextPatients);setBeds(nextBeds);StorageService.saveBeds(nextBeds);
+ recordDepartmentLifecycle(moved,unitId,'Patient transferred between units',`${p.fullName} moved from ${oldUnitName} to ${newUnitName}.`,`From unit ${p.unitId}, bed ${sourceBedId||'Not recorded'}. To unit ${unitId}, bed ${target.id}. Transfer time: ${new Date(atMs).toISOString()}.`,atMs);
+ return true;
+};
+const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
+ const freshPatients=StorageService.getPatients();const freshBeds=StorageService.getBeds();const freshUnits=StorageService.getUnits();
+ const p=freshPatients.find(patient=>patient.id===id);const target=freshBeds.find(bed=>bed.id===bedId&&bed.unitId===unitId);
+ if(!p||!p.isArchived){showToast('This patient is not currently archived. Refresh the archive before retrying.','error');return false;}
+ if(!target||!freshUnits.some(unit=>unit.id===unitId)){showToast('Target bed is not available.','error');return false;}
+ if(guardWrite()||!canWriteTouchedUnits([unitId]))return false;
+ if(!canWriteUnit(unitId)||!AuthorizationService.canPerformAction(currentUser,'admit_patient',{unitId})){showToast('You need write access to the selected destination unit.','error');return false;}
+ const occupant=target.patientId&&target.patientId!==id?freshPatients.find(patient=>patient.id===target.patientId):undefined;
+ if(target.patientId&&target.patientId!==id&&(!occupant||!occupant.isArchived)){showToast('Target bed is no longer available. Refresh the archive and choose another bed.','error');return false;}
+ const started=new Date();const date=formatLocalAdmissionDate(started);const time=formatLocalAdmissionTime(started);const oldUnitName=freshUnits.find(unit=>unit.id===p.unitId)?.name||'Unit';
+ try{
+  const next=resetForNewAdmission(p,unitId,target.id,oldUnitName,date,time,toLocalIsoTimestamp(started),DepartmentService.getDepartmentForUnit(unitId)?.id);
+  const nextWithUnits={...next,unitIds:Array.from(new Set([...(p.unitIds||[]),p.unitId,unitId]))};
+  const nextBeds=freshBeds.map(bed=>bed.id===target.id?{...bed,patientId:id,status:nextWithUnits.status}:bed.patientId===id?{...bed,patientId:undefined,status:'Empty' as BedStatus}:bed);
+  const nextPatients=freshPatients.map(patient=>patient.id===id?nextWithUnits:patient);
+  setPatients(nextPatients);StorageService.savePatients(nextPatients);setBeds(nextBeds);StorageService.saveBeds(nextBeds);
+  recordDepartmentLifecycle(nextWithUnits,unitId,'Patient readmitted',`${p.fullName} was readmitted to ${freshUnits.find(unit=>unit.id===unitId)?.name||unitId}.`,`Admission date/time: ${date} ${time}. Bed: ${target.bedNumber||target.id}. Diagnosis: ${nextWithUnits.primaryDiagnosis||'Not recorded'}.`,started.getTime());
+  return true;
+ }catch(error){showToast(`Re-admission blocked. Nothing was changed. ${String((error as any)?.message||'')}`,'error');return false;}
+}; const deletePatientPermanently=(id:string)=>{commitPatients(patients.filter(p=>p.id!==id));commitBeds(beds.map(b=>b.patientId===id?{...b,patientId:undefined,status:'Empty'}:b));};
  const addUnit=(name:string,type:string,initialBedsCount=3,options?:AddUnitOptions):Unit=>{
   const requestedId=String(options?.id||'').trim();
   // Always work from what is actually saved, not from the render's copy: the
@@ -416,7 +530,7 @@ const readmitPatient=(id:string,unitId:string,bedId:string)=>{
   const ownerUid=currentFirebaseUid(currentUser?.userId);
   const totalBeds=normalizeBedCount(initialBedsCount);
   // The rules make the creator the unit's consultant and require these fields.
-  const unit:Unit={id,name:name.trim(),type,totalBeds,createdBy:ownerUid,consultantUid:ownerUid,createdAtMs:Date.now(),capacityLocked:false,...(options?.unitTypeId?{unitTypeId:options.unitTypeId}:{}),...(options?.config?{config:options.config}:{})};
+   const unit:Unit={id,name:name.trim(),type,totalBeds,createdBy:ownerUid,consultantUid:ownerUid,createdAtMs:Date.now(),capacityLocked:false,...(options?.unitTypeId?{unitTypeId:options.unitTypeId}:{}),...(options?.config?{config:options.config}:{}),...(options?.hospitalId?{hospitalId:options.hospitalId}:{})};
   // The bed documents are provisioned by completeUnitSetup after this returns.
   // Registering the unit as pending here is what stops the realtime listeners
   // from replacing these beds with a cloud snapshot taken before they existed,
@@ -478,67 +592,67 @@ const readmitPatient=(id:string,unitId:string,bedId:string)=>{
   if(changed)commitBeds(Array.from(byId.values()));
  };
  const completeUnitSetup=async(unitId:string):Promise<UnitSetupResult>=>{
-  const unit=StorageService.getUnits().find(item=>item.id===unitId);
-  const expected=normalizeBedCount(unit?.totalBeds);
-  const presentNow=()=>StorageService.getBeds().filter(bed=>bed.unitId===unitId).length;
-  if(!unit)return{ok:false,unitId,expected:0,present:0,created:0,missing:[],message:'This unit is no longer on this device.'};
-  if(subscriptionLocked)return{ok:false,unitId,expected,present:presentNow(),created:0,missing:[],message:'This workspace is read-only until the subscription is renewed.'};
-  if(isLocalPreview()){
-   if(!canWriteTouchedUnits([unitId]))return{ok:false,unitId,expected,present:presentNow(),created:0,missing:[],message:'This unit is read-only until its own trial or subscription is active.'};
-   const existing=StorageService.getBeds();
-   const expectedBeds=desiredBeds(unitId,expected);
-   const known=new Set(existing.filter(bed=>bed.unitId===unitId).map(bed=>String(bed.id)));
-   const missing=expectedBeds.filter(bed=>!known.has(String(bed.id)));
-   if(missing.length)commitBeds([...existing,...missing]);
-   const savedIds=new Set(StorageService.getBeds().map(bed=>String(bed.id)));
-   const present=expectedBeds.filter(bed=>savedIds.has(String(bed.id))).length;
-   if(present<expected)return{ok:false,unitId,expected,present,created:missing.length,missing:expectedBeds.flatMap((bed,index)=>savedIds.has(String(bed.id))?[]:[index+1]),message:'Some beds could not be saved locally.'};
-   lockUnitCapacity(unitId);
-   clearUnitBedsPending(unitId);
-   return{ok:true,unitId,expected,present,created:missing.length,missing:[],message:'Saved in the isolated local preview.'};
+ const unit=StorageService.getUnits().find(item=>item.id===unitId);
+ const expected=normalizeBedCount(unit?.totalBeds);
+ if(!unit)return{ok:false,unitId,expected:0,present:0,created:0,missing:[],message:'This unit is no longer on this device.'};
+ if(subscriptionLocked)return{ok:false,unitId,expected,present:0,created:0,missing:[],message:'This workspace is read-only until the subscription is renewed.'};
+ if(isLocalPreview()){
+  if(!canWriteTouchedUnits([unitId]))return{ok:false,unitId,expected,present:StorageService.getBeds().filter(bed=>bed.unitId===unitId).length,created:0,missing:[],message:'This unit is read-only until its own trial or subscription is active.'};
+  const existing=StorageService.getBeds();const expectedBeds=desiredBeds(unitId,expected);
+  const known=new Set(existing.filter(bed=>bed.unitId===unitId).map(bed=>String(bed.id)));const missing=expectedBeds.filter(bed=>!known.has(String(bed.id)));
+  if(missing.length)commitBeds([...existing,...missing]);
+  const savedIds=new Set(StorageService.getBeds().map(bed=>String(bed.id)));const present=expectedBeds.filter(bed=>savedIds.has(String(bed.id))).length;
+  if(present<expected)return{ok:false,unitId,expected,present,created:missing.length,missing:expectedBeds.flatMap((bed,index)=>savedIds.has(String(bed.id))?[]:[index+1]),message:'Some beds could not be saved locally.'};
+  lockUnitCapacity(unitId);clearUnitBedsPending(unitId);
+  return{ok:true,unitId,expected,present,created:missing.length,missing:[],message:'Saved only in the isolated local preview.'};
+ }
+ let confirmedPresent=0;let provisioningBeds=false;
+ try{
+  const uploaded=await syncCurrentUserNow();
+  const cloudUnit=await firestoreUnitVerificationIO.getUnit(unitId);
+  if(!cloudUnit){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'';throw new Error(`The unit document is not confirmed in Firestore.${uploaded?'':detail?` Cloud sync: ${detail}`:''}`);}
+  if(Number(cloudUnit.totalBeds)!==expected)throw new Error(`The unit is in Firestore, but declares ${Number(cloudUnit.totalBeds)||0} beds instead of ${expected}.`);
+  const owner=await isMasterAccount();
+  if(!owner){
+   try{await registerCreatedUnit(unitId);}
+   catch(error){throw new Error(`The unit could not be added to your team membership: ${String((error as any)?.message||error)}`);}
   }
-  try{
-   // A failure here is not fatal: the bed step reports its own failure, and a
-   // member cannot even register a unit the cloud has not received yet.
-   const uploaded=await syncCurrentUserNow();
-   if(!uploaded)console.warn('Unit setup: the workspace upload did not complete. Verifying the beds anyway.');
-   if(!await isMasterAccount()){
-    try{await registerCreatedUnit(unitId);}
-    catch(error){throw new Error(`The unit could not be added to your team membership: ${String((error as any)?.message||error)}`);}
-   }
-   const ensured=await ensureUnitBedsNow(unitId,expected);
-   applyCloudBeds(ensured.beds);
-   // The local flag moves first: a sync that is already running may still hold
-   // the pre-lock unit record, and uploading that copy after the cloud write
-   // would silently re-open a capacity that was just closed.
-   lockUnitCapacity(unitId);
-   await setUnitCapacityLocked(unitId,true);
-   clearUnitBedsPending(unitId);
-   return{...ensured,ok:true};
-  }catch(error:any){
-   const raw=String(error?.message||error);
-   // The rules let the platform owner add a bed to a locked unit, but not the
-   // unit's consultant: he may resize it only while the provisioning window is
-   // open. Saying so is the difference between a dead end and a phone call.
-   const message=/permission|insufficient/i.test(raw)
-    ? 'Only the workspace owner can add beds to this unit now. Ask the workspace owner to finish the setup.'
-    : raw;
-   console.warn('Unit setup incomplete:',error);
-   markUnitBedsPending(unitId,expected);
-   // Report the cloud count when the verification reached the cloud; the local
-   // count would say "20 of 20 saved" about a unit whose beds never landed.
-   const cloudPresent=error instanceof UnitBedsIncompleteError?error.present:presentNow();
-   return{ok:false,unitId,expected,present:cloudPresent,created:0,missing:[],message};
+  if(owner&&unit.hospitalId){await assignUnitHospitalDocument(firestoreHospitalPersistence,getActiveWorkspaceId(),unitId,unit.hospitalId);}
+  provisioningBeds=true;
+  const ensured=await ensureUnitBedsNow(unitId,expected);
+  const verified=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected);
+  confirmedPresent=verified.beds.length;applyCloudBeds(verified.beds);
+  // Close the local window first so an overlapping sync cannot reopen capacity.
+  lockUnitCapacity(unitId);
+  await setUnitCapacityLocked(unitId,true);
+  const finalVerification=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected,true);
+  confirmedPresent=finalVerification.beds.length;applyCloudBeds(finalVerification.beds);
+  clearUnitBedsPending(unitId);
+  return{...ensured,ok:true,present:confirmedPresent,message:`The unit and all ${confirmedPresent} beds are verified in Firestore; capacity is locked.`};
+ }catch(error:any){
+  const raw=String(error?.message||error);
+  const message=provisioningBeds&&/permission|insufficient/i.test(raw)?'Bed provisioning was denied. Only the workspace owner can add beds after the provisioning window closes. Ask the owner to finish setup.':raw;
+  console.warn('Unit setup incomplete:',error);markUnitBedsPending(unitId,expected);
+  let cloudPresent=error instanceof UnitCloudVerificationError?error.confirmedPresent:confirmedPresent;
+  if(!cloudPresent&&confirmedPresent===0){
+   try{const partial=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected);cloudPresent=partial.beds.length;}
+   catch(verificationError){if(verificationError instanceof UnitCloudVerificationError)cloudPresent=verificationError.confirmedPresent;}
   }
- };
+  return{ok:false,unitId,expected,present:cloudPresent,created:0,missing:[],message};
+ }
+};
  // Finishes a unit creation in the cloud, in the only order the rules accept.
  const finalizeUnitCreation=async(unitId:string):Promise<void>=>{
   const result=await completeUnitSetup(unitId);
-  if(result.ok){
-   showToast(isLocalPreview()?`Unit saved locally with ${result.present} ${result.present===1?'bed':'beds'}.`:`Unit created with ${result.present} ${result.present===1?'bed':'beds'}. Only the owner can change its number of beds now.`,'success');
-   return;
-  }
-  showToast(isLocalPreview()?`Unit saved locally, but only ${result.present} of ${result.expected} beds were created. ${result.message}`:`Unit created, but only ${result.present} of ${result.expected} beds are in the cloud. ${result.message} Open Manage Units and tap "Finish setup" to retry.`,'error');
+   if(result.ok){
+    showToast(isLocalPreview()?`Local preview only: unit and ${result.present} ${result.present===1?'bed':'beds'} saved on this device.`:`Unit and all ${result.present} ${result.present===1?'bed':'beds'} verified in Firestore. Capacity is locked; only the owner can change it.`,'success');
+    return;
+   }
+   if(!isLocalPreview()&&result.expected>0&&result.present===result.expected){
+    showToast(`The unit and all ${result.present} beds are verified in Firestore, but setup is incomplete: ${result.message} Capacity lock is not confirmed. Open Manage Units and tap "Finish setup" to retry.`,'error');
+    return;
+   }
+   showToast(isLocalPreview()?`Local preview only: setup is incomplete; ${result.present} of ${result.expected} beds are saved on this device. ${result.message}`:`Cloud setup is incomplete; ${result.present} of ${result.expected} beds are confirmed in Firestore. ${result.message} Open Manage Units and tap "Finish setup" to retry.`,'error');
  };
  // Freezes capacity in the local record as soon as the creation wizard finishes, so
  // the UI stops offering bed-count changes even before the cloud copy is locked. It
@@ -554,13 +668,13 @@ const readmitPatient=(id:string,unitId:string,bedId:string)=>{
    return next;
  });
 
- const updateUnit=(id:string,name:string,type:string,extra:Partial<Unit>={})=>commitUnits(units.map(u=>u.id===id?{...u,name,type,...extra}:u));
+  const updateUnit=(id:string,name:string,type:string,extra:Partial<Unit>={})=>{const current=StorageService.getUnits();commitUnits(current.map(u=>u.id===id?{...u,name,type,...extra}:u));};
  const deleteUnit=(id:string)=>{if(units.length<=1){showToast('Cannot delete the last clinical unit.','error');return false;}const activeIds=new Set(patients.filter(p=>!p.isArchived&&p.unitId===id).map(p=>p.id));if(activeIds.size>0||beds.some(b=>b.unitId===id&&b.patientId&&activeIds.has(b.patientId))){showToast('Transfer or discharge active patients before deleting this unit.','error');return false;}commitUnits(units.filter(u=>u.id!==id));commitBeds(beds.filter(b=>b.unitId!==id));clearUnitBedsPending(id);if(currentUnitId===id)setCurrentUnitId(units.find(u=>u.id!==id)?.id||null);return true;};
  const addBed=(unitId:string,bedNumber?:string)=>{const n=beds.filter(b=>b.unitId===unitId).length+1;const bed={id:`bed-${unitId}-${Date.now()}`,unitId,bedNumber:bedNumber||`Bed ${n}`,status:'Empty' as BedStatus};commitBeds([...beds,bed]);commitUnits(units.map(u=>u.id===unitId?{...u,totalBeds:u.totalBeds+1}:u));void notifyClinicalData(`تم إضافة سرير جديد: ${bed.bedNumber}.`,'تمت إضافة بيانات جديدة',{unitId:bed.unitId,type:'bed-update'});return bed;};
  const removeBed=(id:string)=>{const bed=beds.find(b=>b.id===id);if(!bed||bedIsOccupied(bed))return false;const count=beds.filter(b=>b.unitId===bed.unitId).length;if(count<=1)return false;commitBeds(beds.filter(b=>b.id!==id));commitUnits(units.map(u=>u.id===bed.unitId?{...u,totalBeds:Math.max(1,u.totalBeds-1)}:u));return true;};
  const syncNow=async()=>{if(isLocalPreview()){showToast('Cloud sync is disabled in the isolated local preview.','info');return;}setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
  const resetDatabase=()=>{if(patients.length>0||units.length>0){const answer=window.prompt('This ERASES all units, beds and patients. Type RESET to confirm.');if(String(answer||'').trim().toUpperCase()!=='RESET'){showToast('Reset cancelled.','info');return;}}StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
-  return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,addPreviewUnits,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,addPreviewUnits,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,hospitals,addHospital,assignUnitToHospital,canWriteUnit,groupUnitsByHospital,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
 };
 export const useApp=()=>{const c=useContext(AppContext);if(!c)throw new Error('useApp must be used inside AppProvider');return c;};

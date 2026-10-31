@@ -62,6 +62,24 @@ export const cloudRequestPath = (workspaceId: string, requestId: string): string
   `${cloudRequestsPath(workspaceId)}/${requestId}`;
 export const cloudIndexPath = (uid: string): string => `users/${uid}/subscriptionIndex/current`;
 
+// ---------------------------------------------------------------------------
+// Onboarding (brand-new account, no membership yet)
+// ---------------------------------------------------------------------------
+// A newly registered account has no membership, so it cannot file the request
+// through the membership path above. The rules allow ONE narrow alternative:
+// the account that created a workspace may file a single pending, unverified
+// request in it, with an EMPTY unitIds list. The drafted units are a plan, not
+// access - nothing is created and nothing becomes readable from this document.
+//
+// Every path below is deterministic from the uid, which is what makes a retry
+// after a network failure idempotent: the same three writes (workspace, request,
+// index) are repeated, never appended.
+export const onboardingWorkspaceId = (uid: string): string => `ws_ob_${clean(uid)}`;
+export const onboardingRequestId = (uid: string): string => `onboard-${clean(uid)}`;
+export const cloudOnboardingIndexPath = (uid: string): string => `onboardingIndex/${clean(uid)}`;
+export const ONBOARDING_SCHEMA_VERSION = 1;
+
+
 export type CloudRequestStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 
 export type CloudSkipReason =
@@ -81,7 +99,8 @@ export type CloudFailureReason =
   | CloudSkipReason
   | 'read-failed'
   | 'write-failed'
-  | 'index-failed';
+  | 'index-failed'
+  | 'workspace-conflict';
 
 export interface CloudRequestBuild {
   ok: boolean;
@@ -163,9 +182,14 @@ export function clinicOnlyAmountMatches(
  */
 export function buildCloudRequestDoc(
   request: SubscriptionRequest,
-  context: { workspaceId?: string; subscriberId?: string },
+  context: { workspaceId?: string; subscriberId?: string; onboarding?: boolean },
 ): CloudRequestBuild {
-  const unitIds = requestUnitIds(request);
+  const onboarding = !!context?.onboarding;
+  // Onboarding: the unit list is deliberately empty. The drafts describe what
+  // the customer asked for; they are not a claim on existing units.
+  const unitIds = onboarding ? [] : requestUnitIds(request);
+  const plannedUnits = asArray<SubscriptionRequest['unitDrafts'][number]>(request?.unitDrafts)
+    .filter((unit) => clean(unit?.id) || clean(unit?.name)).length;
   const fail = (reason: CloudSkipReason): CloudRequestBuild => ({ ok: false, reason, unitIds });
 
   if (!request || !clean(request.id)) return fail('invalid-request');
@@ -179,7 +203,16 @@ export function buildCloudRequestDoc(
   // A clinic request without any department unit is legal in the rules, but only
   // for the clinic request type and only with a priced doctor count.
   const clinicOnly = clean(request.requestType) === 'clinic' && unitIds.length === 0;
-  if (unitIds.length === 0 && !clinicOnly) return fail('units-required');
+  if (!onboarding && unitIds.length === 0 && !clinicOnly) return fail('units-required');
+  if (onboarding) {
+    // The rules' onboarding branch demands at least one drafted unit unless the
+    // request is clinic-only, and a real doctor count whenever a clinic exists.
+    if (clean(request.requestType) !== 'clinic' && plannedUnits === 0) return fail('units-required');
+    if (clean(request.requestType) !== 'department') {
+      const doctors = Math.trunc(Number(request.doctorsCount) || 0);
+      if (!Number.isInteger(doctors) || doctors < 1 || doctors > 200) return fail('doctors-count-invalid');
+    }
+  }
   if (request.paymentVerifiedAtMs) return fail('already-verified');
 
   const { amount, currency } = requestAmount(request);
@@ -198,7 +231,8 @@ export function buildCloudRequestDoc(
   const data: Record<string, any> = {
     workspaceId,
     subscriberId,
-    subscriberName: clean(request.createdByName),
+    subscriberName: clean(request.createdByName) || 'Subscriber',
+    createdByName: clean(request.createdByName) || 'Subscriber',
     status: 'pending',
     method: request.paymentMethod,
     unitIds,
@@ -207,6 +241,7 @@ export function buildCloudRequestDoc(
     // The owner flips this by hand after checking the transfer. A client-side
     // create must always start false - the rules enforce it.
     paymentVerified: false,
+    ...(onboarding ? { onboarding: true } : {}),
     requestType: request.requestType,
     institutionName: clean(request.institutionName),
     phone: clean(request.phone),
@@ -458,6 +493,7 @@ export async function mirrorSubscriptionRequest(
     io?: SubscriptionCloudIo | null;
     workspaceId?: string;
     subscriberId?: string;
+    onboarding?: boolean;
   } = {},
 ): Promise<CloudMirrorResult> {
   const io = await resolveIo(options.io);
@@ -471,7 +507,11 @@ export async function mirrorSubscriptionRequest(
     subscriberId = subscriberId || identity.uid;
   }
 
-  const built = buildCloudRequestDoc(request, { workspaceId, subscriberId });
+  const built = buildCloudRequestDoc(request, {
+    workspaceId,
+    subscriberId,
+    onboarding: !!options.onboarding,
+  });
   if (!built.ok || !built.data) return { ok: false, reason: built.reason || 'invalid-request' };
 
   try {
@@ -505,6 +545,369 @@ export async function mirrorSubscriptionRequest(
   }
 
   return { ok: true, requestId: request.id, indexed };
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding operations
+// ---------------------------------------------------------------------------
+
+/**
+ * The workspace document a brand-new account creates for itself. It claims no
+ * ownership and no access: `createdBy` is recorded so the rules (and only the
+ * rules) can let this one account file its first request and open its one
+ * trial. It is created only when it does not exist yet.
+ */
+export function buildOnboardingWorkspaceDoc(
+  uid: string,
+  email: string,
+  name: string,
+  nowMs = Date.now(),
+): Record<string, any> {
+  const id = clean(uid);
+  return {
+    createdBy: id,
+    ...(clean(email) ? { createdByEmail: clean(email).toLowerCase() } : {}),
+    name: clean(name) || 'New institution',
+    schemaVersion: 13,
+    createdAt: new Date(nowMs).toISOString(),
+    onboarding: true,
+  };
+}
+
+/** The owner-discovery document. It carries no clinical or payment data. */
+export function buildOnboardingIndexDoc(
+  input: {
+    workspaceId: string;
+    requestId: string;
+    institutionName?: string;
+    subscriberName?: string;
+    submittedAtMs: number;
+  },
+  nowMs = Date.now(),
+): Record<string, any> {
+  return {
+    workspaceId: clean(input.workspaceId),
+    requestId: clean(input.requestId),
+    institutionName: clean(input.institutionName).slice(0, 200),
+    subscriberName: clean(input.subscriberName).slice(0, 200),
+    submittedAtMs: Math.max(1, Math.floor(Number(input.submittedAtMs) || nowMs)),
+    updatedAtMs: Math.floor(nowMs),
+    schemaVersion: ONBOARDING_SCHEMA_VERSION,
+  };
+}
+
+export interface OnboardingSubmitResult {
+  ok: boolean;
+  reason?: CloudFailureReason;
+  /** The request document really exists in the cloud. */
+  delivered: boolean;
+  /** The owner-discovery index was written, so the owner can see it. */
+  indexed: boolean;
+  /** True when this call created the request; false when it already existed. */
+  created?: boolean;
+  /** Current cloud status of a request that already existed. */
+  status?: CloudRequestStatus;
+  workspaceId?: string;
+  requestId?: string;
+}
+
+/**
+ * Files the first request of a brand-new account.
+ *
+ * Order matters and is the whole safety story:
+ *   1. validate the document BEFORE creating anything;
+ *   2. ensure the account's own workspace exists (create once, never overwrite);
+ *   3. write the request under that workspace (deterministic id -> a retry
+ *      overwrites the same document, never a second one);
+ *   4. write the account's private request index (so its own devices can read
+ *      the decision back);
+ *   5. write the owner-discovery index LAST, so it never points at a request
+ *      that does not exist.
+ *
+ * `ok` is true only when steps 3 and 5 both succeeded. A retry is always safe.
+ */
+export async function submitOnboardingRequest(
+  request: SubscriptionRequest,
+  options: {
+    io?: SubscriptionCloudIo | null;
+    uid?: string;
+    email?: string;
+    workspaceName?: string;
+    name?: string;
+    nowMs?: number;
+  } = {},
+): Promise<OnboardingSubmitResult> {
+  const io = await resolveIo(options.io);
+  if (!io) return { ok: false, reason: 'cloud-disabled', delivered: false, indexed: false };
+
+  const identity = clean(options.uid) ? { workspaceId: '', uid: clean(options.uid) } : await currentIdentity();
+  const uid = clean(identity.uid);
+  if (!uid) return { ok: false, reason: 'no-subscriber', delivered: false, indexed: false };
+
+  const workspaceId = onboardingWorkspaceId(uid);
+  const requestId = onboardingRequestId(uid);
+  const canonical: SubscriptionRequest = { ...request, id: requestId };
+  const nowMs = Number.isFinite(options.nowMs) ? Math.floor(Number(options.nowMs)) : Date.now();
+
+  const built = buildCloudRequestDoc(canonical, { workspaceId, subscriberId: uid, onboarding: true });
+  if (!built.ok || !built.data) {
+    return { ok: false, reason: built.reason || 'invalid-request', delivered: false, indexed: false, workspaceId, requestId };
+  }
+
+  // 2) The workspace. A read failure must NOT fall through to a blind write.
+  let workspace: Record<string, any> | null;
+  try {
+    workspace = await io.getDoc(`workspaces/${workspaceId}`);
+  } catch (error) {
+    console.warn('Onboarding workspace read failed:', error);
+    return { ok: false, reason: 'read-failed', delivered: false, indexed: false, workspaceId, requestId };
+  }
+  if (workspace && clean(workspace.createdBy) !== uid) {
+    return { ok: false, reason: 'workspace-conflict', delivered: false, indexed: false, workspaceId, requestId };
+  }
+  if (!workspace) {
+    try {
+      await io.setDoc(
+        `workspaces/${workspaceId}`,
+        buildOnboardingWorkspaceDoc(uid, options.email || '', options.workspaceName || '', nowMs),
+        false,
+      );
+    } catch (error) {
+      console.warn('Onboarding workspace create failed:', error);
+      return { ok: false, reason: 'write-failed', delivered: false, indexed: false, workspaceId, requestId };
+    }
+  }
+
+  // 3) The request itself. A retry must NEVER overwrite an existing document:
+  //    the rules treat a second write as an update (which only the owner may
+  //    make), and blind overwriting could reset an approved status or erase the
+  //    owner's codes. So the document is created only when it is absent, and an
+  //    existing one is reported as delivered with its current status.
+  const requestPath = cloudRequestPath(workspaceId, requestId);
+  let existingRequest: Record<string, any> | null;
+  try {
+    existingRequest = await io.getDoc(requestPath);
+  } catch (error) {
+    console.warn('Onboarding request read failed:', error);
+    return { ok: false, reason: 'read-failed', delivered: false, indexed: false, workspaceId, requestId };
+  }
+
+  let created = false;
+  let status: CloudRequestStatus | undefined;
+  if (existingRequest) {
+    if (clean(existingRequest.subscriberId) !== uid) {
+      return { ok: false, reason: 'workspace-conflict', delivered: false, indexed: false, workspaceId, requestId };
+    }
+    status = parseStatus(existingRequest.status);
+  } else {
+    try {
+      await io.setDoc(requestPath, built.data, false);
+      created = true;
+    } catch (error) {
+      console.warn('Onboarding request write failed:', error);
+      return { ok: false, reason: 'write-failed', delivered: false, indexed: false, workspaceId, requestId };
+    }
+  }
+
+  // 4) The account's private index (non-fatal: the owner queue does not use it).
+  try {
+    const path = cloudIndexPath(uid);
+    const existing = await io.getDoc(path).catch(() => null);
+    const previous = asArray<string>(existing?.requestIds).map(clean).filter(Boolean);
+    const requestIds = [...new Set([...previous, requestId])].slice(-MAX_INDEXED_REQUESTS);
+    await io.setDoc(
+      path,
+      { requestIds, workspaceId, updatedAtMs: nowMs, schemaVersion: CLOUD_INDEX_SCHEMA_VERSION },
+      true,
+    );
+  } catch (error) {
+    console.warn('Onboarding member index write failed:', error);
+  }
+
+  // 5) Owner discovery, last.
+  try {
+    await io.setDoc(
+      cloudOnboardingIndexPath(uid),
+      buildOnboardingIndexDoc(
+        {
+          workspaceId,
+          requestId,
+          institutionName: canonical.institutionName,
+          subscriberName: canonical.createdByName,
+          submittedAtMs: intMs(canonical.submittedAtMs) || nowMs,
+        },
+        nowMs,
+      ),
+      true,
+    );
+  } catch (error) {
+    console.warn('Onboarding discovery index write failed:', error);
+    return {
+      ok: false,
+      reason: 'index-failed',
+      delivered: true,
+      indexed: false,
+      created,
+      ...(status ? { status } : {}),
+      workspaceId,
+      requestId,
+    };
+  }
+
+  return {
+    ok: true,
+    delivered: true,
+    indexed: true,
+    created,
+    ...(status ? { status } : {}),
+    workspaceId,
+    requestId,
+  };
+}
+
+export interface OnboardingStatus {
+  ok: boolean;
+  reason?: CloudFailureReason;
+  found: boolean;
+  workspaceId?: string;
+  requestId?: string;
+  request?: SubscriptionRequest;
+  status?: CloudRequestStatus;
+  codes?: SubscriptionCodeRecord[];
+}
+
+/**
+ * Reads the caller's own onboarding request back (status and owner codes).
+ *
+ * The discovery index is the normal source. Two narrow fallbacks exist and both
+ * are opt-in, so an ordinary member account never probes a workspace it does not
+ * own (which the rules would deny, every time):
+ *   - `requestId`: a hint from this device's own saved draft, used when the
+ *     index write failed but the request itself was delivered;
+ *   - a failed index READ is retried against the deterministic path.
+ */
+export async function loadOnboardingStatus(
+  options: {
+    io?: SubscriptionCloudIo | null;
+    uid?: string;
+    storage?: SubscriptionStorage | null;
+    /** Known request id from this device; never guessed for other accounts. */
+    requestId?: string;
+  } = {},
+): Promise<OnboardingStatus> {
+  const io = await resolveIo(options.io);
+  if (!io) return { ok: false, reason: 'cloud-disabled', found: false };
+
+  const uid = clean(options.uid) || (await currentIdentity()).uid;
+  if (!uid) return { ok: false, reason: 'no-subscriber', found: false };
+
+  let workspaceId = '';
+  let requestId = '';
+  let indexReadFailed = false;
+  try {
+    const index = await io.getDoc(cloudOnboardingIndexPath(uid));
+    workspaceId = clean(index?.workspaceId);
+    requestId = clean(index?.requestId);
+  } catch (error) {
+    indexReadFailed = true;
+    console.warn('Onboarding index read failed:', error);
+  }
+
+  const candidates: Array<{ workspaceId: string; requestId: string }> = [];
+  if (workspaceId && requestId) candidates.push({ workspaceId, requestId });
+  const hint = clean(options.requestId);
+  if (hint) candidates.push({ workspaceId: onboardingWorkspaceId(uid), requestId: hint });
+  else if (indexReadFailed) {
+    candidates.push({ workspaceId: onboardingWorkspaceId(uid), requestId: onboardingRequestId(uid) });
+  }
+
+  let failure: CloudFailureReason | undefined;
+  for (const candidate of candidates) {
+    try {
+      const data = await io.getDoc(cloudRequestPath(candidate.workspaceId, candidate.requestId));
+      const parsed = cloudRequestToLocal(candidate.requestId, data);
+      if (!parsed) continue;
+      cacheRequests(mergeRequests(loadRequests(options.storage), [parsed.request]), options.storage);
+      cacheCodes(mergeCodes(loadCodes(options.storage), parsed.codes), options.storage);
+      return {
+        ok: true,
+        found: true,
+        workspaceId: candidate.workspaceId,
+        requestId: candidate.requestId,
+        request: parsed.request,
+        status: parsed.status,
+        codes: parsed.codes,
+      };
+    } catch (error) {
+      console.warn('Onboarding request read failed:', error);
+      failure = 'read-failed';
+    }
+  }
+
+  return { ok: !failure, ...(failure ? { reason: failure } : {}), found: false };
+}
+
+export interface OnboardingQueueEntry {
+  workspaceId: string;
+  requestId: string;
+  parsed: ParsedCloudRequest;
+}
+
+export interface OnboardingQueueResult {
+  ok: boolean;
+  reason?: CloudFailureReason;
+  entries: OnboardingQueueEntry[];
+}
+
+/**
+ * Platform-owner queue for brand-new accounts: lists the discovery index and
+ * loads each request from its own workspace. The rules allow the list and the
+ * reads for the platform owner only. Unreadable entries are skipped, never
+ * turned into a fake record.
+ */
+export async function loadOnboardingQueueFromCloud(
+  options: { io?: SubscriptionCloudIo | null; storage?: SubscriptionStorage | null } = {},
+): Promise<OnboardingQueueResult> {
+  const io = await resolveIo(options.io);
+  if (!io) return { ok: false, reason: 'cloud-disabled', entries: [] };
+
+  let docs: CloudDoc[];
+  try {
+    docs = await io.listDocs('onboardingIndex');
+  } catch (error) {
+    console.warn('Onboarding queue read failed:', error);
+    return { ok: false, reason: 'read-failed', entries: [] };
+  }
+
+  const entries: OnboardingQueueEntry[] = [];
+  let failed = 0;
+  for (const doc of docs) {
+    const workspaceId = clean(doc?.data?.workspaceId);
+    const requestId = clean(doc?.data?.requestId);
+    if (!workspaceId || !requestId) continue;
+    try {
+      const data = await io.getDoc(cloudRequestPath(workspaceId, requestId));
+      const parsed = cloudRequestToLocal(requestId, data);
+      if (parsed) entries.push({ workspaceId, requestId, parsed });
+    } catch (error) {
+      failed += 1;
+      console.warn('Onboarding request read failed:', workspaceId, requestId, error);
+    }
+  }
+
+  if (entries.length > 0) {
+    const merged = mergeRequests(loadRequests(options.storage), entries.map((entry) => entry.parsed.request));
+    const mergedCodes = mergeCodes(loadCodes(options.storage), entries.flatMap((entry) => entry.parsed.codes));
+    cacheRequests(merged, options.storage);
+    cacheCodes(mergedCodes, options.storage);
+  }
+
+  entries.sort(
+    (a, b) =>
+      (Number(a.parsed.request.submittedAtMs) || 0) - (Number(b.parsed.request.submittedAtMs) || 0),
+  );
+
+  return { ok: true, entries, ...(failed > 0 ? { reason: 'read-failed' as CloudFailureReason } : {}) };
 }
 
 export interface CloudSyncResult {
@@ -708,7 +1111,9 @@ export function describeCloudReason(reason?: string): string {
       return 'This request was already confirmed by the owner and cannot be re-sent.';
     case 'write-failed':
     case 'index-failed':
-      return 'The request could not reach the cloud right now, so it is kept on this device.';
+      return 'The request could not reach the cloud right now, so it is kept on this device. Press Save again to retry - the same request is reused, nothing is duplicated.';
+    case 'workspace-conflict':
+      return 'This account already belongs to a different workspace under that name. Sign in to that workspace instead of creating a new one.';
     case 'read-failed':
       return 'The cloud copy could not be read right now; showing the device copy.';
     default:

@@ -131,11 +131,23 @@ export async function getSubscription(): Promise<SubscriptionState> {
 // app is pointed at and only when that workspace document actually exists.
 // Never throws: a permission error just means no trial was started.
 export async function ensureTrialStarted(): Promise<SubscriptionState | null> {
-  try {
-    const workspaceId = getActiveWorkspaceId();
-    if (!workspaceId) return null;
+  return startWorkspaceTrial(getActiveWorkspaceId());
+}
 
-    const workspace = await readPath(`workspaces/${workspaceId}`);
+/**
+ * Starts the one 3-day trial of a SPECIFIC workspace. Onboarding needs this
+ * before the app is pointed at that workspace: the account that created the
+ * workspace may open its trial, and the rules enforce exactly the same shape
+ * (status 'trial', <= 3 days, grace = trial + 2 days).
+ *
+ * Never throws; returns null when the rules would refuse it.
+ */
+export async function startWorkspaceTrial(workspaceId: string): Promise<SubscriptionState | null> {
+  try {
+    const target = String(workspaceId || '').trim();
+    if (!target) return null;
+
+    const workspace = await readPath(`workspaces/${target}`);
     if (!workspace) return null;
 
     const uid = await getCurrentUid();
@@ -147,11 +159,15 @@ export async function ensureTrialStarted(): Promise<SubscriptionState | null> {
     const owner = await isMasterAccount();
     if (!owner && String(workspace.createdBy || '') !== uid) return null;
 
-    const existing = await readPath(`workspaces/${workspaceId}/subscription/current`);
-    if (existing) return computeSubscriptionState(workspaceId, existing, Date.now());
+    const existing = await readPath(`workspaces/${target}/subscription/current`);
+    if (existing) return computeSubscriptionState(target, existing, Date.now());
 
     const now = Date.now();
-    const trialEndsAtMs = now + TRIAL_DAYS * DAY_MS;
+    // The rules compare trialEndsAtMs with the SERVER clock and cap it at
+    // now + 3 days. A phone clock that is a few seconds ahead would make an
+    // exact 3-day value look illegal, so the write is trimmed by one minute -
+    // still a three-day trial, but a clock skew can no longer cancel it.
+    const trialEndsAtMs = now + TRIAL_DAYS * DAY_MS - 60_000;
     const periodEndMs = trialEndsAtMs;
     const graceEndsAtMs = periodEndMs + GRACE_DAYS * DAY_MS;
     const payload = {
@@ -164,8 +180,8 @@ export async function ensureTrialStarted(): Promise<SubscriptionState | null> {
       updatedBy: uid,
       plan: 'standard',
     };
-    await writePath(`workspaces/${workspaceId}/subscription/current`, payload, false);
-    return computeSubscriptionState(workspaceId, payload, now);
+    await writePath(`workspaces/${target}/subscription/current`, payload, false);
+    return computeSubscriptionState(target, payload, now);
   } catch (error) {
     console.warn('Subscription trial start failed:', error);
     return null;
@@ -174,11 +190,14 @@ export async function ensureTrialStarted(): Promise<SubscriptionState | null> {
 
 // Platform-owner renewal. periodEndMs only ever moves forward, so an early
 // renewal stacks 30 days on the current end and a late one counts from now.
-export async function renewSubscription(reference?: string): Promise<SubscriptionState> {
+export async function renewSubscription(
+  reference?: string,
+  options: { workspaceId?: string } = {},
+): Promise<SubscriptionState> {
   if (!(await isMasterAccount())) throw new Error('Only the platform owner can renew the workspace subscription.');
   const uid = await getCurrentUid();
   if (!uid) throw new Error('A Firebase account must be signed in to renew the subscription.');
-  const workspaceId = getActiveWorkspaceId();
+  const workspaceId = String(options?.workspaceId || '').trim() || getActiveWorkspaceId();
   const current = await readPath(`workspaces/${workspaceId}/subscription/current`).catch(error => {
     console.warn('Subscription read before renewal failed:', error);
     return null;

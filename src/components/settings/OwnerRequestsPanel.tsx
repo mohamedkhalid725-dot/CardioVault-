@@ -4,11 +4,13 @@ import { isLocalPreview } from '../../config/localPreview';
 import { computeEntitlementState, describeUnitEntitlement, issueCode, loadCodes, loadRequests, revokeCode, setPaymentVerified } from '../../services/subscriptionRequests';
 import {
   describeCloudReason,
+  loadOnboardingQueueFromCloud,
   loadOwnerQueueFromCloud,
   localCodesForRequest,
   pushOwnerDecision,
 } from '../../services/subscriptionRequestCloud';
 import { getActiveWorkspaceId, isMasterAccount } from '../../services/workspaceAccess';
+import { renewSubscription } from '../../services/workspaceSubscription';
 import { previewNowMs } from '../../services/previewClock';
 import type { OwnerApprovalArea, SubscriptionCodeRecord, SubscriptionRequest, SubscriptionRequestType } from '../../types/clinicArea';
 
@@ -61,6 +63,10 @@ export const OwnerRequestsPanel = () => {
   const [notice, setNotice] = useState('');
   const [queueState, setQueueState] = useState<'loading' | 'cloud' | 'device'>('loading');
   const [busyId, setBusyId] = useState('');
+  // A request filed by a brand-new account lives in that account's OWN
+  // workspace, not in the owner's. This map is the only thing that tells the
+  // panel where to publish the decision and which clock to start afterwards.
+  const [requestWorkspaces, setRequestWorkspaces] = useState<Record<string, string>>({});
   const nowMs = previewNowMs();
   const workspaceId = getActiveWorkspaceId();
 
@@ -79,6 +85,20 @@ export const OwnerRequestsPanel = () => {
 
       const result = await loadOwnerQueueFromCloud({ workspaceId }).catch(() => null);
       if (!alive) return;
+
+      // Brand-new accounts have no workspace of their own that the owner could
+      // list, so their requests arrive through the onboarding index and are
+      // read from each request's own workspace. A failure here must not erase
+      // what the main queue already loaded.
+      const onboarding = await loadOnboardingQueueFromCloud().catch(() => null);
+      if (!alive) return;
+
+      const workspaces: Record<string, string> = {};
+      for (const entry of onboarding?.entries || []) {
+        workspaces[entry.parsed.request.id] = entry.workspaceId;
+      }
+      setRequestWorkspaces(workspaces);
+
       const nextRequests = loadRequests();
       setRequests(nextRequests);
       setCodes(loadCodes());
@@ -86,8 +106,10 @@ export const OwnerRequestsPanel = () => {
         ...Object.fromEntries(nextRequests.map((request) => [request.id, request.unitDrafts.map((_, index) => unitKey(request, index))])),
         ...current,
       }));
-      setQueueState(result?.ok ? 'cloud' : 'device');
+      const cloudReady = !!result?.ok && onboarding?.ok !== false;
+      setQueueState(cloudReady ? 'cloud' : 'device');
       if (result && !result.ok) setNotice(describeCloudReason(result.reason));
+      else if (onboarding && !onboarding.ok) setNotice(describeCloudReason(onboarding.reason));
     })();
     return () => {
       alive = false;
@@ -104,15 +126,42 @@ export const OwnerRequestsPanel = () => {
     }));
   };
 
-  /** Copies the decision to Firestore and reports honestly when it failed. */
+  /**
+   * Copies the decision to Firestore and reports honestly when it failed.
+   *
+   * The decision belongs to the workspace the request was filed in. For the
+   * owner's own queue that is the active workspace; for a brand-new account it
+   * is that account's own onboarding workspace, which is why the target is
+   * resolved per request instead of being hard-coded.
+   */
   const publish = async (request: SubscriptionRequest, patch: Record<string, any>): Promise<string> => {
-    const result = await pushOwnerDecision({ requestId: request.id, workspaceId, patch }).catch(() => null);
+    const target = requestWorkspaces[request.id] || workspaceId;
+    const result = await pushOwnerDecision({ requestId: request.id, workspaceId: target, patch }).catch(() => null);
     if (result?.ok) {
       setQueueState('cloud');
       return '';
     }
     setQueueState('device');
     return ` ${describeCloudReason(result?.reason || 'write-failed')} The member device will not see this change until it succeeds.`;
+  };
+
+  /**
+   * Starts (or advances) the subscription clock of the workspace that owns the
+   * request. Only the platform owner can write another workspace's clock, and
+   * the write is deliberately attempted AFTER the decision was published: if it
+   * fails, the approval itself is still recorded and the note says so.
+   */
+  const activateClock = async (request: SubscriptionRequest): Promise<string> => {
+    const target = requestWorkspaces[request.id];
+    if (!target) return '';
+    try {
+      const state = await renewSubscription(undefined, { workspaceId: target });
+      const endsAtMs = state.periodEndMs || state.graceEndsAtMs || Date.now();
+      return ` The 30-day subscription clock of that workspace now runs until ${formatDate(endsAtMs)}.`;
+    } catch (error) {
+      console.warn('Owner approval could not start the customer clock:', error);
+      return ' The approval is recorded, but that workspace\'s 30-day clock could not be started from this device. Open it again as the owner to retry - nothing is duplicated.';
+    }
   };
 
   const approve = async (request: SubscriptionRequest, area: OwnerApprovalArea) => {
@@ -129,9 +178,10 @@ export const OwnerRequestsPanel = () => {
         approvedAtMs: Date.now(),
         codes: localCodesForRequest(request.id),
       });
+      const activationNote = cloudNote ? '' : await activateClock(request);
       setNotice(
         `${created.length} activation code${created.length === 1 ? '' : 's'} issued for ${scopes.join(', ')}.` +
-          `${persisted ? '' : ' The browser could not persist this change.'}${cloudNote}`,
+          `${persisted ? '' : ' The browser could not persist this change.'}${cloudNote}${activationNote}`,
       );
     } catch (error) {
       setNotice(String((error as Error)?.message || 'Could not issue the activation code.'));
@@ -256,6 +306,18 @@ export const OwnerRequestsPanel = () => {
               </div>
               <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300">{request.paymentMethod.toUpperCase()}</span>
             </div>
+
+            {requestWorkspaces[request.id] && (
+              <div className="mt-3 rounded-xl border border-cyan-300/60 bg-cyan-50 px-3 py-2 text-xs text-cyan-900 dark:border-cyan-500/30 dark:bg-cyan-500/5 dark:text-cyan-200">
+                <p className="font-semibold">New customer workspace - first request</p>
+                <p className="mt-1">
+                  This account owns no unit yet, so its drafted units are a plan only: nothing was created and no patient data
+                  exists. Approving records the decision in <span className="font-mono">{requestWorkspaces[request.id]}</span> and
+                  starts that workspace&apos;s 30-day clock. Creating the units and the owner-issued unit access code stays a
+                  separate, owner-only step.
+                </p>
+              </div>
+            )}
 
             <div className="mt-3 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/5 dark:text-amber-200">
               <p className="font-semibold">Payment is checked manually outside the app.</p>

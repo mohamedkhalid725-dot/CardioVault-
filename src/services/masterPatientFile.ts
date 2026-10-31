@@ -226,7 +226,8 @@ export function appendTimelineEvent(
     schemaVersion: MASTER_FILE_SCHEMA_VERSION,
   };
   const next = [...files];
-  next[index] = { ...next[index], timeline: [...next[index].timeline, event], updatedAtMs: nowMs };
+  const existingTimeline = Array.isArray(next[index].timeline) ? next[index].timeline : [];
+  next[index] = { ...next[index], timeline: [...existingTimeline, event], updatedAtMs: nowMs };
   return { files: next, event };
 }
 

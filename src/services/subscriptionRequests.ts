@@ -187,6 +187,12 @@ export interface SubmitRequestInput {
   isRenewal?: boolean;
   /** Injected clock; defaults to previewNowMs(). */
   nowMs?: number;
+  /**
+   * Optional stable id. Onboarding uses one deterministic id per account, so a
+   * retry after a failed delivery rewrites the same record instead of adding a
+   * second request. A repeated id replaces the stored record (upsert).
+   */
+  id?: string;
 }
 
 export interface SubmittedRequest {
@@ -349,7 +355,7 @@ export function submitRequest(input: SubmitRequestInput, storage?: SubscriptionS
     : [];
 
   const request: SubscriptionRequest = {
-    id: `subreq-${nowMs}-${(requestCounter += 1)}`,
+    id: clean(input?.id) || `subreq-${nowMs}-${(requestCounter += 1)}`,
     phone,
     requestType: type,
     institutionName,
@@ -374,7 +380,10 @@ export function submitRequest(input: SubmitRequestInput, storage?: SubscriptionS
     schemaVersion: SUB_REQUEST_SCHEMA_VERSION,
   };
 
-  const persisted = writeRequests([...loadRequests(storage), request], storage);
+  const persisted = writeRequests(
+    [...loadRequests(storage).filter((entry) => entry.id !== request.id), request],
+    storage,
+  );
   audit('sub_request.submitted', request.id, `طلب اشتراك (${type}) — ${institutionName}`, {
     requestType: type,
     paymentMethod: method,

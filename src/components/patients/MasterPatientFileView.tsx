@@ -113,6 +113,11 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const timelineEventKey = (event: MasterTimelineEvent, index: number): string => {
+  const id = typeof event.id === 'string' ? event.id.trim() : '';
+  return id ? `event:${id}` : `legacy:${event.kind}:${event.atMs}:${index}`;
+};
+
 // ---------------------------------------------------------------------------
 // New master file form state
 // ---------------------------------------------------------------------------
@@ -195,7 +200,7 @@ export const MasterPatientFileView: React.FC = () => {
   const [files, setFiles] = useState<MasterPatientFile[]>(() => loadMasterFiles());
   const [query, setQuery] = useState('');
   const [selectedFileId, setSelectedFileId] = useState('');
-  const [expandedEventIds, setExpandedEventIds] = useState<string[]>([]);
+  const [expandedEventKeys, setExpandedEventKeys] = useState<string[]>([]);
   const [notice, setNotice] = useState<AuditRow | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState<NewFileForm>(() => emptyNewFileForm());
@@ -253,7 +258,7 @@ export const MasterPatientFileView: React.FC = () => {
 
   const openDetail = (fileId: string): void => {
     setSelectedFileId(fileId);
-    setExpandedEventIds([]);
+    setExpandedEventKeys([]);
     setQuery('');
     setUnsynced(false);
     setEventForm({ kind: 'clinic-visit', title: '', detail: '', atLocal: '' });
@@ -391,7 +396,7 @@ export const MasterPatientFileView: React.FC = () => {
   /* ── Detail sub-render ────────────────────────────────────────────────── */
 
   const timeline: MasterTimelineEvent[] = selectedFile
-    ? [...selectedFile.timeline].sort((a, b) => b.atMs - a.atMs)
+    ? [...(Array.isArray(selectedFile.timeline) ? selectedFile.timeline : [])].sort((a, b) => b.atMs - a.atMs)
     : [];
 
   return (
@@ -494,16 +499,17 @@ export const MasterPatientFileView: React.FC = () => {
               <p className="text-xs text-slate-500 dark:text-slate-400">No timeline events yet. Add the first event using the form below.</p>
             ) : (
               <ul className="space-y-2">
-                {timeline.map((event) => {
-                  const expanded = expandedEventIds.includes(event.id);
+                {timeline.map((event, index) => {
+                  const eventKey = timelineEventKey(event, index);
+                  const expanded = expandedEventKeys.includes(eventKey);
                   return (
-                    <li key={event.id} className="border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+                    <li key={eventKey} className="border border-slate-200 dark:border-slate-800 rounded-xl p-3">
                       <button
                         type="button"
                         className="w-full text-right space-y-1"
                         onClick={() =>
-                          setExpandedEventIds((current) =>
-                            current.includes(event.id) ? current.filter((id) => id !== event.id) : [...current, event.id]
+                          setExpandedEventKeys((current) =>
+                            current.includes(eventKey) ? current.filter((key) => key !== eventKey) : [...current, eventKey]
                           )
                         }
                       >
@@ -623,7 +629,7 @@ export const MasterPatientFileView: React.FC = () => {
                   <li key={patient.id}>
                     <button type="button" onClick={() => { setCurrentPatientId(patient.id); setCurrentView('patient'); }} className={`${CARD} w-full p-3 text-left hover:border-amber-500/60`}>
                       <span className="text-sm font-bold">{patient.fullName || patient.name || 'Patient'}</span>
-                      <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">Age {patient.age} · {patient.archiveReason || 'Archived'}</span>
+                      <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">Age {patient.age} · {isSecretary ? 'Archived' : patient.archiveReason || 'Archived'}</span>
                       <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">{patient.archiveDate || patient.admissionDate} · {unitNameById.get(patient.unitId) || patient.unitId}</span>
                     </button>
                   </li>

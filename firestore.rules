@@ -25,6 +25,287 @@ service cloud.firestore {
         && memberData(workspaceId).active != false
         && memberData(workspaceId).forceReauth != true;
     }
+    function workspacePath(workspaceId) { return /databases/$(database)/documents/workspaces/$(workspaceId); }
+    function workspaceExists(workspaceId) { return workspaceId != '' && exists(workspacePath(workspaceId)); }
+    function workspaceCreatedByCaller(workspaceId) {
+      return workspaceExists(workspaceId)
+        && get(workspacePath(workspaceId)).data.get('createdBy', '') == request.auth.uid;
+    }
+    // Onboarding (see subscriptionRequests below): the account that created a
+    // workspace may file ONE pending subscription request in it BEFORE any
+    // membership exists. The account must own the workspace, and must not be a
+    // member of it yet - the moment a membership exists the normal rules apply.
+    function onboardingWorkspace(workspaceId) {
+      return signedIn()
+        && workspaceId == onboardingWorkspaceId(request.auth.uid)
+        && workspaceCreatedByCaller(workspaceId)
+        && get(workspacePath(workspaceId)).data.get('onboarding', false) == true
+        && !exists(memberPath(workspaceId));
+    }
+    // Deterministic onboarding identifiers, enforced inside the rules (not only
+    // in client code): workspace ws_ob_<uid>, request onboard-<uid>.
+    function onboardingWorkspaceId(uid) { return 'ws_ob_' + uid; }
+    function onboardingRequestId(uid) { return 'onboard-' + uid; }
+    function onboardingProvisioningPath(uid) { return /databases/$(database)/documents/onboardingProvisioning/$(uid); }
+    function onboardingRequestPath(workspaceId, uid) {
+      return /databases/$(database)/documents/workspaces/$(workspaceId)/subscriptionRequests/$(onboardingRequestId(uid));
+    }
+    function onboardingRequestExists(workspaceId, uid) { return exists(onboardingRequestPath(workspaceId, uid)); }
+    function onboardingRequestData(workspaceId, uid) { return get(onboardingRequestPath(workspaceId, uid)).data; }
+    function isOnboardingWorkspace(workspaceId) {
+      return workspaceExists(workspaceId)
+        && get(workspacePath(workspaceId)).data.get('onboarding', false) == true
+        && get(workspacePath(workspaceId)).data.get('createdBy', '') is string
+        && workspaceId == onboardingWorkspaceId(get(workspacePath(workspaceId)).data.get('createdBy', ''));
+    }
+    function onboardingProvisioningComplete(workspaceId, uid) {
+      return workspaceId == onboardingWorkspaceId(uid)
+        && workspaceExists(workspaceId)
+        && get(workspacePath(workspaceId)).data.get('createdBy', '') == uid
+        && onboardingRequestExists(workspaceId, uid)
+        && onboardingRequestData(workspaceId, uid).get('onboarding', false) == true
+        && onboardingRequestData(workspaceId, uid).get('subscriberId', '') == uid
+        && onboardingRequestData(workspaceId, uid).get('status', '') == 'approved'
+        && onboardingRequestData(workspaceId, uid).get('paymentVerified', false) == true
+        && onboardingRequestData(workspaceId, uid).get('provisioningState', '') == 'complete'
+        && onboardingRequestData(workspaceId, uid).get('provisionedUnitIds', []) is list
+        && onboardingRequestData(workspaceId, uid).get('provisionedUnitIds', []).size() > 0
+        && onboardingRequestData(workspaceId, uid).get('unitAccessCodes', []) is list
+        && onboardingRequestData(workspaceId, uid).get('unitAccessCodes', []).size() > 0;
+    }
+    function onboardingMemberBootstrap(workspaceId, uid) {
+      return signedIn()
+        && request.auth.uid == uid
+        && workspaceId == onboardingWorkspaceId(uid)
+        && member(workspaceId)
+        && onboardingProvisioningComplete(workspaceId, uid);
+    }
+    function onboardingTrialMayStart(workspaceId, uid) {
+      return onboardingMemberBootstrap(workspaceId, uid)
+        && memberUnits(workspaceId).hasAny(onboardingRequestData(workspaceId, uid).get('provisionedUnitIds', []));
+    }
+    // Explicit field allowlist for a client-created onboarding request document.
+    // Anything outside this list (approved, paymentVerifiedAtMs, codes,
+    // approvedAtMs, diagnosis, patient fields, ...) is rejected by hasOnly().
+    function onboardingRequestFieldAllowlist() {
+      return request.resource.data.keys().hasOnly([
+        'workspaceId','subscriberId','subscriberName','createdByName','status','method',
+        'unitIds','amount','currency','paymentVerified','onboarding','requestType','institutionName','phone',
+        'doctorsCount','clinicServices','unitDrafts','lineItems','submittedAtMs',
+        'trialEligible','isRenewal','createdBy','createdByEmail',
+        'createdAtMs','schemaVersion'
+      ]);
+    }
+    function memberRequestFieldAllowlist() {
+      return request.resource.data.keys().hasOnly([
+        'workspaceId','subscriberId','subscriberName','createdByName','status','method',
+        'unitIds','amount','currency','paymentVerified','requestType','institutionName','phone',
+        'doctorsCount','clinicServices','unitDrafts','lineItems','submittedAtMs','trialStartedAtMs',
+        'trialEligible','isRenewal','createdBy','createdByEmail','createdAtMs','schemaVersion'
+      ]);
+    }
+    function validRequestUnitDraft(draft) {
+      return draft is map
+        && draft.keys().hasOnly(['id','name','typeLabel','beds','receivesOperations'])
+        && draft.keys().hasAll(['id','name','typeLabel','beds','receivesOperations'])
+        && draft.id is string
+        && draft.id.size() >= 1
+        && draft.id.size() <= 128
+        && draft.id.matches('^[A-Za-z0-9_-]{1,128}$')
+        && draft.name is string
+        && draft.name.size() >= 2
+        && draft.name.size() <= 80
+        && draft.typeLabel is string
+        && draft.typeLabel.size() >= 1
+        && draft.typeLabel.size() <= 120
+        && draft.beds is int
+        && draft.beds >= 0
+        && draft.beds <= 200
+        && draft.receivesOperations is bool;
+    }
+    function validRequestUnitDraftAt(index) {
+      let drafts = request.resource.data.get('unitDrafts', []);
+      return drafts.size() <= index || validRequestUnitDraft(drafts[index]);
+    }
+    function validRequestUnitDrafts() {
+      let drafts = request.resource.data.get('unitDrafts', []);
+      return drafts is list
+        && drafts.size() <= 50
+        && validRequestUnitDraftAt(0) && validRequestUnitDraftAt(1) && validRequestUnitDraftAt(2)
+        && validRequestUnitDraftAt(3) && validRequestUnitDraftAt(4) && validRequestUnitDraftAt(5)
+        && validRequestUnitDraftAt(6) && validRequestUnitDraftAt(7) && validRequestUnitDraftAt(8)
+        && validRequestUnitDraftAt(9) && validRequestUnitDraftAt(10) && validRequestUnitDraftAt(11)
+        && validRequestUnitDraftAt(12) && validRequestUnitDraftAt(13) && validRequestUnitDraftAt(14)
+        && validRequestUnitDraftAt(15) && validRequestUnitDraftAt(16) && validRequestUnitDraftAt(17)
+        && validRequestUnitDraftAt(18) && validRequestUnitDraftAt(19) && validRequestUnitDraftAt(20)
+        && validRequestUnitDraftAt(21) && validRequestUnitDraftAt(22) && validRequestUnitDraftAt(23)
+        && validRequestUnitDraftAt(24) && validRequestUnitDraftAt(25) && validRequestUnitDraftAt(26)
+        && validRequestUnitDraftAt(27) && validRequestUnitDraftAt(28) && validRequestUnitDraftAt(29)
+        && validRequestUnitDraftAt(30) && validRequestUnitDraftAt(31) && validRequestUnitDraftAt(32)
+        && validRequestUnitDraftAt(33) && validRequestUnitDraftAt(34) && validRequestUnitDraftAt(35)
+        && validRequestUnitDraftAt(36) && validRequestUnitDraftAt(37) && validRequestUnitDraftAt(38)
+        && validRequestUnitDraftAt(39) && validRequestUnitDraftAt(40) && validRequestUnitDraftAt(41)
+        && validRequestUnitDraftAt(42) && validRequestUnitDraftAt(43) && validRequestUnitDraftAt(44)
+        && validRequestUnitDraftAt(45) && validRequestUnitDraftAt(46) && validRequestUnitDraftAt(47)
+        && validRequestUnitDraftAt(48) && validRequestUnitDraftAt(49);
+    }
+    function validClinicService(value) {
+      return value is string && value.size() >= 1 && value.size() <= 120;
+    }
+    function validClinicServiceAt(index) {
+      let services = request.resource.data.get('clinicServices', []);
+      return services.size() <= index || validClinicService(services[index]);
+    }
+    function validRequestClinicServices() {
+      let services = request.resource.data.get('clinicServices', []);
+      return services is list
+        && services.size() <= 20
+        && validClinicServiceAt(0) && validClinicServiceAt(1) && validClinicServiceAt(2)
+        && validClinicServiceAt(3) && validClinicServiceAt(4) && validClinicServiceAt(5)
+        && validClinicServiceAt(6) && validClinicServiceAt(7) && validClinicServiceAt(8)
+        && validClinicServiceAt(9) && validClinicServiceAt(10) && validClinicServiceAt(11)
+        && validClinicServiceAt(12) && validClinicServiceAt(13) && validClinicServiceAt(14)
+        && validClinicServiceAt(15) && validClinicServiceAt(16) && validClinicServiceAt(17)
+        && validClinicServiceAt(18) && validClinicServiceAt(19);
+    }
+    function validRequestBaseFields() {
+      return request.resource.data.workspaceId is string
+        && request.resource.data.subscriberId is string
+        && request.resource.data.subscriberName is string
+        && request.resource.data.subscriberName.size() >= 1
+        && request.resource.data.subscriberName.size() <= 200
+        && request.resource.data.createdByName is string
+        && request.resource.data.createdByName.size() >= 1
+        && request.resource.data.createdByName.size() <= 200
+        && request.resource.data.requestType in ['department','clinic','both']
+        && request.resource.data.institutionName is string
+        && request.resource.data.institutionName.size() >= 2
+        && request.resource.data.institutionName.size() <= 200
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 7
+        && request.resource.data.phone.size() <= 40
+        && request.resource.data.method in ['instapay','visa']
+        && request.resource.data.currency in ['EGP','USD']
+        && request.resource.data.amount is int
+        && request.resource.data.amount > 0
+        && request.resource.data.paymentVerified is bool
+        && request.resource.data.paymentVerified == false
+        && request.resource.data.createdBy is string
+        && request.resource.data.createdBy.size() >= 1
+        && request.resource.data.createdBy.size() <= 128
+        && (!request.resource.data.keys().hasAny(['createdByEmail'])
+            || (request.resource.data.createdByEmail is string && request.resource.data.createdByEmail.size() <= 320))
+        && request.resource.data.submittedAtMs is int
+        && request.resource.data.submittedAtMs > 0
+        && request.resource.data.createdAtMs is int
+        && request.resource.data.createdAtMs > 0
+        && request.resource.data.schemaVersion is int
+        && request.resource.data.schemaVersion >= 1
+        && request.resource.data.trialEligible is bool
+        && request.resource.data.isRenewal is bool
+        && request.resource.data.status == 'pending'
+        && validRequestUnitDrafts()
+        && validRequestClinicServices()
+        && request.resource.data.lineItems is list
+        && request.resource.data.lineItems.size() <= 2;
+    }
+    function validRequestLineItem(item, area, quantity, currency, price) {
+      return item is map
+        && item.keys().hasOnly(['area','quantity','currency','unitPrice','subtotal'])
+        && item.keys().hasAll(['area','quantity','currency','unitPrice','subtotal'])
+        && item.area == area
+        && item.quantity is int
+        && item.quantity == quantity
+        && item.currency == currency
+        && item.unitPrice is int
+        && item.unitPrice == price
+        && item.subtotal is int
+        && item.subtotal == quantity * price;
+    }
+    function validRequestPricing() {
+      let drafts = request.resource.data.get('unitDrafts', []);
+      let doctors = request.resource.data.get('doctorsCount', 0);
+      let expectedCurrency = request.resource.data.method == 'instapay' ? 'EGP' : 'USD';
+      let expectedPrice = request.resource.data.method == 'instapay' ? 500 : 20;
+      let deptQuantity = drafts.size();
+      let clinicQuantity = doctors;
+      return doctors is int
+        && doctors >= 0
+        && doctors <= 200
+        && request.resource.data.currency == expectedCurrency
+        && request.resource.data.amount == (deptQuantity + clinicQuantity) * expectedPrice
+        && (
+          (deptQuantity > 0 && clinicQuantity > 0
+            && request.resource.data.lineItems.size() == 2
+            && validRequestLineItem(request.resource.data.lineItems[0], 'department', deptQuantity, expectedCurrency, expectedPrice)
+            && validRequestLineItem(request.resource.data.lineItems[1], 'clinic', clinicQuantity, expectedCurrency, expectedPrice))
+          || (deptQuantity > 0 && clinicQuantity == 0
+            && request.resource.data.lineItems.size() == 1
+            && validRequestLineItem(request.resource.data.lineItems[0], 'department', deptQuantity, expectedCurrency, expectedPrice))
+          || (deptQuantity == 0 && clinicQuantity > 0
+            && request.resource.data.lineItems.size() == 1
+            && validRequestLineItem(request.resource.data.lineItems[0], 'clinic', clinicQuantity, expectedCurrency, expectedPrice))
+        );
+    }
+    function validRequestScopeShape() {
+      let type = request.resource.data.requestType;
+      let unitCount = request.resource.data.get('unitDrafts', []).size();
+      let doctors = request.resource.data.get('doctorsCount', 0);
+      return (type == 'department' && unitCount > 0 && doctors == 0)
+        || (type == 'clinic' && unitCount == 0 && doctors >= 1 && doctors <= 200)
+        || (type == 'both' && unitCount > 0 && doctors >= 1 && doctors <= 200);
+    }
+    function validOnboardingRequestDocument(workspaceId, requestId) {
+      return onboardingWorkspace(workspaceId)
+        && requestId == onboardingRequestId(request.auth.uid)
+        && request.resource.data.keys().hasAll([
+          'workspaceId','subscriberId','subscriberName','createdByName','status','method','unitIds',
+          'amount','currency','paymentVerified','onboarding','requestType','institutionName','phone',
+          'doctorsCount','clinicServices','unitDrafts','lineItems','submittedAtMs','trialEligible',
+          'isRenewal','createdBy','createdAtMs','schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'workspaceId','subscriberId','subscriberName','createdByName','status','method','unitIds',
+          'amount','currency','paymentVerified','onboarding','requestType','institutionName','phone',
+          'doctorsCount','clinicServices','unitDrafts','lineItems','submittedAtMs','trialEligible',
+          'isRenewal','createdBy','createdByEmail','createdAtMs','schemaVersion'
+        ])
+        && validRequestBaseFields()
+        && request.resource.data.workspaceId == workspaceId
+        && request.resource.data.workspaceId == onboardingWorkspaceId(request.auth.uid)
+        && request.resource.data.subscriberId == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.onboarding == true
+        && request.resource.data.isRenewal == false
+        && request.resource.data.get('unitIds', []) is list
+        && request.resource.data.get('unitIds', []).size() == 0
+        && validRequestScopeShape()
+        && validRequestPricing();
+    }
+    function validMemberRequestDocument(workspaceId) {
+      return memberRequestFieldAllowlist()
+        && request.resource.data.keys().hasAll([
+          'workspaceId','subscriberId','subscriberName','createdByName','status','method','unitIds',
+          'amount','currency','paymentVerified','requestType','institutionName','phone','doctorsCount',
+          'clinicServices','unitDrafts','lineItems','submittedAtMs','trialStartedAtMs','trialEligible',
+          'isRenewal','createdBy','createdAtMs','schemaVersion'
+        ])
+        && validRequestBaseFields()
+        && request.resource.data.workspaceId == workspaceId
+        && request.resource.data.subscriberId == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.get('onboarding', false) == false
+        && request.resource.data.unitIds is list
+        && request.resource.data.unitIds.size() <= 50
+        && request.resource.data.unitIds.size() == request.resource.data.get('unitDrafts', []).size()
+        && request.resource.data.unitIds.toSet().size() == request.resource.data.unitIds.size()
+        && request.resource.data.unitIds.hasOnly(memberUnits(workspaceId))
+        && request.resource.data.trialStartedAtMs is int
+        && request.resource.data.trialStartedAtMs > 0
+        && request.resource.data.trialStartedAtMs <= request.time.toMillis()
+        && validRequestScopeShape()
+        && validRequestPricing();
+    }
     function teamPath(workspaceId) { return /databases/$(database)/documents/workspaces/$(workspaceId)/team/$(request.auth.uid); }
     function unitPath(workspaceId,unitId) { return /databases/$(database)/documents/workspaces/$(workspaceId)/units/$(unitId); }
     function unitExists(workspaceId,unitId) { return exists(unitPath(workspaceId,unitId)); }
@@ -66,6 +347,42 @@ service cloud.firestore {
             ? get(teamPath(workspaceId)).data.get('assignedUnitIds', [])
             : []
         );
+    }
+
+    // Hospital grouping is metadata above units, not a clinical access scope.
+    // Keep its stored shape bounded and exact; a hospital can reference at most
+    // 200 distinct unit ids, matching the bounded Firestore document contract.
+    function validHospitalUnitIds(unitIds) {
+      return unitIds is list
+        && unitIds.size() <= 200
+        && unitIds.toSet().size() == unitIds.size();
+    }
+    function validHospitalDocument(data, hospitalId) {
+      return data is map
+        && data.keys().hasAll([
+          'id','name','createdBy','createdAtMs','updatedAtMs','unitIds','schemaVersion'
+        ])
+        && data.keys().hasOnly([
+          'id','name','createdBy','createdAtMs','updatedAtMs','unitIds','schemaVersion'
+        ])
+        && data.id is string
+        && data.id.size() >= 1
+        && data.id.size() <= 128
+        && data.id.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.id == hospitalId
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 120
+        && data.createdBy is string
+        && data.createdBy.size() >= 1
+        && data.createdBy.size() <= 128
+        && data.createdAtMs is int
+        && data.createdAtMs > 0
+        && data.updatedAtMs is int
+        && data.updatedAtMs >= data.createdAtMs
+        && validHospitalUnitIds(data.unitIds)
+        && data.schemaVersion is int
+        && data.schemaVersion == 1;
     }
 
     // True when the caller belongs to ANY of the supplied units. The list comes
@@ -137,6 +454,19 @@ service cloud.firestore {
         && accessCodeData(hash).active == true
         && accessCodeData(hash).workspaceId == workspaceId;
     }
+    // The first account can join an onboarding workspace only after the owner
+    // published a complete, payment-verified approval. The code itself remains
+    // the membership proof; this exception only permits the non-clinical join
+    // bootstrap while the trial clock is still absent.
+    function onboardingApprovedJoin(workspaceId, uid, unitId, hash) {
+      return signedIn()
+        && request.auth.uid == uid
+        && onboardingProvisioningComplete(workspaceId, uid)
+        && onboardingRequestData(workspaceId, uid).get('provisionedUnitIds', []).hasAny([unitId])
+        && validAccessCode(hash, workspaceId)
+        && accessCodeData(hash).unitId == unitId
+        && accessCodeData(hash).get('onboardingRequestId', '') == onboardingRequestId(uid);
+    }
 
     // ═══ Temporary invites ══════════════════════════════════════════════════
     // The top-level /invites/{hash} document is a routing index only (it tells a
@@ -168,16 +498,44 @@ service cloud.firestore {
         || !subData(workspaceId).keys().hasAny(['graceEndsAtMs'])
         || subData(workspaceId).graceEndsAtMs > request.time.toMillis();
     }
-    function canWrite(workspaceId) { return adminOf(workspaceId) || subActive(workspaceId); }
+    function canWrite(workspaceId) {
+      return adminOf(workspaceId)
+        || (isOnboardingWorkspace(workspaceId)
+            ? (member(workspaceId)
+               && onboardingProvisioningComplete(workspaceId, get(workspacePath(workspaceId)).data.get('createdBy', ''))
+               && subExists(workspaceId)
+               && subActive(workspaceId))
+            : subActive(workspaceId));
+    }
 
     // ═══ Legacy per-account data ════════════════════════════════════════════
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
       // Bed and patient records that lived under /users/{uid} before the
       // workspace migration. Only their own account may read them.
+      match /units/{unitId} { allow get, list: if signedIn() && request.auth.uid == uid; }
       match /beds/{bedId} { allow get, list: if signedIn() && request.auth.uid == uid; }
       match /patients/{patientId} { allow get, list: if signedIn() && request.auth.uid == uid; }
-      match /{document=**} { allow read, write: if signedIn() && request.auth.uid == uid; }
+      // Private request ids are bounded at the rules boundary, not just by the
+      // client helper. A user's private index is never listable by anyone.
+      match /subscriptionIndex/{documentId} {
+        allow get: if signedIn() && request.auth.uid == uid && documentId == 'current';
+        allow list: if false;
+        allow create, update: if signedIn() && request.auth.uid == uid && documentId == 'current'
+          && request.resource.data.keys().hasOnly(['requestIds','workspaceId','updatedAtMs','schemaVersion'])
+          && request.resource.data.keys().hasAll(['requestIds','workspaceId','updatedAtMs','schemaVersion'])
+          && request.resource.data.requestIds is list
+          && request.resource.data.requestIds.size() <= 100
+          && request.resource.data.workspaceId is string
+          && (request.resource.data.workspaceId == 'cardiovault_master_workspace'
+              || request.resource.data.workspaceId.matches('^ws_[A-Za-z0-9_-]{8,64}$')
+              || request.resource.data.workspaceId == onboardingWorkspaceId(uid))
+          && request.resource.data.updatedAtMs is int
+          && request.resource.data.updatedAtMs > 0
+          && request.resource.data.schemaVersion is int
+          && request.resource.data.schemaVersion == 1;
+        allow delete: if signedIn() && request.auth.uid == uid && documentId == 'current';
+      }
     }
 
     // ═══ Access codes ═══════════════════════════════════════════════════════
@@ -234,18 +592,110 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid == uid && platformOwner();
     }
 
+    // Onboarding discovery index: one tiny document per brand-new account, which
+    // points the platform owner's panel at the customer workspace that account
+    // created for itself. It carries no clinical data, no payment proof and no
+    // permission - it only answers "which new workspaces have a request to
+    // review". The owner may read and list it; an account may only write its own,
+    // and only while it really created that workspace.
+    match /onboardingIndex/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || platformOwner());
+      allow list: if platformOwner();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasAll([
+          'workspaceId','requestId','submittedAtMs','subscriberName','institutionName','schemaVersion','updatedAtMs'
+        ])
+        && request.resource.data.workspaceId is string
+        && request.resource.data.workspaceId == onboardingWorkspaceId(uid)
+        && workspaceCreatedByCaller(request.resource.data.workspaceId)
+        && request.resource.data.requestId is string
+        && request.resource.data.requestId.size() <= 160
+        && request.resource.data.requestId == onboardingRequestId(uid)
+        && request.resource.data.submittedAtMs is int
+        && request.resource.data.submittedAtMs > 0
+        && request.resource.data.updatedAtMs is int
+        && request.resource.data.updatedAtMs > 0
+        && request.resource.data.subscriberName is string
+        && request.resource.data.subscriberName.size() >= 1
+        && request.resource.data.subscriberName.size() <= 200
+        && request.resource.data.institutionName is string
+        && request.resource.data.institutionName.size() >= 2
+        && request.resource.data.institutionName.size() <= 200
+        && request.resource.data.schemaVersion is int
+        && request.resource.data.schemaVersion == 1
+        // Explicit field allowlist: only the fields the owner-discovery index
+        // actually needs. This denies phone, amount, codes, paymentVerified and
+        // any diagnosis/patient fields by construction.
+        && request.resource.data.keys().hasOnly([
+          'workspaceId','requestId','submittedAtMs','subscriberName','institutionName',
+          'schemaVersion','updatedAtMs'
+        ]);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Raw Unit Access Codes must not be placed in the customer-readable request
+    // until the owner has completed provisioning and publishes approval. This
+    // owner-only scratch document makes provisioning retries deterministic
+    // without leaking a usable membership code to a pending requester.
+    match /onboardingProvisioning/{uid} {
+      allow get: if platformOwner();
+      allow list: if false;
+      allow create, update: if platformOwner()
+        && request.resource.data.keys().hasAll([
+          'workspaceId','requestId','selectionKey','provisionedUnitIds','unitAccessCodes','updatedAtMs','schemaVersion'
+        ])
+        && request.resource.data.workspaceId == onboardingWorkspaceId(uid)
+        && request.resource.data.requestId == onboardingRequestId(uid)
+        && request.resource.data.selectionKey is string
+        && request.resource.data.selectionKey.size() <= 512
+        && request.resource.data.provisionedUnitIds is list
+        && request.resource.data.provisionedUnitIds.size() <= 51
+        && request.resource.data.unitAccessCodes is list
+        && request.resource.data.unitAccessCodes.size() <= 51
+        && request.resource.data.updatedAtMs is int
+        && request.resource.data.updatedAtMs > 0
+        && request.resource.data.schemaVersion is int
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.keys().hasOnly([
+          'workspaceId','requestId','selectionKey','provisionedUnitIds','unitAccessCodes',
+          'updatedAtMs','schemaVersion'
+        ]);
+      allow delete: if platformOwner();
+    }
+
     // ═══ Workspaces ═════════════════════════════════════════════════════════
     match /workspaces/{workspaceId} {
       // Any signed-in account may bootstrap a customer team workspace, but the
       // document may never claim an owner: ownership is the platform owner's
       // alone. createdBy is recorded for the audit trail only, and creating a
       // workspace grants no access to it.
-      allow create: if signedIn() &&
-        request.resource.data.createdBy == request.auth.uid &&
-        !request.resource.data.keys().hasAny(['ownerUid', 'ownerEmail']) &&
-        (workspaceId == 'cardiovault_master_workspace' || workspaceId.matches('^ws_[A-Za-z0-9_-]{8,64}$'));
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && !request.resource.data.keys().hasAny(['ownerUid', 'ownerEmail'])
+        && (
+          (workspaceId == onboardingWorkspaceId(request.auth.uid)
+            && request.resource.data.keys().hasAll(['createdBy','name','schemaVersion','createdAt','onboarding'])
+            && request.resource.data.keys().hasOnly(['createdBy','createdByEmail','name','schemaVersion','createdAt','onboarding'])
+            && request.resource.data.name is string
+            && request.resource.data.name.size() >= 2
+            && request.resource.data.name.size() <= 200
+            && (!request.resource.data.keys().hasAny(['createdByEmail'])
+                || (request.resource.data.createdByEmail is string && request.resource.data.createdByEmail.size() <= 320))
+            && request.resource.data.schemaVersion is int
+            && request.resource.data.schemaVersion == 13
+            && request.resource.data.createdAt is string
+            && request.resource.data.createdAt.size() <= 40
+            && request.resource.data.onboarding == true)
+          || (workspaceId != onboardingWorkspaceId(request.auth.uid)
+              && (workspaceId == 'cardiovault_master_workspace' || workspaceId.matches('^ws_[A-Za-z0-9_-]{8,64}$')))
+        );
       allow get, update, delete: if adminOf(workspaceId);
-      allow get: if member(workspaceId);
+      allow get: if member(workspaceId)
+        // The account that bootstrapped this workspace must be able to read it
+        // back (a retry has to know whether it already exists). It grants no
+        // access to anything inside the workspace: those rules still demand a
+        // membership.
+        || workspaceCreatedByCaller(workspaceId);
 
       // ─── Membership records ──────────────────────────────────────────────
       match /members/{uid} {
@@ -255,7 +705,7 @@ service cloud.firestore {
         // First join: the unit must be granted by a live access code or by an
         // invite this account already burned. A membership is always born with
         // exactly the one unit it was granted.
-        allow create: if canWrite(workspaceId) && signedIn() && request.auth.uid == uid
+        allow create: if (canWrite(workspaceId) && signedIn() && request.auth.uid == uid
           && request.resource.data.workspaceId == workspaceId
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.unitIds.hasOnly([request.resource.data.unitId])
@@ -268,7 +718,39 @@ service cloud.firestore {
               && request.resource.data.role == accessCodeData(request.resource.data.get('accessCodeHash','')).get('role','clinical_editor') )
             || ( redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), request.resource.data.unitId)
               && request.resource.data.role == inviteData(workspaceId, request.resource.data.get('inviteId','')).role )
-          );
+          )) || (
+          // A first-run customer may join only the approved units named in the
+          // owner's completed request. This bootstrap creates membership only
+          // through the corresponding Unit Access Code, never a subscription code.
+          onboardingApprovedJoin(workspaceId, uid, request.resource.data.get('unitId',''), request.resource.data.get('accessCodeHash',''))
+          && request.resource.data.keys().hasOnly([
+            'uid','workspaceId','unitId','unitIds','role','accessCodeHash','accessCodeHashes',
+            'active','forceReauth','joinedAt','updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'uid','workspaceId','unitId','unitIds','role','accessCodeHash','accessCodeHashes',
+            'active','forceReauth','joinedAt','updatedAt'
+          ])
+          && request.resource.data.uid == uid
+          && request.resource.data.workspaceId == workspaceId
+          && request.resource.data.unitId is string
+          && request.resource.data.unitIds is list
+          && request.resource.data.unitIds.size() == 1
+          && request.resource.data.unitIds.hasOnly([request.resource.data.unitId])
+          && request.resource.data.accessCodeHash is string
+          && request.resource.data.accessCodeHash.matches('^[A-Fa-f0-9]{64}$')
+          && request.resource.data.accessCodeHashes is list
+          && request.resource.data.accessCodeHashes.size() == 1
+          && request.resource.data.accessCodeHashes.hasAny([request.resource.data.accessCodeHash])
+          && request.resource.data.role == accessCodeData(request.resource.data.accessCodeHash).get('role','clinical_editor')
+          && request.resource.data.role in ['clinical_editor','view_only']
+          && request.resource.data.active == true
+          && request.resource.data.forceReauth == false
+          && request.resource.data.joinedAt is string
+          && request.resource.data.joinedAt.size() <= 40
+          && request.resource.data.updatedAt is string
+          && request.resource.data.updatedAt.size() <= 40
+        );
 
         // Membership changes (role, unit list, activation) are administrative:
         // the platform owner alone. A member may only ADD the unit a code, an
@@ -333,13 +815,16 @@ service cloud.firestore {
       // itself lives on the membership document, not here.
       match /members/{uid}/units/{unitId} {
         allow get, list: if adminOf(workspaceId) || (signedIn() && request.auth.uid == uid);
-        allow create, update: if canWrite(workspaceId) && (
+        allow create, update: if (canWrite(workspaceId) && (
           adminOf(workspaceId) ||
           (signedIn() && request.auth.uid == uid
            && request.resource.data.uid == request.auth.uid
            && request.resource.data.unitId == unitId
            && ( validAccessCode(request.resource.data.get('accessCodeHash',''), workspaceId)
-                || redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), unitId) )));
+                 || redeemedInvite(workspaceId, request.resource.data.get('inviteId',''), unitId) ))))
+          || onboardingApprovedJoin(workspaceId, uid, unitId, request.resource.data.get('accessCodeHash',''))
+             && request.resource.data.uid == uid
+             && request.resource.data.unitId == unitId;
         allow delete: if adminOf(workspaceId);
       }
 
@@ -394,7 +879,7 @@ service cloud.firestore {
         allow get: if adminOf(workspaceId) || (signedIn() && request.auth.uid == uid);
         allow list: if adminOf(workspaceId);
         // A member may self-create only a non-privileged clinical profile.
-        allow create: if canWrite(workspaceId) && (
+        allow create: if (canWrite(workspaceId) && (
           adminOf(workspaceId) ||
           (signedIn() && request.auth.uid == uid
            && request.resource.data.uid == request.auth.uid
@@ -405,20 +890,42 @@ service cloud.firestore {
            // The unit list on a team profile is also an access path (unitMember
            // reads it), so a member may only echo units they actually belong to.
            && request.resource.data.get('assignedUnitIds', []).hasOnly(memberData(workspaceId).get('unitIds', []))
-           && (request.resource.data.role == 'pending' || request.resource.data.role in ['nurse','resident','specialist'])));
+           && (request.resource.data.role == 'pending' || request.resource.data.role in ['nurse','resident','specialist']))))
+          || (onboardingMemberBootstrap(workspaceId, uid)
+              && request.resource.data.uid == uid
+              && request.resource.data.workspaceId == workspaceId
+              && request.resource.data.departmentId == 'dept-cardiology'
+              && request.resource.data.status == 'active'
+              && request.resource.data.get('assignedUnitIds', []).size() > 0
+              && request.resource.data.get('assignedUnitIds', []).hasOnly(memberUnits(workspaceId))
+              && (request.resource.data.role == 'pending' || selfClinicalRole(request.resource.data.role)));
 
         // A member may update only their own clinical profile fields. Role
         // management and unit assignment belong to the platform owner; the old
         // 'consultant' branch let any member promote themselves and then rewrite
         // other memberships, so it is gone.
-        allow update: if canWrite(workspaceId) && (
+        allow update: if (canWrite(workspaceId) && (
           adminOf(workspaceId) ||
           (signedIn() && request.auth.uid == uid
            && resource.data.uid == request.auth.uid
            && request.resource.data.uid == request.auth.uid
            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt'])
-           && selfClinicalRole(request.resource.data.role)));
+           && selfClinicalRole(request.resource.data.role))))
+          || (onboardingMemberBootstrap(workspaceId, uid)
+              && resource.data.uid == uid
+              && request.resource.data.uid == uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','roleSelectedAt','updatedAt'])
+              && selfClinicalRole(request.resource.data.role));
 
+        allow delete: if adminOf(workspaceId);
+      }
+
+      // ─── Hospitals (workspaces/{workspaceId}/hospitals/{hospitalId}) ─────────
+      match /hospitals/{hospitalId} {
+        allow get: if adminOf(workspaceId) || (member(workspaceId) && resource.data.get('unitIds',[]).hasAny(memberUnits(workspaceId)));
+        allow list: if adminOf(workspaceId);
+        allow create: if adminOf(workspaceId) && request.resource.data.id == hospitalId && request.resource.data.name.size() <= 120 && request.resource.data.unitIds == [];
+        allow update: if adminOf(workspaceId) && request.resource.data.id == resource.data.id && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAtMs == resource.data.createdAtMs;
         allow delete: if adminOf(workspaceId);
       }
 
@@ -433,6 +940,9 @@ service cloud.firestore {
         allow create: if canWrite(workspaceId) && (
           adminOf(workspaceId) ||
           (member(workspaceId)
+           // Unit-to-hospital assignment is owner-managed. A member-created unit
+           // must not smuggle a hospitalId into its initial document.
+           && !request.resource.data.keys().hasAny(['hospitalId'])
            && request.resource.data.createdBy == request.auth.uid
            && request.resource.data.consultantUid == request.auth.uid
            && request.resource.data.get('capacityLocked', false) == false
@@ -458,6 +968,40 @@ service cloud.firestore {
         allow delete: if adminOf(workspaceId);
       }
 
+      // ─── Hospitals ────────────────────────────────────────────────────────
+      // The platform owner may enumerate and manage hospital metadata. Members
+      // can only fetch a known hospital id after one of its unitIds intersects
+      // the exact unit set already granted by their membership/team profile.
+      // Members cannot list this collection; the app loads their hospitals by
+      // direct gets from those authorized units.
+      match /hospitals/{hospitalId} {
+        allow get: if adminOf(workspaceId)
+          || (member(workspaceId)
+              && resource.data.get('unitIds', []) is list
+              && resource.data.get('unitIds', []).hasAny(memberUnits(workspaceId)));
+        allow list: if adminOf(workspaceId);
+
+        allow create: if adminOf(workspaceId)
+          && validHospitalDocument(request.resource.data, hospitalId)
+          && request.resource.data.createdBy == request.auth.uid;
+
+        // The current client updates only the unitIds membership list and its
+        // timestamp. Identity, name, creator, creation time and schema version
+        // remain unchanged; malformed existing documents cannot be repaired
+        // through a partial merge that bypasses schema validation.
+        allow update: if adminOf(workspaceId)
+          && validHospitalDocument(resource.data, hospitalId)
+          && validHospitalDocument(request.resource.data, hospitalId)
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.name == resource.data.name
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.createdAtMs == resource.data.createdAtMs
+          && request.resource.data.schemaVersion == resource.data.schemaVersion
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitIds','updatedAtMs']);
+
+        allow delete: if adminOf(workspaceId);
+      }
+
       // ─── Unit roster ─────────────────────────────────────────────────────
       // Who works in THIS unit, one document per (unit, member). It is the only
       // directory a non-owner may read, so a member of Unit A can never learn who
@@ -467,10 +1011,14 @@ service cloud.firestore {
       // can never disagree.
       match /units/{unitId}/roster/{uid} {
         allow get, list: if adminOf(workspaceId) || unitMember(workspaceId, unitId) || (signedIn() && request.auth.uid == uid);
-        allow create, update: if canWrite(workspaceId)
+        allow create, update: if (canWrite(workspaceId)
           && request.resource.data.uid == uid
           && ( adminOf(workspaceId)
-               || (signedIn() && request.auth.uid == uid && unitMember(workspaceId, unitId)) );
+               || (signedIn() && request.auth.uid == uid && unitMember(workspaceId, unitId)) ))
+          || (onboardingMemberBootstrap(workspaceId, uid)
+              && request.resource.data.uid == uid
+              && request.auth.uid == uid
+              && unitMember(workspaceId, unitId));
         allow delete: if adminOf(workspaceId);
       }
 
@@ -553,20 +1101,26 @@ service cloud.firestore {
       //      for a department or combined request, so nothing gets broader.
       match /subscriptionRequests/{requestId} {
         allow get: if adminOf(workspaceId)
-          || (signedIn() && resource.data.subscriberId == request.auth.uid);
+          || (signedIn() && resource.data.subscriberId == request.auth.uid)
+          // A brand-new account must be able to check whether its ONE onboarding
+          // request exists yet (a retry must not guess). The document id is
+          // deterministic and the workspace is its own, so this reveals nothing
+          // but the caller's own request status.
+          || (onboardingWorkspace(workspaceId) && requestId == onboardingRequestId(request.auth.uid));
         allow list: if adminOf(workspaceId);
-        allow create: if member(workspaceId)
-          && request.resource.data.workspaceId == workspaceId
-          && request.resource.data.subscriberId == request.auth.uid
-          && request.resource.data.status == 'pending'
-          && request.resource.data.method in ['instapay', 'visa']
-          && request.resource.data.get('unitIds', []).hasOnly(memberUnits(workspaceId))
-          && request.resource.data.amount > 0
-          && request.resource.data.get('paymentVerified', false) == false
-          && (
-            request.resource.data.get('unitIds', []).size() > 0
-            || clinicOnlyRequest()
-          );
+        allow create: if validMemberRequestDocument(workspaceId) || (
+          // Brand-new account: it may file ONE pending request in the workspace
+          // it created itself, before any membership exists. The request carries
+          // no unit claim at all (unitIds MUST be empty - the unitDrafts are a
+          // plan, not access), it starts pending and unverified, and it grants
+          // nothing: the owner still decides. A membership, once it exists,
+          // closes this branch and the normal membership path above applies.
+          //
+          // Deterministic ids (enforced here, not only in client code) and a
+          // strict field allowlist keep this branch narrow: it is an exception
+          // for the request document only and does not broaden any other rule.
+          validOnboardingRequestDocument(workspaceId, requestId)
+        );
         // The owner decides a request. The requester may only withdraw their
         // own pending request, and may never move it to approved.
         allow update: if (
@@ -574,6 +1128,34 @@ service cloud.firestore {
             && request.resource.data.subscriberId == resource.data.subscriberId
             && request.resource.data.workspaceId == workspaceId
             && request.resource.data.status in ['pending', 'approved', 'rejected', 'withdrawn']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status','approvedAtMs','withdrawnAt','paymentVerified','paymentVerifiedAtMs',
+              'paymentVerifiedBy','codes','updatedAtMs','provisioningState','provisionedUnitIds','unitAccessCodes'
+            ])
+            && (!request.resource.data.keys().hasAny(['updatedAtMs'])
+                || (request.resource.data.updatedAtMs is int && request.resource.data.updatedAtMs > 0))
+            && (!request.resource.data.keys().hasAny(['paymentVerified']) || request.resource.data.paymentVerified is bool)
+            && (request.resource.data.get('paymentVerified', false) == false
+                || (request.resource.data.get('paymentVerifiedAtMs', 0) is int
+                    && request.resource.data.get('paymentVerifiedAtMs', 0) > 0
+                    && request.resource.data.get('paymentVerifiedBy', '') is string
+                    && request.resource.data.get('paymentVerifiedBy', '').size() <= 200))
+            && (!request.resource.data.keys().hasAny(['codes'])
+                || (request.resource.data.codes is list && request.resource.data.codes.size() <= 200))
+            && (!request.resource.data.keys().hasAny(['provisioningState'])
+                || request.resource.data.provisioningState in ['complete'])
+            && (!request.resource.data.keys().hasAny(['provisionedUnitIds'])
+                || (request.resource.data.provisionedUnitIds is list && request.resource.data.provisionedUnitIds.size() <= 51))
+            && (!request.resource.data.keys().hasAny(['unitAccessCodes'])
+                || (request.resource.data.unitAccessCodes is list && request.resource.data.unitAccessCodes.size() <= 51))
+            && (request.resource.data.status != 'approved'
+                || (request.resource.data.get('paymentVerified', false) == true
+                    && request.resource.data.get('paymentVerifiedAtMs', 0) is int
+                    && request.resource.data.get('paymentVerifiedAtMs', 0) > 0
+                    && (request.resource.data.get('onboarding', false) != true
+                        || (request.resource.data.get('provisioningState', '') == 'complete'
+                            && request.resource.data.get('provisionedUnitIds', []).size() > 0
+                            && request.resource.data.get('unitAccessCodes', []).size() > 0))))
           ) || (
             signedIn()
             && resource.data.subscriberId == request.auth.uid
@@ -676,7 +1258,11 @@ service cloud.firestore {
       // is the first clock: the account that created the workspace may open a
       // three-day trial, once, and only with the exact shape the client writes.
       match /subscription/{documentId} {
-        allow get: if adminOf(workspaceId) || member(workspaceId);
+        allow get: if adminOf(workspaceId) || member(workspaceId)
+          // The account that created the workspace may read the clock its own
+          // three-day trial write produced. Reading a clock grants nothing: the
+          // client only shows the remaining days.
+          || workspaceCreatedByCaller(workspaceId);
         allow list: if adminOf(workspaceId);
         allow create: if adminOf(workspaceId)
           || ( documentId == 'current'

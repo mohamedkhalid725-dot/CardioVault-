@@ -123,6 +123,98 @@ test('the publisher 2.0.0 department and combined paths are unchanged', () => {
 });
 
 // ---------------------------------------------------------------------------
+// First-run onboarding: one narrow branch, and nothing else moved
+// ---------------------------------------------------------------------------
+
+/** The `allow create` rule text of the subscription request, up to `allow update`. */
+const requestCreateRule = (): string => {
+  const block = matchBlock('match /subscriptionRequests/{requestId} {');
+  return block.slice(block.indexOf('allow create'), block.indexOf('allow update'));
+};
+
+test('the onboarding branch is the ONLY exception to the membership requirement', () => {
+  const create = requestCreateRule();
+
+  // Branch 1 - the original path - still starts from a membership.
+  assert.match(create, /allow create: if \(\s*member\(workspaceId\)/, 'the membership branch must stay first');
+  assert.match(create, /unitIds', \[\]\)\.hasOnly\(memberUnits\(workspaceId\)\)/);
+
+  // Branch 2 is the onboarding alternative and it admits no unit claim at all.
+  const branch = create.slice(create.indexOf('onboardingWorkspace(workspaceId)'));
+  assert.notEqual(branch.length, 0, 'the onboarding branch must exist');
+  assert.match(branch, /request\.resource\.data\.workspaceId == workspaceId/);
+  assert.match(branch, /request\.resource\.data\.subscriberId == request\.auth\.uid/);
+  assert.match(branch, /request\.resource\.data\.get\('createdBy', ''\) == request\.auth\.uid/);
+  assert.match(branch, /request\.resource\.data\.status == 'pending'/);
+  assert.match(branch, /request\.resource\.data\.method in \['instapay', 'visa'\]/);
+  assert.match(branch, /request\.resource\.data\.amount > 0/);
+  assert.match(branch, /request\.resource\.data\.get\('paymentVerified', false\) == false/);
+  assert.match(branch, /get\('unitIds', \[\]\)\.size\(\) == 0/, 'a draft may never become a unit claim');
+  assert.match(branch, /get\('requestType', ''\) in \['department', 'clinic', 'both'\]/);
+  assert.match(branch, /unitDrafts', \[\]\)\.size\(\) <= 50/);
+  assert.doesNotMatch(branch, /memberUnits\(/, 'the onboarding branch may not reference membership units');
+  // The rule body itself ends at `);` - the trailing comment about the owner
+  // decision is not part of it.
+  const body = branch.slice(0, branch.indexOf(');'));
+  assert.doesNotMatch(body, /approved/, 'a client create can never be born approved');
+});
+
+test('onboardingWorkspace needs the workspace creator AND the absence of any membership', () => {
+  const helper = functionBody('function onboardingWorkspace(workspaceId)');
+  assert.match(helper, /signedIn\(\)/);
+  assert.match(helper, /workspaceCreatedByCaller\(workspaceId\)/);
+  assert.match(helper, /!exists\(memberPath\(workspaceId\)\)/, 'a membership closes the onboarding branch');
+
+  const created = functionBody('function workspaceCreatedByCaller(workspaceId)');
+  assert.match(created, /workspaceExists\(workspaceId\)/);
+  assert.match(created, /createdBy', ''\) == request\.auth\.uid/);
+});
+
+test('the onboarding index is owner-listable and self-writable only', () => {
+  const block = matchBlock('match /onboardingIndex/{uid} {');
+
+  assert.match(block, /allow get: if signedIn\(\) && \(request\.auth\.uid == uid \|\| platformOwner\(\)\);/);
+  assert.match(block, /allow list: if platformOwner\(\);/, 'only the owner may enumerate new accounts');
+  assert.match(block, /allow create, update: if signedIn\(\) && request\.auth\.uid == uid/);
+  assert.match(block, /workspaceId\.matches\('\^ws_\[A-Za-z0-9_-\]\{8,64\}\$'\)/);
+  assert.match(block, /workspaceCreatedByCaller\(request\.resource\.data\.workspaceId\)/, 'the index must point at your own workspace');
+  assert.match(block, /requestId\.size\(\) <= 128/);
+  assert.match(block, /submittedAtMs is int/);
+  // No clinical, payment or entitlement data is ever indexed here.
+  assert.doesNotMatch(block, /phone|amount|codes|paymentVerified|diagnosis|patient/i);
+});
+
+test('reading your own workspace and clock grants no access inside it', () => {
+  const start = rules.indexOf('match /workspaces/{workspaceId} {', rules.indexOf('match /onboardingIndex/{uid} {'));
+  assert.notEqual(start, -1);
+  const rest = rules.slice(start);
+  const end = rest.search(/\n {4}match \//);
+  const block = end === -1 ? rest : rest.slice(0, end);
+
+  assert.match(block, /allow get: if member\(workspaceId\)[\s\S]*workspaceCreatedByCaller\(workspaceId\)/);
+  assert.match(block, /allow create: if signedIn\(\) &&[\s\S]*createdBy == request\.auth\.uid/);
+  assert.match(block, /!request\.resource\.data\.keys\(\)\.hasAny\(\['ownerUid', 'ownerEmail'\]\)/);
+
+  // The clock is readable by its creator, but only the owner may move it.
+  const clock = matchBlock('match /subscription/{documentId} {');
+  assert.match(clock, /allow get: if adminOf\(workspaceId\) \|\| member\(workspaceId\)[\s\S]*workspaceCreatedByCaller\(workspaceId\)/);
+  assert.match(clock, /allow update: if adminOf\(workspaceId\)/);
+  assert.match(clock, /allow delete: if adminOf\(workspaceId\);/);
+});
+
+test('no unit, patient or task rule became readable without a membership', () => {
+  // The onboarding branch exists only for the request itself.
+  const units = matchBlock('match /units/{unitId} {');
+  assert.match(units, /allow get: if adminOf\(workspaceId\) \|\| unitMember\(workspaceId,unitId\)/);
+  assert.match(units, /allow create: if canWrite\(workspaceId\) && \([\s\S]*member\(workspaceId\)/);
+
+  const masterFiles = matchBlock('match /masterFiles/{fileId} {');
+  assert.match(masterFiles, /allow get, list: if adminOf\(workspaceId\)[\s\S]*unitMemberAny\(workspaceId, resource\.data\.get\('contextIds', \[\]\)\)/);
+  assert.match(masterFiles, /hasOnly\(memberUnits\(workspaceId\)\)/);
+});
+
+
+// ---------------------------------------------------------------------------
 // Least privilege that must survive this change
 // ---------------------------------------------------------------------------
 

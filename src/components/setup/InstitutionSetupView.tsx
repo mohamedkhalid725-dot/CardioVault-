@@ -43,7 +43,13 @@ import {
   type SetupCompanionRecord,
 } from '../../services/institutionSetup';
 import { ReadOnlyAreaError, buildLineItems, loadRequests, submitRequest } from '../../services/subscriptionRequests';
-import { describeCloudReason, mirrorSubscriptionRequest } from '../../services/subscriptionRequestCloud';
+import {
+  describeCloudReason,
+  mirrorSubscriptionRequest,
+  onboardingRequestId,
+  submitOnboardingRequest,
+} from '../../services/subscriptionRequestCloud';
+import { startWorkspaceTrial } from '../../services/workspaceSubscription';
 import { planProductionSetupUnits, runProductionSetup } from '../../services/institutionSetupProduction';
 import { StorageService } from '../../services/storage';
 import { isLocalPreview } from '../../config/localPreview';
@@ -121,6 +127,8 @@ const TRIAL_NOTICE =
   'The request is saved in this local preview and starts a 3-day trial. This does not confirm payment; the owner must approve it.';
 const PRODUCTION_TRIAL_NOTICE =
   'The request is sent to the owner and starts a 3-day trial. This is not a payment - the owner checks the transfer by hand before approving.';
+const ONBOARDING_TRIAL_NOTICE =
+  'The request goes to the owner and starts your one 3-day trial clock. This is not a payment - the owner checks the transfer by hand, then activates the workspace.';
 const VISA_NOT_LIVE_NOTE = 'Visa checkout is not connected yet. Contact the owner on WhatsApp to arrange payment.';
 const INSTAPAY_WARNING = 'Opening the link or sending a transfer does not verify payment. The owner confirms payment manually.';
 
@@ -167,7 +175,18 @@ const friendlySaveError = (error: unknown): string => {
 
 const emptyCompanion: SetupCompanionRecord = { id: 'current', updatedAtMs: 0, schemaVersion: 1 };
 
-export const InstitutionSetupView = () => {
+interface InstitutionSetupViewProps {
+  /**
+   * 'standard' is the in-app wizard (the account already has workspace access).
+   * 'onboarding' is the standalone first-run wizard a brand-new account reaches
+   * from the access gate, before it owns any membership. It only files the
+   * subscription request; it never creates a unit.
+   */
+  mode?: 'standard' | 'onboarding';
+  onExit?: () => void;
+}
+
+export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionSetupViewProps = {}) => {
   const { currentUser, units, addUnit: createUnit, addPreviewUnits, completeUnitSetup } = useApp();
   const [draft, setDraft] = useState<InstitutionSetupDraft>(() => loadDraft());
   const [companion, setCompanion] = useState<SetupCompanionRecord>(() => loadSetupCompanion());
@@ -181,6 +200,11 @@ export const InstitutionSetupView = () => {
   // copy differ. Production writes the request to Firestore and creates real
   // units; the isolated preview keeps its device-only draft.
   const previewMode = isLocalPreview();
+  // First-run onboarding (brand-new account, no membership yet): the request is
+  // the whole deliverable. Unit creation stays with the owner's activation step,
+  // because the rules (correctly) refuse a unit to an account without a
+  // membership, and we will not weaken them.
+  const onboardingMode = mode === 'onboarding' && !previewMode;
 
   // Suggest the signed-in name once, without overwriting anything the user typed.
   // The suggestion is persisted immediately so a reload does not lose it.
@@ -233,7 +257,7 @@ export const InstitutionSetupView = () => {
   const unitCount = draft.unitDrafts.length;
   const requestSubmitted = !!companion.lastSubmittedRequestId;
   const canSave = validation.ok && companionSaveCheck.ok;
-  const trialNotice = previewMode ? TRIAL_NOTICE : PRODUCTION_TRIAL_NOTICE;
+  const trialNotice = previewMode ? TRIAL_NOTICE : onboardingMode ? ONBOARDING_TRIAL_NOTICE : PRODUCTION_TRIAL_NOTICE;
 
   const update = (patch: Partial<InstitutionSetupDraft>) => {
     setDraft((previous) => saveDraft({ ...previous, ...patch }));
@@ -345,6 +369,101 @@ export const InstitutionSetupView = () => {
 
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
 
+  /**
+   * First-run save for an account that owns no membership yet.
+   *
+   * Order is the safety contract:
+   *   1. build + validate the request locally (nothing is written on failure);
+   *   2. create/reuse the account's OWN workspace;
+   *   3. create/reuse the ONE deterministic request document;
+   *   4. write the owner's discovery index last.
+   *
+   * No unit and no bed is created here. The rules refuse a unit to an account
+   * without a membership, and creating structure before the owner has seen the
+   * request is exactly the misleading success we must avoid. A retry reuses the
+   * same request id, so nothing is duplicated.
+   */
+  const saveOnboarding = async () => {
+    const uid = String(currentUser?.userId || '').trim();
+    if (!uid) throw new Error('Sign in again before sending the request.');
+
+    const requestId = onboardingRequestId(uid);
+    const { request } = submitRequest({
+      id: requestId,
+      phone: companion.phone || '',
+      requestType: requestType as SubscriptionRequestType,
+      institutionName: draft.institutionName,
+      unitDrafts: draft.unitDrafts.map((unit) => ({
+        id: unit.tempId,
+        name: unit.name,
+        typeLabel: unitTypeLabel(unit),
+        beds: unit.beds,
+        receivesOperations: unitReceivesOperations(companion, unit.tempId),
+      })),
+      doctorsCount: requestType !== 'department' ? companion.doctorsCount || 0 : 0,
+      clinicServices: requestType !== 'department' ? companion.clinicServices || [] : [],
+      chosenPaymentMethod: companion.paymentMethod as PaymentMethodChoice,
+      actorUid: uid,
+      actorName: currentUser?.name,
+      actorEmail: currentUser?.email,
+    });
+
+    const result = await submitOnboardingRequest(request, {
+      uid,
+      email: currentUser?.email,
+      name: currentUser?.name,
+      workspaceName: draft.institutionName,
+    });
+
+    setCompanion(
+      saveSetupCompanion({
+        lastSubmittedRequestId: requestId,
+        lastSubmittedAtMs: request.submittedAtMs,
+        lastRequestDeliveredAtMs: result.delivered ? Date.now() : 0,
+      }),
+    );
+
+    if (!result.ok) {
+      setSaved(null);
+      const prefix = result.delivered
+        ? 'The request itself was saved in your workspace, but the owner queue index did not update. '
+        : '';
+      setActionError(
+        `${prefix}${describeCloudReason(result.reason)} Nothing was created: units are only added after the owner activates the workspace.`,
+      );
+      return;
+    }
+
+    const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
+    setDraft(saveDraft(withSteps));
+    setSaved({ count: 0, totalBeds: 0 });
+
+    // The planned 3-day trial is opened on the account's own workspace, once.
+    // A refusal here is not a failure of the request: say so instead of
+    // pretending a trial started.
+    const trial = await startWorkspaceTrial(result.workspaceId || '').catch(() => null);
+    let trialNote = '';
+    if (trial?.trialEndsAtMs) {
+      trialNote = ` Your 3-day trial clock started and ends on ${new Date(trial.trialEndsAtMs).toLocaleDateString()}.`;
+    } else {
+      trialNote = ' The 3-day trial clock could not be started here; the owner starts it when the workspace is activated.';
+    }
+
+    if (!result.created && result.status && result.status !== 'pending') {
+      // Do not claim a fresh delivery for a request the owner has already
+      // decided: say what the stored decision actually is.
+      setSaveNotice(
+        `This request was already submitted and its current status is "${result.status}". Nothing was sent twice and no unit was created.${trialNote}`,
+      );
+      return;
+    }
+
+    setSaveNotice(
+      `Request ${requestId} is with the owner. No unit or bed was created yet: the owner reviews the request, confirms the payment by hand and activates the workspace. ` +
+        `You can safely press Save again - the same request is reused, never duplicated.${trialNote}`,
+    );
+  };
+
   const save = async () => {
     if (saving) return;
     setActionError('');
@@ -352,6 +471,10 @@ export const InstitutionSetupView = () => {
     if (!canSave) return;
     setSaving(true);
     try {
+      if (onboardingMode) {
+        await saveOnboarding();
+        return;
+      }
       const previousRequest = loadRequests().find((request) => request.id === companion.lastSubmittedRequestId);
       const alreadyCreated = new Set(units.map((unit) => unit.id));
       const coveredUnitIds = new Set((previousRequest?.unitDrafts || []).map((unit) => String(unit.id || '')));
@@ -520,6 +643,28 @@ export const InstitutionSetupView = () => {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
+      {onboardingMode && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-[#111C2E]">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+              New institution
+            </p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              Request a subscription - no workspace membership is needed to send it.
+            </p>
+          </div>
+          {onExit && (
+            <button
+              type="button"
+              onClick={onExit}
+              className="inline-flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-cyan-400 hover:text-cyan-700 dark:border-slate-700 dark:text-slate-200 dark:hover:text-cyan-300"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Back
+            </button>
+          )}
+        </div>
+      )}
       <div
         className={`rounded-3xl border p-4 ${
           previewMode
@@ -531,7 +676,9 @@ export const InstitutionSetupView = () => {
           <ShieldCheck className="h-4 w-4 shrink-0" />
           {previewMode
             ? 'Local preview data - saved on this device only, not synced.'
-            : 'Saved to your workspace: the request goes to the owner, and units and beds are created in the cloud.'}
+            : onboardingMode
+              ? 'First-run setup: the request is delivered to the owner and appears in the owner queue on every device. No unit is created until the owner activates the workspace.'
+              : 'Saved to your workspace: the request goes to the owner, and units and beds are created in the cloud.'}
         </p>
       </div>
 
@@ -560,7 +707,9 @@ export const InstitutionSetupView = () => {
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {previewMode
                 ? 'Start with a subscription request, add the institution and units, then review. Nothing is created in the cloud.'
-                : 'Start with a subscription request, add the institution and units, then review. Saving sends the request to the owner and creates the units and their beds.'}
+                : onboardingMode
+                  ? 'Start with a subscription request, add the institution and the units you plan to run, then send it. The owner reviews it before anything is created.'
+                  : 'Start with a subscription request, add the institution and units, then review. Saving sends the request to the owner and creates the units and their beds.'}
             </p>
           </div>
           <div className="flex gap-2 text-xs">
@@ -619,7 +768,9 @@ export const InstitutionSetupView = () => {
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 {previewMode
                   ? 'Submitting starts a 3-day local preview trial. No payment is recorded; activation requires owner approval.'
-                  : 'Submitting sends the request to the owner and starts a 3-day trial. No payment is recorded in the app; activation requires the owner to confirm the transfer.'}
+                  : onboardingMode
+                    ? 'Submitting sends the request to the owner and starts your one 3-day trial clock. No payment is recorded in the app; the owner confirms the transfer and activates the workspace.'
+                    : 'Submitting sends the request to the owner and starts a 3-day trial. No payment is recorded in the app; activation requires the owner to confirm the transfer.'}
               </p>
             </div>
 
@@ -1190,10 +1341,14 @@ export const InstitutionSetupView = () => {
                 {requestSubmitted
                   ? previewMode
                     ? 'Ready to save the units locally (request already submitted).'
-                    : 'Ready: the request is already submitted, so Save only finishes the remaining units and beds.'
+                    : onboardingMode
+                      ? 'The request is already with the owner. Sending it again reuses the same record - nothing is duplicated.'
+                      : 'Ready: the request is already submitted, so Save only finishes the remaining units and beds.'
                   : previewMode
                     ? 'Ready to save: the request will be stored locally and a 3-day trial will start.'
-                    : 'Ready to save: the request is sent to the owner, a 3-day trial starts, and the units are created.'}
+                    : onboardingMode
+                      ? 'Ready to send: the request goes to the owner and starts your one 3-day trial clock. No unit is created yet.'
+                      : 'Ready to save: the request is sent to the owner, a 3-day trial starts, and the units are created.'}
               </p>
             ) : (
               <div className="space-y-1 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
@@ -1274,11 +1429,13 @@ export const InstitutionSetupView = () => {
           {saved && (
             <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" />
-              {saved.count === 0
-                ? 'Request delivered - no department unit was configured.'
-                : previewMode
-                  ? `Setup saved locally - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds are now available in this preview.`
-                  : `Setup complete - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds created. Only the owner can change bed counts now.`}
+              {onboardingMode
+                ? 'Request delivered - nothing is created until the owner activates the workspace.'
+                : saved.count === 0
+                  ? 'Request delivered - no department unit was configured.'
+                  : previewMode
+                    ? `Setup saved locally - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds are now available in this preview.`
+                    : `Setup complete - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds created. Only the owner can change bed counts now.`}
             </span>
           )}
           {saved && requestSubmitted && (
@@ -1299,10 +1456,14 @@ export const InstitutionSetupView = () => {
               : requestSubmitted
                 ? previewMode
                   ? 'Save setup'
-                  : 'Finish setup'
+                  : onboardingMode
+                    ? 'Send request again (safe)'
+                    : 'Finish setup'
                 : previewMode
                   ? 'Submit request and save setup'
-                  : 'Submit request and create units'}
+                  : onboardingMode
+                    ? 'Submit request to the owner'
+                    : 'Submit request and create units'}
           </button>
           {saved && (
             <button

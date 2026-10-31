@@ -10,6 +10,7 @@ import {
   saveMasterFiles,
   searchMasterFiles,
 } from '../src/services/masterPatientFile.ts';
+import type { MasterPatientFile } from '../src/types/clinicArea.ts';
 
 /**
  * Master patient file (الملف الأم) — service tests for the approval-critical
@@ -131,6 +132,26 @@ test('appendTimelineEvent keeps old events, adds a dated one, and never mutates 
     ['Follow-up visit', 'Ward encounter'],
     'events are appended in order, nothing is removed',
   );
+});
+
+test('appendTimelineEvent safely appends to a legacy file without a timeline and does not mutate it', () => {
+  const { file } = createMasterFile(baseInput(), 1000, memoryStorage());
+  const legacyFile = { ...file, timeline: undefined } as unknown as MasterPatientFile;
+  const legacyFiles = [legacyFile];
+
+  const result = appendTimelineEvent(legacyFiles, file.id, {
+    kind: 'clinic-visit',
+    title: 'Follow-up visit',
+    summary: '',
+    detail: 'Recorded details',
+    createdBy: 'doctor-1',
+    context: { unitId: 'unit-a' },
+    atMs: 2000,
+  });
+
+  assert.equal(legacyFiles[0].timeline, undefined, 'the legacy source object remains unchanged');
+  assert.equal(result.event?.title, 'Follow-up visit');
+  assert.deepEqual(result.files[0].timeline.map((event) => event.title), ['Follow-up visit']);
 });
 
 test('persistTimelineEvent saves the dated event to storage and refreshes on reload', () => {
