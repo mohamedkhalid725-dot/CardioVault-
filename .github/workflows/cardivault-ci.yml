@@ -52,14 +52,6 @@ jobs:
       - name: Capture TypeScript diagnostics
         if: always()
         run: npm run lint > tscheck.log 2>&1 || true
-      - name: Commit TypeScript diagnostics for debugging
-        if: failure()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tscheck.log
-          git commit -m "CI debug: capture TypeScript diagnostics" || true
-          git push origin HEAD:${GITHUB_REF_NAME} || true
       - name: Upload TypeScript diagnostics
         if: always()
         # A full Actions storage quota must never kill the build: the log is a
