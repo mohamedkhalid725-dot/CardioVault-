@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   FileText,
   Info,
   Plus,
+  RotateCcw,
   Search,
   Stethoscope,
   User,
@@ -39,14 +40,17 @@ import type {
   OperationAttachment,
 } from '../../types/clinicArea';
 import { PREVIEW_CLINIC_ID, SECRETARY_CAN_VIEW_CLINICAL_SUMMARIES } from '../../types/clinicArea';
-import { PREVIEW_WORKSPACE_ID } from '../../config/localPreview';
+import { isLocalPreview, PREVIEW_WORKSPACE_ID } from '../../config/localPreview';
+import { appendPatientMasterEvent, loadMasterFilesForUnits } from '../../services/masterPatientFileCloud';
+import { firestoreMasterPatientFilePersistence } from '../../services/firestoreMasterPatientFilePersistence';
+import { AuthorizationService } from '../../services/authorizationService';
+import { isAvailableLifecycleBed } from '../../services/patientLifecycleAccess';
 
 /**
- * Master patient file (الملف الأم) screen — LOCAL PREVIEW ONLY.
+ * Master patient file (الملف الأم) screen.
  *
- * Everything lives in localStorage (key `cardiovault_dt_master_files_v1`).
- * No Firebase, no network. Timeline history is append-only: there is no
- * delete button anywhere on this screen, by design.
+ * Preview mode uses localStorage. Production unit files are loaded from the
+ * active workspace through unit-filtered Firestore queries; events are append-only.
  */
 
 // Same localStorage key/name conventions the ClinicModeView uses.
@@ -63,8 +67,12 @@ const GHOST =
   'inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300';
 
 const KIND_LABELS: Record<TimelineEventKind, string> = {
-  appointment: 'Appointment',
-  'clinic-visit': 'Clinic visit',
+  'patient-admission': 'Patient admission',
+  'patient-readmission': 'Patient readmission',
+  'patient-transfer': 'Unit transfer',
+  'patient-discharge': 'Patient discharge',
+  appointment: 'Visit',
+  'clinic-visit': 'Clinical visit',
   encounter: 'Clinical encounter',
   'operation-waiting': 'Operation waiting',
   'unit-booking': 'Unit booking',
@@ -73,6 +81,10 @@ const KIND_LABELS: Record<TimelineEventKind, string> = {
 };
 
 const KIND_BADGE: Record<TimelineEventKind, string> = {
+  'patient-admission': 'bg-cyan-100 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
+  'patient-readmission': 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  'patient-transfer': 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300',
+  'patient-discharge': 'bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300',
   appointment: 'bg-cyan-100 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
   'clinic-visit': 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
   encounter: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
@@ -105,7 +117,7 @@ function readWorkspaceAccess(): WorkspaceAccessSnapshot {
   }
 }
 
-const contextOf = (unitId: string): CareContext => (unitId === PREVIEW_CLINIC_ID ? { clinicId: PREVIEW_CLINIC_ID } : { unitId });
+const contextOf = (unitId: string): CareContext => ({ unitId });
 const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -157,7 +169,7 @@ interface EventForm {
   atLocal: string;
 }
 
-const EVENT_KIND_OPTIONS: EventForm['kind'][] = ['clinic-visit', 'encounter', 'operation-record', 'test-attachment'];
+const EVENT_KIND_OPTIONS: EventForm['kind'][] = ['encounter', 'operation-record', 'test-attachment'];
 
 const splitCommaList = (value: string): string[] =>
   String(value || '')
@@ -171,33 +183,37 @@ interface AuditRow {
 }
 
 export const MasterPatientFileView: React.FC = () => {
-  const { currentUser, units, archivedPatients, setCurrentPatientId, setCurrentView } = useApp();
+  const { currentUser, units, archivedPatients, beds, patients, readmitPatient, canWriteUnit, showToast, setCurrentPatientId, setCurrentView } = useApp();
+  const [readmitTarget, setReadmitTarget] = useState<(typeof archivedPatients)[number] | null>(null);
+  const [readmitUnitId, setReadmitUnitId] = useState('');
+  const [readmitBedId, setReadmitBedId] = useState('');
   const isSecretary = currentUser?.clinicRole === 'secretary' || String(currentUser?.role || '') === 'coordinator';
   const canViewMedicalSummaries = !isSecretary || SECRETARY_CAN_VIEW_CLINICAL_SUMMARIES;
+  const readmitUnits = useMemo(() => AuthorizationService.filterAuthorizedUnits(units, currentUser).filter(unit => canWriteUnit(unit.id) && AuthorizationService.canPerformAction(currentUser, 'admit_patient', { unitId: unit.id })), [units, currentUser, canWriteUnit]);
+  const readmitBeds = beds.filter(bed => bed.unitId === readmitUnitId && isAvailableLifecycleBed(bed, patients));
+  const beginReadmit = (patient: (typeof archivedPatients)[number]) => { const unitId = readmitUnits.find(unit => unit.id === patient.unitId)?.id || readmitUnits[0]?.id || ''; setReadmitTarget(patient); setReadmitUnitId(unitId); setReadmitBedId(beds.find(bed => bed.unitId === unitId && isAvailableLifecycleBed(bed, patients))?.id || ''); };
+  const confirmMasterReadmit = async () => { if (!readmitTarget || !readmitUnitId || !readmitBedId) return; if (!(await readmitPatient(readmitTarget.id, readmitUnitId, readmitBedId))) return; const id = readmitTarget.id; setReadmitTarget(null); setCurrentPatientId(id); setCurrentView('patient'); showToast(`${readmitTarget.fullName} successfully re-admitted.`, 'success'); };
 
   const unitIds = useMemo(() => units.map((unit) => String(unit.id || '').trim()).filter(Boolean), [units]);
   const unitNameById = useMemo(() => new Map(units.map((unit) => [String(unit.id), String(unit.name)])), [units]);
-  const workspaceAccess = useMemo(() => readWorkspaceAccess(), []);
+  const workspaceAccess = readWorkspaceAccess();
   const actorUid = String(currentUser?.userId || '').trim() || 'local-user';
 
   // Authorized scope (plan §20 interpretation): every unit of this workspace
   // the AppContext exposes + the preview clinic area. Only files whose
   // contextIds intersect this scope are EVER listed or searched.
-  const authorizedContextIds = useMemo(() => {
-    const scope = new Set<string>(unitIds);
-    scope.add(PREVIEW_CLINIC_ID);
-    return [...scope];
-  }, [unitIds]);
+  const authorizedContextIds = useMemo(() => unitIds, [unitIds]);
 
   // Default context for new records: the pinned active unit when it is inside
   // the scope, otherwise the first authorized unit, otherwise the clinic.
   const activeUnitId = useMemo(() => {
     const pinned = workspaceAccess.unitId;
     if (pinned && unitIds.includes(pinned)) return pinned;
-    return unitIds[0] || PREVIEW_CLINIC_ID;
+    return unitIds[0] || '';
   }, [workspaceAccess.unitId, unitIds]);
 
-  const [files, setFiles] = useState<MasterPatientFile[]>(() => loadMasterFiles());
+  const [files, setFiles] = useState<MasterPatientFile[]>([]);
+  const refreshGeneration = useRef(0);
   const [query, setQuery] = useState('');
   const [selectedFileId, setSelectedFileId] = useState('');
   const [expandedEventKeys, setExpandedEventKeys] = useState<string[]>([]);
@@ -207,8 +223,8 @@ export const MasterPatientFileView: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   // Default context = the resolved active unit (falls back to the clinic).
   const [formContextId, setFormContextId] = useState('');
-  const effectiveFormContext = formContextId || activeUnitId || PREVIEW_CLINIC_ID;
-  const [eventForm, setEventForm] = useState<EventForm>({ kind: 'clinic-visit', title: '', detail: '', atLocal: '' });
+  const effectiveFormContext = formContextId || activeUnitId;
+  const [eventForm, setEventForm] = useState<EventForm>({ kind: 'encounter', title: '', detail: '', atLocal: '' });
   const [unsynced, setUnsynced] = useState(false);
 
   const selectedFile = useMemo(
@@ -254,14 +270,45 @@ export const MasterPatientFileView: React.FC = () => {
     }
   };
 
-  const refresh = (): void => setFiles(loadMasterFiles());
+  const refresh = async (): Promise<void> => {
+    const requestId = ++refreshGeneration.current;
+    const requestedWorkspaceId = workspaceAccess.workspaceId;
+    if (isLocalPreview()) {
+      setFiles(loadMasterFiles());
+      return;
+    }
+    try {
+      const loaded = await loadMasterFilesForUnits(
+        firestoreMasterPatientFilePersistence,
+        requestedWorkspaceId,
+        unitIds,
+      );
+      if (requestId !== refreshGeneration.current || requestedWorkspaceId !== readWorkspaceAccess().workspaceId) return;
+      setFiles(loaded);
+      if (selectedFileId && !loaded.some(file => file.id === selectedFileId)) setSelectedFileId('');
+    } catch (error) {
+      if (requestId !== refreshGeneration.current || requestedWorkspaceId !== readWorkspaceAccess().workspaceId) return;
+      console.warn('Authorized master-file unit fetch failed:', error);
+      setFiles([]);
+      setSelectedFileId('');
+      setNotice({ type: 'error', text: 'Master files could not be fetched from your authorized units. Check your connection and workspace access.' });
+    }
+  };
+
+  useEffect(() => {
+    refreshGeneration.current += 1;
+    setFiles([]);
+    setSelectedFileId('');
+    setQuery('');
+    void refresh();
+  }, [workspaceAccess.workspaceId, unitIds]);
 
   const openDetail = (fileId: string): void => {
     setSelectedFileId(fileId);
     setExpandedEventKeys([]);
     setQuery('');
     setUnsynced(false);
-    setEventForm({ kind: 'clinic-visit', title: '', detail: '', atLocal: '' });
+    setEventForm({ kind: 'encounter', title: '', detail: '', atLocal: '' });
   };
 
   /* ── New master file form ─────────────────────────────────────────────── */
@@ -277,6 +324,10 @@ export const MasterPatientFileView: React.FC = () => {
 
   const submitNewFile = (event: React.FormEvent): void => {
     event.preventDefault();
+    if (!isLocalPreview()) {
+      setNotice({ type: 'error', text: 'In the production workspace, patient files are created automatically through patient admission.' });
+      return;
+    }
     const contextId = effectiveFormContext;
     const ageValue = Number(form.ageYears);
     const riskFactors = [
@@ -304,7 +355,7 @@ export const MasterPatientFileView: React.FC = () => {
     }
     setFormErrors({});
     const saved = createMasterFile(input, previewNowMs());
-    refresh();
+    void refresh();
     audit({
       contextId,
       action: 'master_file.created',
@@ -326,7 +377,7 @@ export const MasterPatientFileView: React.FC = () => {
 
   /* ── Add dated timeline event ─────────────────────────────────────────── */
 
-  const submitTimelineEvent = (event: React.FormEvent): void => {
+  const submitTimelineEvent = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
     if (!selectedFile) return;
     const contextId = pickFileContext(selectedFile, activeUnitId, PREVIEW_CLINIC_ID);
@@ -340,22 +391,44 @@ export const MasterPatientFileView: React.FC = () => {
       context: contextOf(contextId),
       atMs: Number.isFinite(parsedAtMs) ? parsedAtMs : undefined,
     };
-    const outcome = persistTimelineEvent(selectedFile.id, input);
-    refresh();
-    setUnsynced(!outcome.saved);
+    let eventId = selectedFile.id;
+    let persisted = false;
+    if (isLocalPreview()) {
+      const outcome = persistTimelineEvent(selectedFile.id, input);
+      eventId = outcome.event?.id || selectedFile.id;
+      persisted = outcome.saved;
+    } else {
+      try {
+        const atMs = input.atMs ?? Date.now();
+        const id = `manual-${atMs}-${Math.random().toString(36).slice(2, 8)}`;
+        const saved = await appendPatientMasterEvent(firestoreMasterPatientFilePersistence, workspaceAccess.workspaceId, selectedFile.id, {
+          ...input,
+          id,
+          atMs,
+          refId: selectedFile.id,
+          schemaVersion: 1,
+        });
+        eventId = saved.id;
+        persisted = true;
+      } catch (error) {
+        console.warn('Master timeline event write failed:', error);
+      }
+    }
+    await refresh();
+    setUnsynced(!persisted);
     audit({
       contextId,
       action: 'master_file.timeline_event_added',
       entityType: 'master_file_timeline',
-      entityId: outcome.event ? outcome.event.id : selectedFile.id,
-      result: outcome.saved ? 'success' : 'failure',
+      entityId: eventId,
+      result: persisted ? 'success' : 'failure',
       summary: `Timeline event ${input.kind} added to ${selectedFile.name}`,
     });
-    if (outcome.saved) {
+    if (persisted) {
       setNotice({ type: 'success', text: 'Event added to the patient timeline.' });
-      setEventForm({ kind: 'clinic-visit', title: '', detail: '', atLocal: '' });
+      setEventForm({ kind: 'encounter', title: '', detail: '', atLocal: '' });
     } else {
-      setNotice({ type: 'error', text: 'Could not save the event because device storage is unavailable.' });
+      setNotice({ type: 'error', text: 'Could not confirm saving the event to storage.' });
     }
   };
 
@@ -385,13 +458,13 @@ export const MasterPatientFileView: React.FC = () => {
   const contextLabel = (event: MasterTimelineEvent): string => {
     const unitId = String(event.context?.unitId || '');
     if (unitId) return unitNameById.get(unitId) || unitId;
-    if (event.context?.clinicId) return 'Clinic';
+    if (event.context?.clinicId) return 'Other context';
     return '—';
   };
 
   const eventContextDefault: string = selectedFile
     ? pickFileContext(selectedFile, activeUnitId, PREVIEW_CLINIC_ID)
-    : activeUnitId || PREVIEW_CLINIC_ID;
+    : activeUnitId;
 
   /* ── Detail sub-render ────────────────────────────────────────────────── */
 
@@ -485,7 +558,7 @@ export const MasterPatientFileView: React.FC = () => {
               {selectedFile.pastImaging.length > 0 && <p>Previous imaging: {selectedFile.pastImaging.join(', ')}</p>}
             </div> : <p className="text-xs text-slate-500 dark:text-slate-400">Medical summaries are hidden from secretary accounts.</p>}
             <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-              Contexts: {selectedFile.contextIds.map((id) => unitNameById.get(id) || (id === PREVIEW_CLINIC_ID ? 'Clinic' : id)).join(' · ')}
+              Contexts: {selectedFile.contextIds.map((id) => contextIdLabel(id, unitNameById)).join(' · ')}
             </p>
           </div>
 
@@ -538,9 +611,6 @@ export const MasterPatientFileView: React.FC = () => {
                               ))}
                             </div>
                           ) : null}
-                          {canViewMedicalSummaries && event.kind === 'appointment' && event.refId && (
-                            <p className="text-xs font-bold text-cyan-700 dark:text-cyan-300">Linked to a Clinic Mode appointment</p>
-                          )}
                         </div>
                       )}
                     </li>
@@ -626,17 +696,18 @@ export const MasterPatientFileView: React.FC = () => {
             ) : (
               <ul className="space-y-2">
                 {archivedPatients.map((patient) => (
-                  <li key={patient.id}>
-                    <button type="button" onClick={() => { setCurrentPatientId(patient.id); setCurrentView('patient'); }} className={`${CARD} w-full p-3 text-left hover:border-amber-500/60`}>
+                  <li key={patient.id} className={`${CARD} w-full p-3 text-left hover:border-amber-500/60`}>
+                    <button type="button" onClick={() => { setCurrentPatientId(patient.id); setCurrentView('patient'); }} className="w-full text-left">
                       <span className="text-sm font-bold">{patient.fullName || patient.name || 'Patient'}</span>
                       <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">Age {patient.age} · {isSecretary ? 'Archived' : patient.archiveReason || 'Archived'}</span>
                       <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">{patient.archiveDate || patient.admissionDate} · {unitNameById.get(patient.unitId) || patient.unitId}</span>
                     </button>
+                    <span className="mt-2 flex justify-end"><button type="button" disabled={!readmitUnits.length} onClick={() => beginReadmit(patient)} className={PRIMARY}><RotateCcw size={14} /> Readmit</button></span>
                   </li>
                 ))}
               </ul>
             )}
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">The archive keeps prior clinical episodes; opening a row shows its full admission history. The patient timeline below keeps dated visits and bookings.</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">The archive keeps prior clinical episodes; opening a row shows its full admission history. The patient timeline below keeps dated events.</p>
           </div>
           {/* Search by name or all-digit national id (service handles both) */}
           <div className={`${CARD} p-4 space-y-2`}>
@@ -692,13 +763,13 @@ export const MasterPatientFileView: React.FC = () => {
                 <Activity size={15} className="text-cyan-500" />
                 Patient files ({authorizedFiles.length})
               </h2>
-              <button type="button" className={GHOST} onClick={() => setShowForm((current) => !current)}>
-                {showForm ? 'Hide form' : 'New file'}
-              </button>
+               {isLocalPreview() && <button type="button" className={GHOST} onClick={() => setShowForm((current) => !current)}>
+                 {showForm ? 'Hide form' : 'New file'}
+               </button>}
             </div>
             {authorizedFiles.length === 0 ? (
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                No patient files yet. Files are created automatically when adding a patient to the operation queue or by using the button below.
+                No patient files are visible in the authorized units yet. Files are created automatically on patient admission.
               </p>
             ) : (
               <ul className="space-y-2">
@@ -720,7 +791,7 @@ export const MasterPatientFileView: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        {file.contextIds.map((id) => unitNameById.get(id) || (id === PREVIEW_CLINIC_ID ? 'Clinic' : id)).join(' · ')}
+                        {file.contextIds.map((id) => contextIdLabel(id, unitNameById)).join(' · ')}
                       </p>
                     </button>
                   </li>
@@ -877,7 +948,6 @@ export const MasterPatientFileView: React.FC = () => {
                         Unit: {unitNameById.get(unitId) || unitId}
                       </option>
                     ))}
-                    <option value={PREVIEW_CLINIC_ID}>Clinic</option>
                   </select>
                   {formErrors.contextIds && <span className="text-xs text-rose-600 dark:text-rose-400">{formErrors.contextIds}</span>}
                 </label>
@@ -890,6 +960,7 @@ export const MasterPatientFileView: React.FC = () => {
           )}
         </section>
       )}
+      {readmitTarget && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-label={`Readmit ${readmitTarget.fullName}`} className={`${CARD} w-full max-w-md p-5 space-y-4`}><h3 className="font-bold">Readmit {readmitTarget.fullName}</h3><p className="text-xs text-amber-700 dark:text-amber-300">The prior admission remains in the patient history. A new episode will start with a fresh admission record.</p><label className={LABEL}>Unit<select className={INPUT} value={readmitUnitId} onChange={event => { setReadmitUnitId(event.target.value); setReadmitBedId(''); }}><option value="">Select unit</option>{readmitUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className={LABEL}>Available bed<select className={INPUT} value={readmitBedId} onChange={event => setReadmitBedId(event.target.value)}><option value="">Select bed</option>{readmitBeds.map(bed => <option key={bed.id} value={bed.id}>{bed.bedNumber}</option>)}</select></label><div className="flex justify-end gap-2"><button type="button" className={GHOST} onClick={() => setReadmitTarget(null)}>Cancel</button><button type="button" className={PRIMARY} disabled={!readmitBedId} onClick={confirmMasterReadmit}>Readmit</button></div></div></div>}
 
       <p className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
         <Info size={12} /> The patient file is longitudinal. Timeline events are append-only and cannot be deleted from this screen.
@@ -900,7 +971,7 @@ export const MasterPatientFileView: React.FC = () => {
 
 /** Pure helpers kept module-level for clarity. */
 function contextIdLabel(contextId: string, unitNameById: Map<string, string>): string {
-  if (contextId === PREVIEW_CLINIC_ID) return 'Clinic';
+  if (contextId === PREVIEW_CLINIC_ID) return 'Other context';
   return unitNameById.get(contextId) ? `Unit: ${unitNameById.get(contextId)}` : contextId;
 }
 

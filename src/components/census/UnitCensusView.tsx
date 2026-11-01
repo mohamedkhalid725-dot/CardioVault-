@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Plus, ChevronRight, BedDouble, UserPlus, LogOut, X, LockKeyhole } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { isAvailableLifecycleBed } from '../../services/patientLifecycleAccess';
 import { PatientStatus, UserProfile } from '../../types/clinical';
 import { canEditClinicalData, canManageStructure, getStoredWorkspaceAccess, getTeamDirectoryMembers } from '../../services/workspaceAccess';
 
@@ -36,7 +37,7 @@ export const UnitCensusView: React.FC = () => {
       const patientMap=new Map<string,any>(patients.map(p=>[p.id,p]));
       let changed=false;
       const repaired=stored.map((b:any)=>{
-        if(b?.patientId){const p=patientMap.get(b.patientId);if(!p||p.isArchived){changed=true;return {...b,patientId:undefined,status:'Empty'};}}
+         if(b?.patientId){const p=patientMap.get(b.patientId);if(p?.isArchived&&b.status==='Empty'){changed=true;return {...b,patientId:undefined,status:'Empty'};}}
         return b;
       });
       if(changed)localStorage.setItem('cardiovault_beds_v2',JSON.stringify(repaired));
@@ -46,10 +47,10 @@ export const UnitCensusView: React.FC = () => {
   if(!currentUnit)return <div className="p-8 text-center text-slate-400"><p>No unit selected.</p><button onClick={()=>setCurrentView('home')} className="mt-4 px-4 py-2 bg-cyan-500 text-slate-950 rounded-xl font-semibold text-sm">Return Home</button></div>;
 
   const handleOpenPatient=(patientId:string)=>{setCurrentPatientId(patientId);setActivePatientSection('overview');setCurrentView('patient');};
-  const handleOpenAdmitModal=(bedId:string)=>{if(!editable)return;setSelectedBedId(bedId);setNewPatientName('');setNewPatientDiagnosis('');setNewPatientMRN(`MRN-${Math.floor(100000+Math.random()*900000)}`);setShowAdmitModal(true);};
+  const handleOpenAdmitModal=(bedId:string)=>{if(!editable)return;const bed=beds.find(item=>item.id===bedId);if(!bed||!isAvailableLifecycleBed(bed,patients)){showToast('This bed is not available. Refresh the census and try again.','error');return;}setSelectedBedId(bedId);setNewPatientName('');setNewPatientDiagnosis('');setNewPatientMRN(`MRN-${Math.floor(100000+Math.random()*900000)}`);setShowAdmitModal(true);};
   const handleAdmitSubmit=(e:React.FormEvent)=>{e.preventDefault();if(!editable||!newPatientName.trim()||!selectedBedId)return;try{const p=addPatient({fullName:newPatientName.trim(),age:newPatientAge,sex:newPatientSex,mrn:newPatientMRN,primaryDiagnosis:newPatientDiagnosis.trim()||'Acute Admission',status:newPatientStatus,unitId:currentUnit.id},selectedBedId);setShowAdmitModal(false);handleOpenPatient(p.id);}catch(error:any){showToast('Admission failed. Please try again.','error');}};
   const openDischarge=(e:React.MouseEvent,patientId:string,name:string,bedNumber:string)=>{e.stopPropagation();if(!editable)return;setDischargeTarget({id:patientId,name,bed:bedNumber});setDischargeReason('Clinical Discharge');setDischargeSummary('');};
-  const confirmDischarge=()=>{if(!editable||!dischargeTarget)return;try{dischargePatient(dischargeTarget.id,dischargeReason,dischargeSummary);setDischargeTarget(null);setCurrentView('census');showToast(`${dischargeTarget.name} discharged. ${dischargeTarget.bed} is now available.`,'success');}catch(error:any){showToast('Discharge failed. Please try again.','error');}};
+  const confirmDischarge=async()=>{if(!editable||!dischargeTarget)return;try{if(!(await dischargePatient(dischargeTarget.id,dischargeReason,dischargeSummary)))return;setDischargeTarget(null);setCurrentView('census');showToast(`${dischargeTarget.name} discharged. ${dischargeTarget.bed} is now available.`,'success');}catch(error:any){showToast('Discharge failed. Please try again.','error');}};
   const getStatusBadge=(status:PatientStatus)=>{const styles=status==='Critical'?'bg-rose-500/15 text-rose-500 border-rose-500/30':status==='Unstable'?'bg-amber-500/15 text-amber-500 border-amber-500/30':status==='Stable'?'bg-emerald-500/15 text-emerald-500 border-emerald-500/30':'bg-slate-100 text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';return <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${styles}`}><span className="w-1.5 h-1.5 rounded-full bg-current"/>{status}</span>;};
 
   return <div className="max-w-5xl mx-auto px-4 py-6 space-y-5 animate-in fade-in duration-200">
@@ -66,7 +67,7 @@ export const UnitCensusView: React.FC = () => {
     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111C2E] overflow-hidden shadow-sm">
       <div className="hidden md:grid grid-cols-[90px_1.5fr_1.4fr_120px_210px] gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-900/70 text-[10px] font-bold uppercase tracking-wider text-slate-400"><span>Bed</span><span>Patient</span><span>Diagnosis</span><span>Status</span><span>Actions</span></div>
       {unitBeds.map(bed=>{
-        const patient=bed.patientId?patients.find(p=>p.id===bed.patientId&&!p.isArchived):null;
+         const patient=bed.patientId?patients.find(p=>p.id===bed.patientId&&!p.isArchived):null;const bedAvailable=isAvailableLifecycleBed(bed,patients);
         return <div key={bed.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[90px_1.5fr_1.4fr_120px_210px] gap-2 md:gap-3 md:items-center px-3 md:px-5 py-2 md:py-3 border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/40">
           <div className="flex items-center gap-2 min-w-[66px]"><div className={`w-8 h-8 rounded-lg flex items-center justify-center ${patient?'bg-cyan-500/10 text-cyan-500':'bg-slate-200/60 dark:bg-slate-800 text-slate-400'}`}><BedDouble className="w-4 h-4"/></div><div><span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{bed.bedNumber}</span><div className="text-[8px] text-slate-400">Bed</div></div></div>
           {patient ? <>
@@ -81,9 +82,9 @@ export const UnitCensusView: React.FC = () => {
               {editable&&<button onClick={e=>openDischarge(e,patient.id,patient.fullName,bed.bedNumber)} title="Discharge" className="inline-flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg border border-rose-500/40 text-rose-500 text-[10px] md:text-xs font-bold"><LogOut className="w-3.5 h-3.5"/><span className="hidden sm:inline">Discharge</span></button>}
             </div>
           </> : <>
-            <div className="min-w-0"><div className="text-xs font-semibold text-slate-400">Empty Bed</div><div className="text-[9px] text-slate-400/80 truncate">Available for immediate admission</div></div>
+             <div className="min-w-0"><div className="text-xs font-semibold text-slate-400">{bedAvailable?'Empty Bed':'Unavailable bed'}</div><div className="text-[9px] text-slate-400/80 truncate">{bedAvailable?'Available for immediate admission':'Occupancy needs review before admission'}</div></div>
             <div className="hidden md:block md:col-span-2"></div>
-            {editable&&<button type="button" onClick={()=>handleOpenAdmitModal(bed.id)} className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-[10px]"><UserPlus className="w-3.5 h-3.5"/><span className="hidden sm:inline">Admit</span></button>}
+             {editable&&bedAvailable&&<button type="button" onClick={()=>handleOpenAdmitModal(bed.id)} className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-[10px]"><UserPlus className="w-3.5 h-3.5"/><span className="hidden sm:inline">Admit</span></button>}
           </>}
         </div>;
       })}

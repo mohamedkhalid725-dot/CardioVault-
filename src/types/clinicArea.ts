@@ -2,8 +2,8 @@
  * Shared contracts for the approved clinic-area workstreams (local preview only).
  *
  * Scope and safety:
- *  - Everything here is LOCAL PREVIEW data: plain localStorage records,
- *    synthetic demo content only. No Firebase, no network, no real patients.
+ *  - Local clinic tools may use preview storage; production department master
+ *    files are persisted separately through firestoreMasterPatientFilePersistence.
  *  - These types are the single source of truth shared by:
  *      masterPatientFile.ts (lead-owned), operationWaiting.ts (Agent B),
  *      subscriptionRequests.ts (Agent C), clinic dashboard (Agent D).
@@ -41,6 +41,10 @@ export interface CareContext {
 }
 
 export type TimelineEventKind =
+  | 'patient-admission'
+  | 'patient-readmission'
+  | 'patient-transfer'
+  | 'patient-discharge'
   | 'appointment'
   | 'clinic-visit'
   | 'encounter'
@@ -73,6 +77,7 @@ export type MasterFilePermission = 'full' | 'read-only';
 
 export interface MasterPatientFile {
   id: string;
+  workspaceId?: string;
   /** Stable identity inside the authorized scope. Never merged by name alone. */
   name: string;
   ageYears: number;
@@ -91,6 +96,8 @@ export interface MasterPatientFile {
    * least one context id is inside the doctor's own authorized unit/clinic set.
    */
   contextIds: string[];
+  /** Unit that created and owns this master file; transfers never change it. */
+  ownerUnitId?: string;
   timeline: MasterTimelineEvent[];
   createdAtMs: number;
   createdBy: string;

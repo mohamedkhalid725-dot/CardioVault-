@@ -61,17 +61,14 @@ test('findPatientNameMatches reports the file of the unit being admitted to', ()
   assert.equal(matches[0].mrn, 'MRN-1');
 });
 
-test('findPatientNameMatches reports a file of another unit the doctor belongs to', () => {
+test('findPatientNameMatches does not search outside the selected unit', () => {
   const matches = findPatientNameMatches(
     'Mohamed Khalid',
     [patient({ id: 'p2', unitId: 'unitB', mrn: 'MRN-77' })],
     [unit('unitA', 'CCU-1'), unit('unitB', 'CCU-2')],
     'unitA',
   );
-  assert.equal(matches.length, 1);
-  assert.equal(matches[0].isSameUnit, false);
-  assert.equal(matches[0].unitName, 'CCU-2');
-  assert.equal(matches[0].mrn, 'MRN-77');
+  assert.deepEqual(matches, []);
 });
 
 test('findPatientNameMatches never reports a unit the doctor does not belong to', () => {
@@ -84,7 +81,7 @@ test('findPatientNameMatches never reports a unit the doctor does not belong to'
   assert.deepEqual(matches, []);
 });
 
-test('findPatientNameMatches ignores discharged files and different names', () => {
+test('findPatientNameMatches includes archived files but ignores different names', () => {
   const matches = findPatientNameMatches(
     'Mohamed Khalid',
     [
@@ -94,14 +91,47 @@ test('findPatientNameMatches ignores discharged files and different names', () =
     [unit('unitA', 'CCU-1')],
     'unitA',
   );
-  assert.deepEqual(matches, []);
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].patientId, 'p4');
+  assert.equal(matches[0].isArchived, true);
 });
 
-test('findPatientNameMatches returns one entry per file even when units overlap', () => {
-  const shared = patient({ id: 'p6', unitId: 'unitB' });
+test('archived patient record remains a candidate when no master-file document exists', () => {
+  const archivedOnly = patient({ id: 'archived-only', unitId: 'unitA', isArchived: true, masterFileId: undefined });
+  const matches = findPatientNameMatches('Mohamed Khalid', [archivedOnly], [unit('unitA', 'CCU-1')], 'unitA', []);
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].patientId, 'archived-only');
+  assert.equal(matches[0].isArchived, true);
+});
+
+test('master-file matches are name-only, selected-unit scoped, and deduplicated by master identity', () => {
+  const files = [
+    { id: 'master-1', name: 'Mohamed Khalid', ageYears: 40, sourcePatientIds: ['p1'], contextIds: ['unitA'], timeline: [] },
+    { id: 'master-2', name: 'Mohamed Khalid', ageYears: 70, sourcePatientIds: ['p2'], contextIds: ['unitA'], timeline: [] },
+    { id: 'outside', name: 'Mohamed Khalid', ageYears: 40, contextIds: ['unitB'], timeline: [] },
+  ] as any;
+  const matches = findPatientNameMatches('Mohamed Khalid', [], [unit('unitA', 'CCU-1'), unit('unitB', 'CCU-2')], 'unitA', files);
+  assert.deepEqual(matches.map(match => match.masterFileId), ['master-1', 'master-2']);
+  assert.equal(matches[0].mrn, '');
+});
+
+test('legacy admission records resolve to the actual linked master-file ID', () => {
+  const match = findPatientNameMatches(
+    'Mohamed Khalid',
+    [patient({ id: 'legacy-patient', unitId: 'unitA', masterFileId: undefined })],
+    [unit('unitA', 'CCU-1')],
+    'unitA',
+    [{ id: 'legacy-master-real-id', name: 'Mohamed Khalid', ageYears: 40, sourcePatientIds: ['legacy-patient'], contextIds: ['unitA'], timeline: [] } as any],
+  );
+  assert.equal(match.length, 1);
+  assert.equal(match[0].masterFileId, 'legacy-master-real-id');
+});
+
+test('findPatientNameMatches returns one entry per master file when records overlap', () => {
+  const shared = patient({ id: 'p6', unitId: 'unitA', masterFileId: 'master-6' });
   const matches = findPatientNameMatches(
     'mohamed  khalid',
-    [shared, { ...shared }],
+    [shared, { ...shared, id: 'p7' }],
     [unit('unitA', 'CCU-1'), unit('unitB', 'CCU-2')],
     'unitA',
   );

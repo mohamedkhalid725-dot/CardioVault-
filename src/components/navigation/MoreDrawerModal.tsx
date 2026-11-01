@@ -86,33 +86,11 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
       color: 'text-amber-500 bg-amber-500/10',
     },
     {
-      id: 'clinic',
-      title: 'Clinic Mode',
-      subtitle: 'Clinic dashboard, appointments, consultations and billing records',
-      icon: Pill,
-      color: 'text-rose-500 bg-rose-500/10',
-    },
-    {
-      id: 'owner-requests',
-      title: 'Owner Panel',
-      subtitle: 'Subscription requests, approvals and 30-day codes (owner)',
-      icon: Crown,
-      color: 'text-violet-500 bg-violet-500/10',
-      adminOnly: true,
-    },
-    {
       id: 'institution-setup',
       title: 'Institution Setup',
       subtitle: 'Institution, unit types, beds and plan - creates the real units',
       icon: Building2,
       color: 'text-sky-500 bg-sky-500/10',
-    },
-    {
-      id: 'payments',
-      title: 'Subscription & Payment',
-      subtitle: 'Lifecycle states and manual InstaPay reference (Pending only)',
-      icon: ShieldCheck,
-      color: 'text-emerald-500 bg-emerald-500/10',
     },
     {
       id: 'protocols',

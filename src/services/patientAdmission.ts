@@ -1,5 +1,16 @@
 import type { Patient } from '../types/clinical';
 
+export function resolveAdmissionRetry(
+  patients: ReadonlyArray<Patient>, admissionId: string | undefined, unitId: string, bedId: string, masterFileId?: string,
+): Patient | null {
+  if (!admissionId) return null;
+  const existing = patients.find(patient => patient.id === admissionId);
+  if (!existing) return null;
+  if (!existing.isArchived && existing.unitId === unitId && existing.bedId === bedId
+    && (!masterFileId || existing.masterFileId === masterFileId)) return existing;
+  throw new Error('Admission retry ID is already used by a different patient record.');
+}
+
 const pad = (value: number): string => String(value).padStart(2, '0');
 export const formatLocalAdmissionDate = (date: Date): string => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 export const formatLocalAdmissionTime = (date: Date): string => `${pad(date.getHours())}:${pad(date.getMinutes())}`;

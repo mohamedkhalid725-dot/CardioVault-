@@ -20,6 +20,7 @@ import { Unit } from '../../types/clinical';
 import { UnitManagementModal } from '../units/UnitManagementModal';
 import { AddPatientModal } from '../patient/AddPatientModal';
 import { AuthorizationService } from '../../services/authorizationService';
+import { isAvailableLifecycleBed } from '../../services/patientLifecycleAccess';
 import {
   getStoredWorkspaceAccess,
   getMyUnits,
@@ -94,17 +95,15 @@ export const UnitsDashboard: React.FC = () => {
     let empty = 0;
 
     unitBeds.forEach((bed) => {
-      if (!bed.patientId) {
+      if (isAvailableLifecycleBed(bed, patients)) {
         empty += 1;
       } else {
         const patient = patients.find((p) => p.id === bed.patientId && !p.isArchived);
-        if (!patient) {
-          empty += 1;
-        } else if (patient.status === 'Critical') {
+        if (patient?.status === 'Critical') {
           critical += 1;
-        } else if (patient.status === 'Unstable') {
+        } else if (patient?.status === 'Unstable') {
           unstable += 1;
-        } else {
+        } else if (patient) {
           stable += 1;
         }
       }

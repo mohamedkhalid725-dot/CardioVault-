@@ -220,7 +220,7 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
     try {
       const result = await completeUnitSetup(unit.id);
       if (result.ok) {
-        showToast(`Unit setup complete. ${result.present} of ${result.expected} beds are in the cloud.`, 'success');
+        showToast(result.message, 'success');
       } else {
         showToast(`Still incomplete: ${result.present} of ${result.expected} beds. ${result.message}`, 'error');
       }
@@ -555,7 +555,6 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
               {([
                 ['beds', 'Physical beds'],
                 ['waitingList', 'Waiting list'],
-                ['clinicMode', 'Clinic mode'],
               ] as Array<[keyof UnitCapabilities, string]>).map(([key, label]) => (
                 <label key={key} className="flex items-center gap-1.5">
                   <input
@@ -579,13 +578,13 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
           </form>
         ) : (
           <div className="flex flex-wrap gap-2">
-            <button
+            {(isOwner || currentUser?.role === 'department_admin') && <button
               onClick={() => { setUnitCreateId(newUnitId()); setAdding(true); }}
               className="w-auto py-3 rounded-2xl border border-dashed border-cyan-500/50 text-cyan-500 text-xs font-bold"
             >
               <Plus className="inline w-4 h-4 mr-1" />
               Add Unit
-            </button>
+            </button>}
             {isOwner && (
               <button
                 onClick={() => { setAdding(false); setAddingHospital(true); setHospitalName(''); setHospitalCreateId(newHospitalId()); }}

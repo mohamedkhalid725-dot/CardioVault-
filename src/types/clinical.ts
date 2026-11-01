@@ -12,7 +12,7 @@ export interface Hospital { id: string; name: string; createdBy?: string; create
 // workspaces/{ws}/units/{unitId}. Older local records simply omit them.
 // `unitTypeId` and `config` are additive (Department Team roadmap): a record
 // written before them stays valid and is normalised at read time, never migrated.
-export interface Unit { id:string; name:string; type:string; totalBeds:number; createdBy?:string; consultantUid?:string; createdAtMs?:number; capacityLocked?:boolean; unitTypeId?:import('./departmentTeam').UnitTypeId; config?:import('./departmentTeam').UnitConfig; features?:string[]; notes?:string; hospitalId?:string; }
+export interface Unit { id:string; name:string; type:string; totalBeds:number; createdBy?:string; consultantUid?:string; createdAtMs?:number; capacityLocked?:boolean; activationStatus?:'pending'|'active'; activationRequestId?:string; activatedAtMs?:number; unitTypeId?:import('./departmentTeam').UnitTypeId; config?:import('./departmentTeam').UnitConfig; features?:string[]; notes?:string; hospitalId?:string; }
 export interface ClinicalSummary { chiefComplaint:string; hpi:string; pmh:string[]; psh:string[]; drugHistory:string; allergies:string[]; familyHistory:string; socialHistory:string; }
 export interface HandoverData { situation:string; background:string; assessment:string; recommendation:string; updatedAt?:string; }
 export interface CardiovascularHistory { hypertension:boolean; diabetes:boolean; dyslipidemia:boolean; cad:boolean; previousMI:boolean; heartFailure:boolean; arrhythmias:boolean; valvularDisease:boolean; previousPCI:boolean; previousCABG:boolean; previousStroke:boolean; pvd:boolean; smoking:boolean; alcohol:boolean; previousAdmissions:string; previousICU:string; other:string; }
@@ -312,6 +312,8 @@ export interface Patient {
   height: number;
   photoUrl?: string;
   unitId: string;
+  /** Stable longitudinal master-file identity; admissions may have distinct patient IDs. */
+  masterFileId?: string;
   // Every unit allowed to read this clinical file. Always contains unitId, which
   // stays the unit the patient is physically in (the bed's unit). One shared
   // file, one document: legacy documents simply omit the field.

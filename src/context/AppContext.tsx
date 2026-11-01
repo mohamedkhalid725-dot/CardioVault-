@@ -11,15 +11,19 @@ import {clearActiveClinicalWorkspace,ensureUnitBedsNow,installCloudSyncBridge,lo
 import {clearUnitBedsPending,desiredBeds,markUnitBedsPending,normalizeBedCount,UnitBedsIncompleteError,type UnitSetupResult}from'../services/unitBeds';
 import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,setUnitCapacityLocked,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid,updateOwnDisplayName as saveOwnDisplayName } from '../services/workspaceAccess';
 import {listIndexedWorkspaces,registerWorkspaceInIndex,readWorkspaceName,type IndexedWorkspace } from '../services/workspaceIndex';
-import {getSubscription} from '../services/workspaceSubscription';
-import {syncMemberSubscriptionFromCloud} from '../services/subscriptionRequestCloud';
 import {notifyClinicalData} from'../services/clinicalNotifications';
-import {formatLocalAdmissionDate,formatLocalAdmissionTime,toLocalIsoTimestamp}from'../services/patientAdmission';
+import {formatLocalAdmissionDate,formatLocalAdmissionTime,toLocalIsoTimestamp,resolveAdmissionRetry}from'../services/patientAdmission';
 import {resetForNewAdmission,AdmissionHistoryTooLargeError,normalizeDischargeReason,prepareDischargedPatient}from'../services/admissionEpisode';
 import {isLocalPreview,PREVIEW_USER,PREVIEW_WORKSPACE_ID}from'../config/localPreview';
 import {loadPreviewCreatedUnits,savePreviewCreatedUnits,seedPreviewData}from'../config/previewSeed';
-import {computeUnitEntitlementState,subscriptionHistoryExists}from'../services/subscriptionRequests';
-import {linkOrCreateForIntake,persistTimelineEvent}from'../services/masterPatientFile';
+import {linkOrCreateForIntake,persistTimelineEvent,loadMasterFiles,saveMasterFiles}from'../services/masterPatientFile';
+import type { MasterTimelineEvent } from '../types/clinicArea';
+import {appendPatientMasterEvent,ensureMasterFileUnitContext,ensurePatientMasterFile,masterFileIdForPatient} from '../services/masterPatientFileCloud';
+import {firestoreMasterPatientFilePersistence} from '../services/firestoreMasterPatientFilePersistence';
+import {listUnitLicenses} from '../services/unitLicenseCloud';
+import {filterCachedClinicalByLicensedUnits,licensedUnitIds} from '../services/unitLicense';
+import {canTransferBetweenUnits,isAvailableLifecycleBed} from '../services/patientLifecycleAccess';
+import {autoActivateOwnerCreatedUnit,submitUnitActivationRequest} from '../services/unitActivationRequests';
 import {assignUnitHospitalDocument,createHospitalDocument,loadHospitalsForUnits,newHospitalId,type HospitalDocument}from'../services/hospitalPersistence';
 import {firestoreHospitalPersistence}from'../services/firestoreHospitalPersistence';
 import {firestoreUnitVerificationIO}from'../services/firestoreUnitPersistence';
@@ -28,6 +32,13 @@ import {UnitCloudVerificationError,verifyUnitSetupInCloud}from'../services/unitP
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail'|'results-center'|'institution-setup'|'waiting-list'|'clinic'|'payments'|'master-file'|'operation-waiting'|'owner-requests';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
 interface ToastInfo{id:string;message:string;type:'success'|'info'|'warning'|'error';}
+interface PendingDepartmentLifecycleWrite {
+ id:string;workspaceId:string;patient:{id:string;masterFileId?:string;fullName:string;age:number;unitId:string;unitIds?:string[]};unitId:string;title:string;summary:string;detail:string;atMs:number;
+}
+const PENDING_LIFECYCLE_WRITES_KEY='cardiovault_pending_master_lifecycle_v1';
+function readPendingLifecycleWrites():PendingDepartmentLifecycleWrite[]{try{const parsed=JSON.parse(localStorage.getItem(PENDING_LIFECYCLE_WRITES_KEY)||'[]');return Array.isArray(parsed)?parsed.filter(item=>item?.id&&item?.workspaceId&&item?.patient?.id):[];}catch{return[];}}
+function savePendingLifecycleWrite(write:PendingDepartmentLifecycleWrite):void{const writes=readPendingLifecycleWrites();localStorage.setItem(PENDING_LIFECYCLE_WRITES_KEY,JSON.stringify([...writes.filter(item=>item.id!==write.id),write]));}
+function removePendingLifecycleWrite(id:string):void{localStorage.setItem(PENDING_LIFECYCLE_WRITES_KEY,JSON.stringify(readPendingLifecycleWrites().filter(item=>item.id!==id)));}
 interface PatientAuditContext { uid?: string; displayName?: string; action?: string; }
 /**
  * Extra shape a caller may hand to `addUnit`. The setup wizard needs the unit id
@@ -74,9 +85,9 @@ export interface AppContextType{
   getUnitById:(id:string)=>Unit|undefined;
   addPatient:(data:Partial<Patient>,targetBedId?:string)=>Patient;
   updatePatient:(id:string,updates:Partial<Patient>,auditContext?:PatientAuditContext)=>void;
-  dischargePatient:(id:string,reason:string,summary:string)=>void;
-  transferPatient:(id:string,unitId:string,bedId:string)=>boolean;
-  readmitPatient:(id:string,unitId:string,bedId:string)=>boolean;
+   dischargePatient:(id:string,reason:string,summary:string)=>Promise<boolean>;
+   transferPatient:(id:string,unitId:string,bedId:string)=>Promise<boolean>;
+   readmitPatient:(id:string,unitId:string,bedId:string)=>Promise<boolean>;
   deletePatientPermanently:(id:string)=>void;
   addUnit:(name:string,type:string,initialBedsCount?:number,options?:AddUnitOptions)=>Unit;
   addPreviewUnits:(units:Unit[])=>number;
@@ -164,8 +175,10 @@ const resolveProfileFor=async(user:any)=>{
 
 export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[theme,setThemeState]=useState<'dark'|'light'>('dark');
- const authNullGraceUntil=useRef(0);
- const[auth,setAuth]=useState<AuthState>({isAuthenticated:false,userEmail:'',userName:'',pinCode:'',isLocked:false});
+  const authNullGraceUntil=useRef(0);
+  const[auth,setAuth]=useState<AuthState>({isAuthenticated:false,userEmail:'',userName:'',pinCode:'',isLocked:false});
+  const authStateRef=useRef(auth);
+  authStateRef.current=auth;
  const[currentUser,setCurrentUserState]=useState<UserProfile>(()=>AuthorizationService.getCurrentUser());
  const[currentView,setCurrentView]=useState<AppView>('login');
  const[currentUnitId,setCurrentUnitId]=useState<string|null>(null);
@@ -181,10 +194,12 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[hospitals,setHospitals]=useState<Hospital[]>([]);
  const[isTeamPickerOpen,setIsTeamPickerOpen]=useState(false);
  const[isSwitchingTeam,setIsSwitchingTeam]=useState(false);
- const teamPickerShown=useRef(false);
- const[favoritePatientIds,setFavoritePatientIds]=useState<string[]>(()=>{
+  const teamPickerShown=useRef(false);
+  const masterBackfillAttempted=useRef(new Set<string>());
+  const[favoritePatientIds,setFavoritePatientIds]=useState<string[]>(()=>{
    try { const raw = localStorage.getItem('cardiovault_fav_patients'); return raw ? JSON.parse(raw) : []; } catch { return []; }
- });
+  });
+  const hydrationRun=useRef(0);
 
  const toggleFavoritePatient=(id:string)=>{
    setFavoritePatientIds(prev=>{
@@ -225,10 +240,12 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    if(isLocalPreview()){
     try{const raw=localStorage.getItem('cardiovault_hospitals_v1');const saved:Hospital[]=raw?JSON.parse(raw):[];const safe=Array.isArray(saved)?saved:[];setHospitals(safe);return safe;}catch{setHospitals([]);return[];}
    }
-   let access=getStoredWorkspaceAccess();
-   if(!access&&await isMasterAccount())access=await ensureOwnerWorkspace();
+   const ownerAccount=await isMasterAccount();
+   // The persisted access object can belong to a previously selected workspace.
+   // Resolve the owner's canonical workspace on every refresh instead of using it.
+   let access=ownerAccount?await ensureOwnerWorkspace():getStoredWorkspaceAccess();
    if(!access){setHospitals([]);return[];}
-   const owner=access.role==='owner'&&await isMasterAccount();
+   const owner=ownerAccount&&access.role==='owner';
    const allowedIds=new Set((access.unitIds?.length?access.unitIds:access.unitId?[access.unitId]:[]).map(String));
    const scoped=StorageService.getUnits().filter(unit=>owner||allowedIds.has(String(unit.id)));
    const authorized=owner?scoped:AuthorizationService.filterAuthorizedUnits(scoped,currentUser);
@@ -292,18 +309,44 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    setAuth(prev=>({...prev,userName:savedName}));
   };
 
-  const hydrateClinicalState=()=>{
-   const u=StorageService.getUnits();
-   const p=StorageService.getPatients();
-   const b=DepartmentService.reconcileBedsWithPatients(StorageService.getBeds(),p);
-   const repaired=b.map(bed=>{if(bed.patientId)return bed;const owner=p.find(patient=>!patient.isArchived&&patient.bedId===bed.id);return owner?{...bed,patientId:owner.id,status:owner.status}:bed;});
-   if(repaired.some((bed,index)=>bed.patientId!==b[index].patientId))StorageService.saveBeds(repaired);
-    setUnits(u);setBeds(repaired);setPatients(p);
-    setCurrentUnitId(prev=>prev&&u.some(x=>x.id===prev)?prev:(u[0]?.id||null));
-    setCurrentPatientId(prev=>prev&&p.some(x=>x.id===prev&&!x.isArchived)?prev:(p.find(x=>!x.isArchived)?.id||null));
-    void refreshHospitals();
+  const hydrateClinicalState=async()=>{
+   const run=++hydrationRun.current;
+   const cachedUnits=StorageService.getUnits();
+   const cachedPatients=StorageService.getPatients();
+   const cachedBeds=StorageService.getBeds();
+   let visibleUnitIds=new Set(cachedUnits.map(unit=>String(unit.id)));
+   let clinicallyActiveUnitIds=new Set(cachedUnits.map(unit=>String(unit.id)));
+   if(!isLocalPreview()&&authStateRef.current.isAuthenticated){
+    try{
+     if(!(await isMasterAccount())){
+      const access=getStoredWorkspaceAccess();
+      const memberIds=access?.unitIds?.length?access.unitIds.map(String):(access?.unitId?[String(access.unitId)]:[]);
+      const licenses=await listUnitLicenses(getActiveWorkspaceId(),memberIds);
+      clinicallyActiveUnitIds=licensedUnitIds(memberIds,licenses,Date.now());
+       const ownUid=currentFirebaseUid();
+      const ownPendingIds=cachedUnits.filter(unit=>unit.activationStatus==='pending'&&String(unit.createdBy||'')===ownUid).map(unit=>String(unit.id));
+      visibleUnitIds=new Set([...clinicallyActiveUnitIds,...ownPendingIds]);
+     }
+    }catch(error){
+      console.warn('Could not verify unit licenses; hiding cached unit data until verification succeeds:',error);
+      visibleUnitIds=new Set();
+      clinicallyActiveUnitIds=new Set();
+    }
+   }
+   if(run!==hydrationRun.current)return;
+   const filtered=filterCachedClinicalByLicensedUnits(cachedUnits,cachedPatients,cachedBeds,visibleUnitIds);
+   const visibleUnits=filtered.units;
+   const visiblePatients=filterCachedClinicalByLicensedUnits(cachedUnits,cachedPatients,cachedBeds,clinicallyActiveUnitIds).patients;
+   const visibleBeds=filtered.beds;
+   const reconciled=DepartmentService.reconcileBedsWithPatients(visibleBeds,visiblePatients);
+   const repaired=reconciled.map(bed=>{if(bed.patientId)return bed;const owner=visiblePatients.find(patient=>!patient.isArchived&&patient.bedId===bed.id);return owner?{...bed,patientId:owner.id,status:owner.status}:bed;});
+   setUnits(visibleUnits);setBeds(repaired);setPatients(visiblePatients);
+   setCurrentUnitId(prev=>prev&&visibleUnits.some(x=>x.id===prev)?prev:(visibleUnits[0]?.id||null));
+   setCurrentPatientId(prev=>prev&&visiblePatients.some(x=>x.id===prev&&!x.isArchived)?prev:(visiblePatients.find(x=>!x.isArchived)?.id||null));
+   void refreshHospitals();
   };
- useEffect(()=>{const onRestore=()=>hydrateClinicalState();window.addEventListener('cardiovault-data-restored',onRestore);window.addEventListener('cardiovault-workspace-access-granted',onRestore);return()=>{window.removeEventListener('cardiovault-data-restored',onRestore);window.removeEventListener('cardiovault-workspace-access-granted',onRestore);};},[]);
+  useEffect(()=>{const onRestore=()=>void hydrateClinicalState();window.addEventListener('cardiovault-data-restored',onRestore);window.addEventListener('cardiovault-workspace-access-granted',onRestore);return()=>{window.removeEventListener('cardiovault-data-restored',onRestore);window.removeEventListener('cardiovault-workspace-access-granted',onRestore);};},[]);
+  useEffect(()=>{if(!auth.isAuthenticated||isLocalPreview())return;void hydrateClinicalState();const timer=window.setInterval(()=>void hydrateClinicalState(),60000);return()=>window.clearInterval(timer);},[auth.isAuthenticated,getActiveWorkspaceId()]);
  // The cloud team profile is the authority for the display name: when the owner
  // workspace is opened it can restore a name that this device did not have yet.
  useEffect(()=>{const onName=(event:Event)=>{const name=String((event as CustomEvent<{name?:string}>).detail?.name||'').trim();if(!name)return;StorageService.saveAuth({...StorageService.getAuth(),userName:name});setAuth(prev=>({...prev,userName:name}));setCurrentUserState(prev=>prev?.userId?{...prev,name}:prev);};window.addEventListener('cardiovault-profile-name-updated',onName);return()=>window.removeEventListener('cardiovault-profile-name-updated',onName);},[]);
@@ -314,40 +357,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
 
  const showToast=(message:string,type:ToastInfo['type']='info')=>{const id=`toast-${Date.now()}-${Math.random()}`;setToasts(p=>[...p,{id,message,type}]);window.setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000);};
  const dismissToast=(id:string)=>setToasts(p=>p.filter(t=>t.id!==id));
- // The subscription clock is the only thing that can make this app read-only.
- // A workspace with no clock is grandfathered, so an unreadable clock must never
- // lock the UI. The platform owner is exempt, exactly like in firestore.rules.
- const [subscriptionLocked,setSubscriptionLocked]=useState(false);
- const lastLockToastRef=useRef(0);
- useEffect(()=>{
-  // The isolated local preview has no cloud session at all: asking Firebase for a
-  // subscription clock here would connect to the emulator (or fail) for nothing.
-  if(isLocalPreview()){setSubscriptionLocked(false);return;}
-  let active=true;
-  const check=async()=>{
-   try{
-    // Owner decisions and activation codes are written on the owner's device.
-    // Pull them before reading the clock so every screen sees the same state.
-    if(auth.isAuthenticated)await syncMemberSubscriptionFromCloud().catch(()=>null);
-    const [sub,owner]=await Promise.all([getSubscription(),isMasterAccount()]);
-    if(active)setSubscriptionLocked(sub.status==='locked'&&!owner);
-   }catch(error){console.warn('Subscription lock check failed:',error);}
-  };
-  void check();
-  const timer=window.setInterval(()=>void check(),60000);
-  return()=>{active=false;window.clearInterval(timer);};
- }, [auth.isAuthenticated]);
- // The rules already refuse every write in a locked workspace; this stops the UI
- // from offering actions that are guaranteed to be denied.
- const guardWrite=():boolean=>{
-  if(!subscriptionLocked)return false;
-  const now=Date.now();
-  if(now-lastLockToastRef.current>5000){
-   lastLockToastRef.current=now;
-   showToast('This workspace is read-only because the subscription has ended. Renew it to keep editing.','error');
-  }
-  return true;
- };
+  // Licensing is enforced per unit by Firestore rules; there is no client-side
+  // workspace-wide subscription lock or logout on expiry.
+  const guardWrite=():boolean=>false;
  const setTheme=(t:'dark'|'light')=>{setThemeState(t);StorageService.saveTheme(t);};const toggleTheme=()=>setTheme(theme==='dark'?'light':'dark');
  const loginWithGoogle=async()=>{if(isLocalPreview()){showToast('Sign-in is disabled in the local preview.','info');return;}
    authNullGraceUntil.current=Date.now()+30000;
@@ -403,14 +415,12 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const unlockWithPin=(_pin:string)=>{showToast('PIN / Offline access has been disabled. Sign in with your Firebase account.','warning');return false;};const lockApp=()=>{showToast('Offline lock screen is disabled. Use Sign Out to end the session.','info');};
  const logout=()=>{if(isLocalPreview()){showToast('Sign-out is disabled in the isolated local preview. Reload the page to restart the demo.','info');return;}authNullGraceUntil.current=0;void (Capacitor.isNativePlatform()?FirebaseAuthentication.signOut():webSignOut()).catch(error=>console.warn('Firebase sign-out failed:',error));localStorage.removeItem('cardiovault_google_uid');clearActiveClinicalWorkspace();setUnits([]);setBeds([]);setPatients([]);setHospitals([]);setCurrentUnitId(null);setCurrentPatientId(null);const a={...auth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(a);StorageService.saveAuth(a);setCurrentView('login');};
  const getPatientById=(id:string)=>patients.find(p=>p.id===id);const getBedsByUnit=(id:string)=>beds.filter(b=>b.unitId===id);const getUnitById=(id:string)=>units.find(u=>u.id===id);const archivedPatients=patients.filter(p=>p.isArchived);
- const canWriteTouchedUnits=(unitIds:string[])=>{const subscriberId=String(currentUser?.userId||'').trim()||undefined;if(!isLocalPreview()||!subscriptionHistoryExists(undefined,subscriberId))return true;const blockedId=Array.from(new Set(unitIds.filter(Boolean))).find(id=>computeUnitEntitlementState(id,undefined,undefined,subscriberId)==='read-only');if(!blockedId)return true;const name=units.find(unit=>unit.id===blockedId)?.name||blockedId;showToast(`${name} is read-only until its own trial or subscription is active.`,'error');return false;};
- // Single-unit write-ability check used by transfer/re-admit UIs. Authorization
- // scope is checked separately by those actions; this covers workspace and unit billing locks.
- const canWriteUnit=(unitId:string)=>{
-  if(!unitId||subscriptionLocked||getStoredWorkspaceAccess()?.role==='view_only')return false;
-  const subscriberId=String(currentUser?.userId||'').trim()||undefined;
-  if(!isLocalPreview()||!subscriptionHistoryExists(undefined,subscriberId))return true;
-  return computeUnitEntitlementState(unitId,undefined,undefined,subscriberId)!=='read-only';
+  const canWriteTouchedUnits=(_unitIds:string[])=>true;
+  // Single-unit role check used by transfer/re-admit UIs. License enforcement is
+  // authoritative in Firestore rules and is never inferred from a local cache.
+  const canWriteUnit=(unitId:string)=>{
+    if(!unitId||getStoredWorkspaceAccess()?.role==='view_only'||getUnitById(unitId)?.activationStatus==='pending')return false;
+   return true;
  };
  const addHospital=async(name:string,id?:string):Promise<Hospital|undefined>=>{
   if(guardWrite())return undefined;
@@ -425,7 +435,8 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    const next=[...previous,hospital];localStorage.setItem('cardiovault_hospitals_v1',JSON.stringify(next));setHospitals(next);return hospital;
   }
   if(!(await isMasterAccount()))throw new Error('Only the workspace owner can create a hospital.');
-  const access=getStoredWorkspaceAccess()||await ensureOwnerWorkspace();
+  // Never create into a stale workspace left in local storage by a prior session.
+  const access=await ensureOwnerWorkspace();
   if(!access||access.role!=='owner')throw new Error('The owner workspace is not ready. Reopen the workspace and retry.');
   const uid=await getCurrentUid();if(!uid)throw new Error('A Firebase account must be signed in.');
   const saved=await createHospitalDocument(firestoreHospitalPersistence,access.workspaceId,uid,trimmed,stableId);
@@ -467,65 +478,137 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const changedEntityIds=<T extends {id:string},>(before:T[],after:T[]):string[]=>{const oldById=new Map(before.map(item=>[item.id,item]));const newById=new Map(after.map(item=>[item.id,item]));return [...new Set([...oldById.keys(),...newById.keys()])].filter(id=>oldById.get(id)!==newById.get(id));};
  const commitPatients=(next:Patient[])=>{if(guardWrite()||!canWriteTouchedUnits(touchedUnitsForChanges(patients,next)))return;setPatients(next);StorageService.savePatients(next);};const commitBeds=(next:Bed[])=>{if(guardWrite()||!canWriteTouchedUnits(touchedUnitsForChanges(beds,next)))return;setBeds(next);StorageService.saveBeds(next);};const commitClinicalState=(nextPatients:Patient[],nextBeds:Bed[])=>{const touched=[...touchedUnitsForChanges(patients,nextPatients),...touchedUnitsForChanges(beds,nextBeds)];if(guardWrite()||!canWriteTouchedUnits(touched))return;setPatients(nextPatients);StorageService.savePatients(nextPatients);setBeds(nextBeds);StorageService.saveBeds(nextBeds);};const commitUnits=(next:Unit[])=>{if(guardWrite()||!canWriteTouchedUnits(changedEntityIds(units,next)))return;setUnits(next);StorageService.saveUnits(next);};
  const clinicalLabel=(updates:Partial<Patient>)=>{const labels:Record<string,string>={clinicalSummary:'History / Clinical Summary',examination:'Physical Examination',vitalsHistory:'Vitals',fluidRecords:'Fluid Balance',hemodynamicHistory:'Hemodynamics',fluidIntakeHistory:'Fluid Intake',urineOutputHistory:'Urine Output',ecgRecords:'ECG',labs:'Laboratory Results',imaging:'Imaging',imagingStudies:'Imaging',medications:'Medications',procedures:'Procedures / Interventions',cardiology:'Cardiology Data',ventilator:'ICU / Ventilator Data',calculatorResults:'Calculator Result',progressNotes:'Progress Note'};const key=Object.keys(updates).find(k=>labels[k]);return key?labels[key]:'Patient Data';};
- const recordDepartmentLifecycle=(patient:Patient,unitId:string,title:string,summary:string,detail:string,atMs=Date.now()):boolean=>{
-  if(!isLocalPreview())return true;
-  try{
-   const clinical=patient.clinicalSummary;
-   const history=[clinical?.chiefComplaint,clinical?.hpi,...(Array.isArray(clinical?.pmh)?clinical.pmh:[]),clinical?.drugHistory?`Medication history: ${clinical.drugHistory}`:''].map(value=>String(value||'').trim()).filter(Boolean).join('\n');
-   const cardio=patient.cardiovascularHistory;
-   const riskFactors=[cardio?.hypertension?'Hypertension':'',cardio?.diabetes?'Diabetes':'',cardio?.dyslipidemia?'Dyslipidemia':'',cardio?.smoking?'Smoking':''].filter(Boolean);
-   const procedures=Array.isArray(patient.procedures)?patient.procedures.map((item:any)=>String(item?.name||item?.procedureName||item?.type||'').trim()).filter(Boolean):[];
-   const priorOperations=[...(Array.isArray(clinical?.psh)?clinical.psh:[]),...procedures];
-   const imaging=Array.isArray(patient.imaging)?patient.imaging.map((item:any)=>String(item?.studyName||item?.name||item?.type||'').trim()).filter(Boolean):[];
-   const scope=[unitId,...(patient.unitIds||[])].filter(Boolean);
-   const linkage=linkOrCreateForIntake({identity:{name:patient.fullName||patient.name||patient.id,ageYears:Math.trunc(Number(patient.age)||0),sourcePatientId:patient.id,riskFactors,history,pastOperations:priorOperations,pastImaging:imaging},authorizedContextIds:scope,defaultContextId:unitId,createdBy:String(currentUser?.userId||PREVIEW_USER.uid),nowMs:atMs});
-   if('error'in linkage){showToast('The patient was saved, but the master file needs a doctor to resolve a duplicate match.','warning');return false;}
-   const event=persistTimelineEvent(linkage.file.id,{kind:'encounter',title,summary,detail,createdBy:String(currentUser?.userId||PREVIEW_USER.uid),context:{unitId},atMs,refId:patient.id});
-   if(!event.saved){showToast('The patient was saved, but the master-file timeline could not be persisted on this device.','warning');return false;}
-   return true;
-  }catch(error){console.warn('Local master patient file linkage failed:',error);showToast('The patient was saved, but the master-file timeline could not be updated.','warning');return false;}
- };
- const bedIsOccupied=(bed:Bed)=>{if(!bed.patientId)return false;const owner=patients.find(p=>p.id===bed.patientId);return !!owner&&!owner.isArchived;};
- const addPatient=(data:Partial<Patient>,targetBedId?:string):Patient=>{const unitId=data.unitId||'';const bedId=targetBedId||data.bedId||'';if(!unitId||!bedId)throw new Error('Patient admission requires an explicit unit and bed.');const bed=beds.find(b=>b.id===bedId&&b.unitId===unitId);if(!bed)throw new Error('Selected bed does not belong to the selected unit.');if(bedIsOccupied(bed))throw new Error('Selected bed is already occupied.');if(guardWrite()||!canWriteTouchedUnits([unitId]))throw new Error('This unit is read-only. Renew or ask the owner to activate it.');const stamp=new Date();const date=stamp.toISOString().split('T')[0];const time=stamp.toTimeString().slice(0,5);const id=`patient-${Date.now()}`;const allergies=data.allergies||['NKDA'];const p:Patient={id,mrn:data.mrn||`MRN-${Math.floor(100000+Math.random()*900000)}`,fullName:data.fullName||'New Patient',age:data.age??0,sex:data.sex||'Other',weight:data.weight??0,height:data.height??0,photoUrl:data.photoUrl,unitId,unitIds:(data.unitIds&&data.unitIds.length?Array.from(new Set([...data.unitIds,unitId])):[unitId]),bedId,status:data.status||'Stable',admissionDate:data.admissionDate||date,admissionTime:data.admissionTime||time,primaryDiagnosis:data.primaryDiagnosis||'Clinical Admission',secondaryDiagnoses:data.secondaryDiagnoses||[],allergies,codeStatus:data.codeStatus||'Full Code',isArchived:false,pastAdmissions:[],clinicalSummary:data.clinicalSummary||{chiefComplaint:'',hpi:'',pmh:[],psh:[],drugHistory:'',allergies,familyHistory:'',socialHistory:''},cardiovascularHistory:data.cardiovascularHistory||{hypertension:false,diabetes:false,dyslipidemia:false,cad:false,previousMI:false,heartFailure:false,arrhythmias:false,valvularDisease:false,previousPCI:false,previousCABG:false,previousStroke:false,pvd:false,smoking:false,alcohol:false,previousAdmissions:'',previousICU:'',other:''},vitalsHistory:data.vitalsHistory||[],fluidRecords:data.fluidRecords||[],hemodynamicHistory:data.hemodynamicHistory||[],fluidIntakeHistory:data.fluidIntakeHistory||[],urineOutputHistory:data.urineOutputHistory||[],examination:data.examination||{general:{appearance:'',consciousness:'',distress:'',hydration:'',pallor:false,cyanosis:false,jaundice:false,edema:''},cardiovascular:{jvp:'',heartSounds:'',murmurs:'',peripheralPulses:'',edema:'',perfusion:''},respiratory:{chestExam:'',airEntry:'',addedSounds:'',workOfBreathing:''},abdomen:{inspection:'',palpation:'',tenderness:'',organomegaly:'',ascites:''},neurological:{consciousness:'',gcs:'',pupils:'',motor:'',sensory:'',reflexes:''},extremities:{pulses:'',edema:'',temp:'',perfusion:''},customFields:[]},ecgRecords:data.ecgRecords||[],cardiology:data.cardiology||{rhythm:'',heartRate:0,bp:'',heartFailureStatus:'',nyha:'',killip:'',congestion:'',perfusion:'',echoBriefSummary:'',echo:{ef:0,lvDimensions:'',lvFunction:'',rvFunction:'',rwma:'',la:'',ra:'',mr:'',ar:'',as:'',ms:'',tr:'',pr:'',ivc:'',pericardium:'',otherFindings:''},biomarkers:{troponin:'',ckmb:'',bnp:'',ntProBnp:''},coronary:{cath:'',coronaryFindings:'',pci:'',stent:'',cabg:''},antithrombotic:{antiplatelet:'',anticoagulation:'',thrombolysis:''},cathRecords:[],biomarkerRecords:[],devicesList:[],hemodynamicsList:[]},medications:data.medications||[],ventilator:data.ventilator||{abgHistory:[]},imaging:data.imaging||[],labs:data.labs||[],procedures:data.procedures||[],calculatorResults:data.calculatorResults||[],progressNotes:data.progressNotes||[],auditTrail:[{id:`audit-${Date.now()}-admission`,timestamp:new Date().toISOString(),action:'Patient admitted',fields:['patient'],actor:auth.userName||'Physician'}]};commitClinicalState([p,...patients],beds.map(b=>b.id===bedId?{...b,patientId:id,status:p.status}:b));recordDepartmentLifecycle(p,unitId,'Patient admitted to unit',`${p.fullName} was admitted to ${units.find(u=>u.id===unitId)?.name||'Unit'} in bed ${bed.bedNumber||bed.id}.`,`Admission date/time: ${p.admissionDate} ${p.admissionTime}. Diagnosis: ${p.primaryDiagnosis||'Not recorded'}. History: ${p.clinicalSummary?.hpi||p.clinicalSummary?.chiefComplaint||'Not recorded'}.`,stamp.getTime());setCurrentPatientId(id);showToast(`${p.fullName} admitted successfully.`,'success');void notifyClinicalData(`تم إضافة مريض جديد: ${p.fullName}`,'تمت إضافة بيانات جديدة',{patientId:p.id,unitId:p.unitId,section:'overview',type:'new-patient'});return p;};
+   const recordCloudDepartmentLifecycle=async(patient:Patient,unitId:string,title:string,summary:string,detail:string,atMs:number,workspaceIdOverride?:string):Promise<void>=>{
+    const workspaceId=workspaceIdOverride||getActiveWorkspaceId();
+   const uid=await getCurrentUid();
+   if(!workspaceId||!uid)throw new Error('An authenticated workspace session is required.');
+   const ownerUnitId=String(title.toLowerCase().includes('transfer')?(patient.unitIds?.[0]||unitId):(patient.unitId||unitId));
+   const file=await ensurePatientMasterFile(firestoreMasterPatientFilePersistence,workspaceId,{
+    patientId:patient.id,masterFileId:patient.masterFileId,name:patient.fullName||patient.name||patient.id,ageYears:Number(patient.age)||0,
+    unitId:ownerUnitId,createdBy:uid,atMs,
+   });
+   const scoped=await ensureMasterFileUnitContext(firestoreMasterPatientFilePersistence,workspaceId,file.id,unitId,atMs);
+   const kind:MasterTimelineEvent['kind']=title.toLowerCase().includes('readmit')?'patient-readmission':title.toLowerCase().includes('transfer')?'patient-transfer':title.toLowerCase().includes('discharg')?'patient-discharge':'patient-admission';
+   const eventId=kind==='patient-admission'?`patient-admission-${encodeURIComponent(patient.id)}`:`${kind}-${atMs}-${encodeURIComponent(patient.id).slice(0,56)}`;
+   const event:MasterTimelineEvent={id:eventId,kind,atMs,title,summary,detail,createdBy:uid,context:{unitId},refId:scoped.id,schemaVersion:1};
+   await appendPatientMasterEvent(firestoreMasterPatientFilePersistence,workspaceId,scoped.id,event);
+  };
+   const flushPendingDepartmentLifecycleWrites=async(workspaceId:string):Promise<boolean>=>{
+    let complete=true;
+    for(const write of readPendingLifecycleWrites().filter(item=>item.workspaceId===workspaceId)){
+     try{await recordCloudDepartmentLifecycle(write.patient as Patient,write.unitId,write.title,write.summary,write.detail,write.atMs,write.workspaceId);removePendingLifecycleWrite(write.id);}
+     catch(error){complete=false;console.warn('Pending master patient file event retry failed:',error);}
+    }
+    return complete;
+   };
+   const recordDepartmentLifecycle=async(patient:Patient,unitId:string,title:string,summary:string,detail:string,atMs=Date.now()):Promise<boolean>=>{
+    if(!isLocalPreview()){
+     const workspaceId=getActiveWorkspaceId();
+     try{
+      if(!(await syncCurrentUserNow()))throw new Error('Patient and bed changes were not confirmed by cloud sync.');
+      if(getActiveWorkspaceId()!==workspaceId)throw new Error('Workspace changed before the lifecycle event was confirmed.');
+      await recordCloudDepartmentLifecycle(patient,unitId,title,summary,detail,atMs,workspaceId);
+      return true;
+     }catch(error){
+      if(workspaceId)savePendingLifecycleWrite({id:`${workspaceId}/${atMs}/${patient.id}/${unitId}`,workspaceId,patient:{id:patient.id,masterFileId:patient.masterFileId,fullName:String(patient.fullName||patient.name||patient.id),age:Number(patient.age)||0,unitId:String(patient.unitId||unitId),unitIds:patient.unitIds},unitId,title,summary,detail,atMs});
+      console.warn('Cloud master patient file lifecycle write failed:',error);
+      showToast('The lifecycle action is not cloud-complete: patient, bed, or master-file event confirmation failed. Retry cloud sync before continuing.','error');
+      return false;
+     }
+    }
+   try{
+    const clinical=patient.clinicalSummary;
+    const history=[clinical?.chiefComplaint,clinical?.hpi,...(Array.isArray(clinical?.pmh)?clinical.pmh:[]),clinical?.drugHistory?`Medication history: ${clinical.drugHistory}`:''].map(value=>String(value||'').trim()).filter(Boolean).join('\n');
+    const cardio=patient.cardiovascularHistory;
+    const riskFactors=[cardio?.hypertension?'Hypertension':'',cardio?.diabetes?'Diabetes':'',cardio?.dyslipidemia?'Dyslipidemia':'',cardio?.smoking?'Smoking':''].filter(Boolean);
+    const procedures=Array.isArray(patient.procedures)?patient.procedures.map((item:any)=>String(item?.name||item?.procedureName||item?.type||'').trim()).filter(Boolean):[];
+    const priorOperations=[...(Array.isArray(clinical?.psh)?clinical.psh:[]),...procedures];
+    const imaging=Array.isArray(patient.imaging)?patient.imaging.map((item:any)=>String(item?.studyName||item?.name||item?.type||'').trim()).filter(Boolean):[];
+    const scope=[unitId,...(patient.unitIds||[])].filter(Boolean);
+    const uid=String(currentUser?.userId||PREVIEW_USER.uid);
+    let fileId=patient.masterFileId||'';
+    if(fileId){
+     const files=loadMasterFiles();
+     let file=files.find(item=>item.id===fileId);
+     if(file&&!file.contextIds.includes(unitId)){throw new Error('The selected master file is not available in this unit.');}
+     if(!file){
+      file={id:fileId,name:String(patient.fullName||patient.name||patient.id),ageYears:Math.max(0,Math.trunc(Number(patient.age)||0)),sourcePatientIds:[patient.id],riskFactors,history,pastOperations:priorOperations,pastImaging:imaging,contextIds:[unitId],timeline:[],createdAtMs:atMs,createdBy:uid,updatedAtMs:atMs,schemaVersion:1};
+      if(!saveMasterFiles([...files,file]))throw new Error('The new master file could not be saved locally.');
+     }
+    }else{
+     const linkage=linkOrCreateForIntake({identity:{name:patient.fullName||patient.name||patient.id,ageYears:Math.trunc(Number(patient.age)||0),sourcePatientId:patient.id,riskFactors,history,pastOperations:priorOperations,pastImaging:imaging},authorizedContextIds:scope,defaultContextId:unitId,createdBy:uid,nowMs:atMs});
+     if('error'in linkage){showToast('The patient was saved, but the master file needs a doctor to resolve a duplicate match.','warning');return false;}
+     fileId=linkage.file.id;
+    }
+    const kind:MasterTimelineEvent['kind']=title.toLowerCase().includes('readmit')?'patient-readmission':title.toLowerCase().includes('transfer')?'patient-transfer':title.toLowerCase().includes('discharg')?'patient-discharge':'patient-admission';
+    const event=persistTimelineEvent(fileId,{kind,title,summary,detail,createdBy:uid,context:{unitId},atMs,refId:patient.id});
+    if(!event.saved){showToast('The patient was saved, but the master-file timeline could not be persisted on this device.','warning');return false;}
+    return true;
+   }catch(error){console.warn('Local master patient file linkage failed:',error);showToast('The patient was saved, but the master-file timeline could not be updated.','warning');return false;}
+  };
+  useEffect(()=>{
+   if(isLocalPreview()||!auth.isAuthenticated||!currentUser?.userId)return;
+   let active=true;
+   const backfill=async()=>{
+    for(const patient of patients){
+     const ownerUnitId=String(patient.unitId||'');
+     const key=`${getActiveWorkspaceId()}/${patient.id}`;
+     if(!ownerUnitId||masterBackfillAttempted.current.has(key)||!canWriteUnit(ownerUnitId))continue;
+     masterBackfillAttempted.current.add(key);
+     try{
+      await ensurePatientMasterFile(firestoreMasterPatientFilePersistence,getActiveWorkspaceId(),{
+       patientId:patient.id,masterFileId:patient.masterFileId,name:patient.fullName||patient.name||patient.id,ageYears:Number(patient.age)||0,
+       unitId:ownerUnitId,createdBy:String(currentUser.userId),atMs:Date.now(),
+      });
+     }catch(error){
+      masterBackfillAttempted.current.delete(key);
+      if(active)console.warn('Archived/active patient master-file backfill failed:',error);
+     }
+    }
+   };
+   void backfill();
+   return()=>{active=false;};
+  },[auth.isAuthenticated,currentUser?.userId,patients]);
+  const bedIsOccupied=(bed:Bed)=>{return !isAvailableLifecycleBed(bed,patients);};
+ const addPatient=(data:Partial<Patient>,targetBedId?:string):Patient=>{const unitId=data.unitId||'';const bedId=targetBedId||data.bedId||'';const retried=resolveAdmissionRetry(patients,data.id,unitId,bedId,data.masterFileId);if(retried)return retried;if(!unitId||!bedId)throw new Error('Patient admission requires an explicit unit and bed.');const bed=beds.find(b=>b.id===bedId&&b.unitId===unitId);if(!bed)throw new Error('Selected bed does not belong to the selected unit.');if(!isAvailableLifecycleBed(bed,patients))throw new Error('Selected bed is already occupied or unavailable.');if(guardWrite()||!canWriteTouchedUnits([unitId]))throw new Error('This unit is read-only. Renew or ask the owner to activate it.');const stamp=new Date();const date=stamp.toISOString().split('T')[0];const time=stamp.toTimeString().slice(0,5);const id=data.id||`patient-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;const allergies=data.allergies||['NKDA'];const p:Patient={id,masterFileId:data.masterFileId||masterFileIdForPatient(id),mrn:data.mrn||`MRN-${Math.floor(100000+Math.random()*900000)}`,fullName:data.fullName||'New Patient',age:data.age??0,sex:data.sex||'Other',weight:data.weight??0,height:data.height??0,photoUrl:data.photoUrl,unitId,unitIds:(data.unitIds&&data.unitIds.length?Array.from(new Set([...data.unitIds,unitId])):[unitId]),bedId,status:data.status||'Stable',admissionDate:data.admissionDate||date,admissionTime:data.admissionTime||time,primaryDiagnosis:data.primaryDiagnosis||'Clinical Admission',secondaryDiagnoses:data.secondaryDiagnoses||[],allergies,codeStatus:data.codeStatus||'Full Code',isArchived:false,pastAdmissions:[],clinicalSummary:data.clinicalSummary||{chiefComplaint:'',hpi:'',pmh:[],psh:[],drugHistory:'',allergies,familyHistory:'',socialHistory:''},cardiovascularHistory:data.cardiovascularHistory||{hypertension:false,diabetes:false,dyslipidemia:false,cad:false,previousMI:false,heartFailure:false,arrhythmias:false,valvularDisease:false,previousPCI:false,previousCABG:false,previousStroke:false,pvd:false,smoking:false,alcohol:false,previousAdmissions:'',previousICU:'',other:''},vitalsHistory:data.vitalsHistory||[],fluidRecords:data.fluidRecords||[],hemodynamicHistory:data.hemodynamicHistory||[],fluidIntakeHistory:data.fluidIntakeHistory||[],urineOutputHistory:data.urineOutputHistory||[],examination:data.examination||{general:{appearance:'',consciousness:'',distress:'',hydration:'',pallor:false,cyanosis:false,jaundice:false,edema:''},cardiovascular:{jvp:'',heartSounds:'',murmurs:'',peripheralPulses:'',edema:'',perfusion:''},respiratory:{chestExam:'',airEntry:'',addedSounds:'',workOfBreathing:''},abdomen:{inspection:'',palpation:'',tenderness:'',organomegaly:'',ascites:''},neurological:{consciousness:'',gcs:'',pupils:'',motor:'',sensory:'',reflexes:''},extremities:{pulses:'',edema:'',temp:'',perfusion:''},customFields:[]},ecgRecords:data.ecgRecords||[],cardiology:data.cardiology||{rhythm:'',heartRate:0,bp:'',heartFailureStatus:'',nyha:'',killip:'',congestion:'',perfusion:'',echoBriefSummary:'',echo:{ef:0,lvDimensions:'',lvFunction:'',rvFunction:'',rwma:'',la:'',ra:'',mr:'',ar:'',as:'',ms:'',tr:'',pr:'',ivc:'',pericardium:'',otherFindings:''},biomarkers:{troponin:'',ckmb:'',bnp:'',ntProBnp:''},coronary:{cath:'',coronaryFindings:'',pci:'',stent:'',cabg:''},antithrombotic:{antiplatelet:'',anticoagulation:'',thrombolysis:''},cathRecords:[],biomarkerRecords:[],devicesList:[],hemodynamicsList:[]},medications:data.medications||[],ventilator:data.ventilator||{abgHistory:[]},imaging:data.imaging||[],labs:data.labs||[],procedures:data.procedures||[],calculatorResults:data.calculatorResults||[],progressNotes:data.progressNotes||[],auditTrail:[{id:`audit-${Date.now()}-admission`,timestamp:new Date().toISOString(),action:'Patient admitted',fields:['patient'],actor:auth.userName||'Physician'}]};commitClinicalState([p,...patients],beds.map(b=>b.id===bedId?{...b,patientId:id,status:p.status}:b));recordDepartmentLifecycle(p,unitId,'Patient admitted to unit',`${p.fullName} was admitted to ${units.find(u=>u.id===unitId)?.name||'Unit'} in bed ${bed.bedNumber||bed.id}.`,`Admission date/time: ${p.admissionDate} ${p.admissionTime}. Diagnosis: ${p.primaryDiagnosis||'Not recorded'}. History: ${p.clinicalSummary?.hpi||p.clinicalSummary?.chiefComplaint||'Not recorded'}.`,stamp.getTime());setCurrentPatientId(id);showToast(`${p.fullName} admitted successfully.`,'success');void notifyClinicalData(`تم إضافة مريض جديد: ${p.fullName}`,'تمت إضافة بيانات جديدة',{patientId:p.id,unitId:p.unitId,section:'overview',type:'new-patient'});return p;};
  const updatePatient=(id:string,updates:Partial<Patient>,auditContext?:PatientAuditContext)=>{const target=patients.find(p=>p.id===id);if(!target)return;const timestamp=new Date().toISOString();const fields=Object.keys(updates).filter(k=>k!=='auditTrail');const actorUid=auditContext?.uid?.trim()||'';const actorName=auditContext?.displayName?.trim()||undefined;const audit:AuditEvent={id:`audit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,timestamp,action:auditContext?.action||clinicalLabel(updates),fields,actor:auditContext?actorUid||'Unknown user':auth.userName||'Physician',...(auditContext?{actorUid:actorUid||'Unknown user',...(actorName?{actorName}: {})}: {})};const next=patients.map(p=>p.id===id?{...p,...updates,auditTrail:[audit,...(p.auditTrail||[])]}:p);const nextBeds=updates.status&&target.bedId?beds.map(b=>b.id===target.bedId?{...b,status:updates.status}:b):beds;commitClinicalState(next,nextBeds);void notifyClinicalData(`تم إضافة/تحديث ${clinicalLabel(updates)} للمريض ${target.fullName}.`,'تم تحديث بيانات المريض',{patientId:target.id,unitId:target.unitId,section:Object.keys(updates).includes('vitalsHistory')?'vitals':Object.keys(updates).includes('investigations')||Object.keys(updates).includes('consultations')?'orders':Object.keys(updates).includes('medications')?'medication':Object.keys(updates).includes('ventilator')?'icu':'overview',type:'patient-update'});};
-const dischargePatient=(id:string,reason:string,summary:string)=>{
-  const p=patients.find(x=>x.id===id);if(!p)return;
-  if(guardWrite()||!canWriteTouchedUnits([p.unitId]))return;
+ const dischargePatient=async(id:string,reason:string,summary:string):Promise<boolean>=>{
+   const p=patients.find(x=>x.id===id);if(!p)return false;
+   if(guardWrite()||!canWriteTouchedUnits([p.unitId]))return false;
   const unit=units.find(u=>u.id===p.unitId);const stamp=new Date();const dischargeDate=formatLocalAdmissionDate(stamp);const dischargeReason=normalizeDischargeReason(reason);
   const next=prepareDischargedPatient(p,unit?.name||'Unit',`adm-${Date.now()}`,dischargeDate,reason,summary);
   commitClinicalState(patients.map(x=>x.id===id?next:x),beds.map(b=>b.patientId===id?{...b,patientId:undefined,status:'Empty'}:b));
-  recordDepartmentLifecycle(next,p.unitId,'Patient discharged',`${p.fullName} was discharged from ${unit?.name||'Unit'}.`,`Reason: ${dischargeReason}. Summary: ${summary||'Not recorded'}.`,stamp.getTime());
-  setCurrentView('archive');
- };
-const transferPatient=(id:string,unitId:string,bedId:string):boolean=>{
+   const saved=await recordDepartmentLifecycle(next,p.unitId,'Patient discharged',`${p.fullName} was discharged from ${unit?.name||'Unit'}.`,`Reason: ${dischargeReason}. Summary: ${summary||'Not recorded'}.`,stamp.getTime());
+   if(!saved)return false;
+   setCurrentView('archive');
+   return true;
+  };
+ const transferPatient=async(id:string,unitId:string,bedId:string):Promise<boolean>=>{
  const freshPatients=StorageService.getPatients();const freshBeds=StorageService.getBeds();const freshUnits=StorageService.getUnits();
  const p=freshPatients.find(patient=>patient.id===id);const target=freshBeds.find(bed=>bed.id===bedId&&bed.unitId===unitId);
  if(!p||p.isArchived){showToast('This patient is no longer active and cannot be transferred.','error');return false;}
  if(!target||!freshUnits.some(unit=>unit.id===unitId)){showToast('Target bed is not available.','error');return false;}
  if(guardWrite()||!canWriteTouchedUnits([p.unitId,unitId]))return false;
- if(!canWriteUnit(p.unitId)||!canWriteUnit(unitId)||!AuthorizationService.canPerformAction(currentUser,'transfer_patient',{unitId:p.unitId})||!AuthorizationService.canPerformAction(currentUser,'transfer_patient',{unitId})){showToast('You need write access to both the source and destination units.','error');return false;}
- const occupant=target.patientId&&target.patientId!==id?freshPatients.find(patient=>patient.id===target.patientId):undefined;
- if(target.patientId&&target.patientId!==id&&(!occupant||!occupant.isArchived)){showToast('Target bed is no longer available. Refresh the census and choose another bed.','error');return false;}
+ if(!canTransferBetweenUnits(currentUser,p.unitId,unitId,canWriteUnit,(user,unit)=>AuthorizationService.canPerformAction(user,'transfer_patient',{unitId:unit}))){showToast('You need write access to both the source and destination units.','error');return false;}
+ if(!isAvailableLifecycleBed(target,freshPatients)){showToast('Target bed is no longer available. Refresh the census and choose another bed.','error');return false;}
  const sourceBedId=p.bedId||freshBeds.find(bed=>bed.patientId===id)?.id||'';
  if(sourceBedId===target.id){showToast('Choose a different bed for the transfer.','error');return false;}
  const atMs=Date.now();const oldUnitName=freshUnits.find(unit=>unit.id===p.unitId)?.name||p.unitId;const newUnitName=freshUnits.find(unit=>unit.id===unitId)?.name||unitId;
- const transferEvent={id:`transfer-${atMs}-${Math.random().toString(36).slice(2,7)}`,patientId:p.id,timestamp:new Date(atMs).toISOString(),author:String(currentUser?.name||auth.userName||'Clinician'),role:String(currentUser?.role||'unknown'),eventType:'Transfer' as const,title:'Patient transferred',summary:`${p.fullName} moved from ${oldUnitName} to ${newUnitName}.`,details:{fromUnitId:p.unitId,fromBedId:sourceBedId,toUnitId:unitId,toBedId:target.id,transferredAtMs:atMs}};
- const moved:Patient={...p,unitId,bedId:target.id,unitIds:Array.from(new Set([...(p.unitIds||[]),p.unitId,unitId])),timelineEvents:[...(p.timelineEvents||[]),transferEvent]};
+ const moved:Patient={...p,unitId,bedId:target.id,unitIds:Array.from(new Set([...(p.unitIds||[]),p.unitId,unitId])),timelineEvents:p.timelineEvents};
  const nextBeds=freshBeds.map(bed=>bed.id===target.id?{...bed,patientId:id,status:p.status}:bed.patientId===id?{...bed,patientId:undefined,status:'Empty' as BedStatus}:bed);
  const nextPatients=freshPatients.map(patient=>patient.id===id?moved:patient);
  setPatients(nextPatients);StorageService.savePatients(nextPatients);setBeds(nextBeds);StorageService.saveBeds(nextBeds);
- recordDepartmentLifecycle(moved,unitId,'Patient transferred between units',`${p.fullName} moved from ${oldUnitName} to ${newUnitName}.`,`From unit ${p.unitId}, bed ${sourceBedId||'Not recorded'}. To unit ${unitId}, bed ${target.id}. Transfer time: ${new Date(atMs).toISOString()}.`,atMs);
- return true;
-};
-const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
+  return await recordDepartmentLifecycle(moved,unitId,'Patient transferred between units',`${p.fullName} moved from ${oldUnitName} to ${newUnitName}.`,`From unit ${p.unitId}, bed ${sourceBedId||'Not recorded'}. To unit ${unitId}, bed ${target.id}. Transfer time: ${new Date(atMs).toISOString()}.`,atMs);
+ };
+ const readmitPatient=async(id:string,unitId:string,bedId:string):Promise<boolean>=>{
  const freshPatients=StorageService.getPatients();const freshBeds=StorageService.getBeds();const freshUnits=StorageService.getUnits();
  const p=freshPatients.find(patient=>patient.id===id);const target=freshBeds.find(bed=>bed.id===bedId&&bed.unitId===unitId);
  if(!p||!p.isArchived){showToast('This patient is not currently archived. Refresh the archive before retrying.','error');return false;}
  if(!target||!freshUnits.some(unit=>unit.id===unitId)){showToast('Target bed is not available.','error');return false;}
- if(guardWrite()||!canWriteTouchedUnits([unitId]))return false;
- if(!canWriteUnit(unitId)||!AuthorizationService.canPerformAction(currentUser,'admit_patient',{unitId})){showToast('You need write access to the selected destination unit.','error');return false;}
- const occupant=target.patientId&&target.patientId!==id?freshPatients.find(patient=>patient.id===target.patientId):undefined;
- if(target.patientId&&target.patientId!==id&&(!occupant||!occupant.isArchived)){showToast('Target bed is no longer available. Refresh the archive and choose another bed.','error');return false;}
+  const touchedUnitIds=[p.unitId,unitId];
+  if(guardWrite()||!canWriteTouchedUnits(touchedUnitIds))return false;
+  if(touchedUnitIds.some(id=>!canWriteUnit(id))||!AuthorizationService.canPerformAction(currentUser,'admit_patient',{unitId})){showToast('Readmitting into this unit requires write access to the source and destination units.','error');return false;}
+  if(!isAvailableLifecycleBed(target,freshPatients)){showToast('Target bed is no longer available. Refresh the archive and choose another bed.','error');return false;}
  const started=new Date();const date=formatLocalAdmissionDate(started);const time=formatLocalAdmissionTime(started);const oldUnitName=freshUnits.find(unit=>unit.id===p.unitId)?.name||'Unit';
  try{
   const next=resetForNewAdmission(p,unitId,target.id,oldUnitName,date,time,toLocalIsoTimestamp(started),DepartmentService.getDepartmentForUnit(unitId)?.id);
@@ -533,11 +616,11 @@ const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
   const nextBeds=freshBeds.map(bed=>bed.id===target.id?{...bed,patientId:id,status:nextWithUnits.status}:bed.patientId===id?{...bed,patientId:undefined,status:'Empty' as BedStatus}:bed);
   const nextPatients=freshPatients.map(patient=>patient.id===id?nextWithUnits:patient);
   setPatients(nextPatients);StorageService.savePatients(nextPatients);setBeds(nextBeds);StorageService.saveBeds(nextBeds);
-  recordDepartmentLifecycle(nextWithUnits,unitId,'Patient readmitted',`${p.fullName} was readmitted to ${freshUnits.find(unit=>unit.id===unitId)?.name||unitId}.`,`Admission date/time: ${date} ${time}. Bed: ${target.bedNumber||target.id}. Diagnosis: ${nextWithUnits.primaryDiagnosis||'Not recorded'}.`,started.getTime());
-  return true;
+   return await recordDepartmentLifecycle(nextWithUnits,unitId,'Patient readmitted',`${p.fullName} was readmitted to ${freshUnits.find(unit=>unit.id===unitId)?.name||unitId}.`,`Admission date/time: ${date} ${time}. Bed: ${target.bedNumber||target.id}. Diagnosis: ${nextWithUnits.primaryDiagnosis||'Not recorded'}.`,started.getTime());
  }catch(error){showToast(`Re-admission blocked. Nothing was changed. ${String((error as any)?.message||'')}`,'error');return false;}
 }; const deletePatientPermanently=(id:string)=>{commitPatients(patients.filter(p=>p.id!==id));commitBeds(beds.map(b=>b.patientId===id?{...b,patientId:undefined,status:'Empty'}:b));};
- const addUnit=(name:string,type:string,initialBedsCount=3,options?:AddUnitOptions):Unit=>{
+  const addUnit=(name:string,type:string,initialBedsCount=3,options?:AddUnitOptions):Unit=>{
+   if(!isLocalPreview()&&currentUser?.role!=='department_admin')throw new Error('Only the platform owner or a department administrator can create a unit.');
   const requestedId=String(options?.id||'').trim();
   // Always work from what is actually saved, not from the render's copy: the
   // setup wizard may add two units in one pass, and a retry must never append a
@@ -551,7 +634,7 @@ const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
   const ownerUid=currentFirebaseUid(currentUser?.userId);
   const totalBeds=normalizeBedCount(initialBedsCount);
   // The rules make the creator the unit's consultant and require these fields.
-   const unit:Unit={id,name:name.trim(),type,totalBeds,createdBy:ownerUid,consultantUid:ownerUid,createdAtMs:Date.now(),capacityLocked:false,...(options?.unitTypeId?{unitTypeId:options.unitTypeId}:{}),...(options?.config?{config:options.config}:{}),...(options?.hospitalId?{hospitalId:options.hospitalId}:{})};
+    const unit:Unit={id,name:name.trim(),type,totalBeds,createdBy:ownerUid,consultantUid:ownerUid,createdAtMs:Date.now(),capacityLocked:false,activationStatus:'pending',...(options?.unitTypeId?{unitTypeId:options.unitTypeId}:{}),...(options?.config?{config:options.config}:{}),...(options?.hospitalId?{hospitalId:options.hospitalId}:{})};
   // The bed documents are provisioned by completeUnitSetup after this returns.
   // Registering the unit as pending here is what stops the realtime listeners
   // from replacing these beds with a cloud snapshot taken before they existed,
@@ -616,9 +699,7 @@ const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
  const unit=StorageService.getUnits().find(item=>item.id===unitId);
  const expected=normalizeBedCount(unit?.totalBeds);
  if(!unit)return{ok:false,unitId,expected:0,present:0,created:0,missing:[],message:'This unit is no longer on this device.'};
- if(subscriptionLocked)return{ok:false,unitId,expected,present:0,created:0,missing:[],message:'This workspace is read-only until the subscription is renewed.'};
- if(isLocalPreview()){
-  if(!canWriteTouchedUnits([unitId]))return{ok:false,unitId,expected,present:StorageService.getBeds().filter(bed=>bed.unitId===unitId).length,created:0,missing:[],message:'This unit is read-only until its own trial or subscription is active.'};
+  if(isLocalPreview()){
   const existing=StorageService.getBeds();const expectedBeds=desiredBeds(unitId,expected);
   const known=new Set(existing.filter(bed=>bed.unitId===unitId).map(bed=>String(bed.id)));const missing=expectedBeds.filter(bed=>!known.has(String(bed.id)));
   if(missing.length)commitBeds([...existing,...missing]);
@@ -646,10 +727,18 @@ const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
   // Close the local window first so an overlapping sync cannot reopen capacity.
   lockUnitCapacity(unitId);
   await setUnitCapacityLocked(unitId,true);
-  const finalVerification=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected,true);
-  confirmedPresent=finalVerification.beds.length;applyCloudBeds(finalVerification.beds);
-  clearUnitBedsPending(unitId);
-  return{...ensured,ok:true,present:confirmedPresent,message:`The unit and all ${confirmedPresent} beds are verified in Firestore; capacity is locked.`};
+   const finalVerification=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected,true);
+   confirmedPresent=finalVerification.beds.length;applyCloudBeds(finalVerification.beds);
+   if(await isMasterAccount()){
+    await autoActivateOwnerCreatedUnit(getActiveWorkspaceId(),unitId);
+    const activeUnits=StorageService.getUnits().map(item=>item.id===unitId?{...item,activationStatus:'active' as const,activatedAtMs:Date.now()}:item);
+    commitUnits(activeUnits);
+   }else{
+    await submitUnitActivationRequest(unit,StorageService.getProfileName()||authStateRef.current.userName||'Workspace administrator');
+   }
+   clearUnitBedsPending(unitId);
+   const active=StorageService.getUnits().find(item=>item.id===unitId)?.activationStatus==='active';
+   return{...ensured,ok:true,present:confirmedPresent,message:active?`The unit and all ${confirmedPresent} beds are verified in Firestore and licensed for 30 days.`:`The unit and all ${confirmedPresent} beds are verified in Firestore. The unit is pending platform-owner activation.`};
  }catch(error:any){
   const raw=String(error?.message||error);
   const message=provisioningBeds&&/permission|insufficient/i.test(raw)?'Bed provisioning was denied. Only the workspace owner can add beds after the provisioning window closes. Ask the owner to finish setup.':raw;
@@ -666,7 +755,7 @@ const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
  const finalizeUnitCreation=async(unitId:string):Promise<void>=>{
   const result=await completeUnitSetup(unitId);
    if(result.ok){
-    showToast(isLocalPreview()?`Local preview only: unit and ${result.present} ${result.present===1?'bed':'beds'} saved on this device.`:`Unit and all ${result.present} ${result.present===1?'bed':'beds'} verified in Firestore. Capacity is locked; only the owner can change it.`,'success');
+     showToast(isLocalPreview()?`Local preview only: unit and ${result.present} ${result.present===1?'bed':'beds'} saved on this device.`:result.message,'success');
     return;
    }
    if(!isLocalPreview()&&result.expected>0&&result.present===result.expected){
@@ -693,7 +782,7 @@ const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
  const deleteUnit=(id:string)=>{if(units.length<=1){showToast('Cannot delete the last clinical unit.','error');return false;}const activeIds=new Set(patients.filter(p=>!p.isArchived&&p.unitId===id).map(p=>p.id));if(activeIds.size>0||beds.some(b=>b.unitId===id&&b.patientId&&activeIds.has(b.patientId))){showToast('Transfer or discharge active patients before deleting this unit.','error');return false;}commitUnits(units.filter(u=>u.id!==id));commitBeds(beds.filter(b=>b.unitId!==id));clearUnitBedsPending(id);if(currentUnitId===id)setCurrentUnitId(units.find(u=>u.id!==id)?.id||null);return true;};
  const addBed=(unitId:string,bedNumber?:string)=>{const n=beds.filter(b=>b.unitId===unitId).length+1;const bed={id:`bed-${unitId}-${Date.now()}`,unitId,bedNumber:bedNumber||`Bed ${n}`,status:'Empty' as BedStatus};commitBeds([...beds,bed]);commitUnits(units.map(u=>u.id===unitId?{...u,totalBeds:u.totalBeds+1}:u));void notifyClinicalData(`تم إضافة سرير جديد: ${bed.bedNumber}.`,'تمت إضافة بيانات جديدة',{unitId:bed.unitId,type:'bed-update'});return bed;};
  const removeBed=(id:string)=>{const bed=beds.find(b=>b.id===id);if(!bed||bedIsOccupied(bed))return false;const count=beds.filter(b=>b.unitId===bed.unitId).length;if(count<=1)return false;commitBeds(beds.filter(b=>b.id!==id));commitUnits(units.map(u=>u.id===bed.unitId?{...u,totalBeds:Math.max(1,u.totalBeds-1)}:u));return true;};
- const syncNow=async()=>{if(isLocalPreview()){showToast('Cloud sync is disabled in the isolated local preview.','info');return;}setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
+ const syncNow=async()=>{if(isLocalPreview()){showToast('Cloud sync is disabled in the isolated local preview.','info');return;}setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}const pendingEventsSaved=await flushPendingDepartmentLifecycleWrites(getActiveWorkspaceId());setLastSyncTime(new Date().toLocaleTimeString());showToast(pendingEventsSaved?'Cloud sync and pending lifecycle events completed successfully.':'Clinical data synced, but a master-file event still needs confirmation. Retry cloud sync.',pendingEventsSaved?'success':'warning');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
  const resetDatabase=()=>{if(patients.length>0||units.length>0){const answer=window.prompt('This ERASES all units, beds and patients. Type RESET to confirm.');if(String(answer||'').trim().toUpperCase()!=='RESET'){showToast('Reset cancelled.','info');return;}}StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
   return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,updateOwnDisplayName,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,addPreviewUnits,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,hospitals,addHospital,assignUnitToHospital,canWriteUnit,groupUnitsByHospital,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;

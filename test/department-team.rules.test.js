@@ -10,7 +10,7 @@
  */
 import test from "node:test";
 import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import fs from "node:fs";
 
 const PROJECT_ID = "cardiovault-dept-team-rules-test";
@@ -29,9 +29,13 @@ const path = {
   unit: (ws, unitId) => `workspaces/${ws}/units/${unitId}`,
   request: (ws, id) => `workspaces/${ws}/subscriptionRequests/${id}`,
   master: (ws, id) => `workspaces/${ws}/masterFiles/${id}`,
+  masterEvent: (ws, fileId, eventId) => `workspaces/${ws}/masterFiles/${fileId}/events/${eventId}`,
   waiting: (ws, unitId, id) => `workspaces/${ws}/units/${unitId}/waiting/${id}`,
   patient: (ws, id) => `workspaces/${ws}/patients/${id}`,
   subscription: (ws) => `workspaces/${ws}/subscription/current`,
+  license: (ws, unitId) => `workspaces/${ws}/unitLicenses/${unitId}`,
+  licenseCode: (ws, hash) => `workspaces/${ws}/unitLicenseCodes/${hash}`,
+  activationRequest: (id) => `unitActivationRequests/${id}`,
 };
 
 const dbFor = (uid) => testEnv.authenticatedContext(uid).firestore();
@@ -78,17 +82,45 @@ function unitDoc(unitId, ownerUid) {
   };
 }
 
+// Mirrors exactly the document subscriptionRequestCloud builds for a member
+// request: department area, one unit draft, instapay pricing (500 EGP).
 function requestDoc(overrides = {}) {
+  const now = Date.now();
   return {
     workspaceId: WS,
     subscriberId: DOC_A,
+    subscriberName: "Doctor userA",
+    createdByName: "Doctor userA",
     status: "pending",
     method: "instapay",
     unitIds: [UNIT_A],
     amount: 500,
     currency: "EGP",
     paymentVerified: false,
-    createdAtMs: Date.now(),
+    requestType: "department",
+    institutionName: "Dept Team Hospital",
+    phone: "+201000000000",
+    doctorsCount: 0,
+    clinicServices: [],
+    unitDrafts: [
+      {
+        id: "unit_a_draft",
+        name: "Unit A",
+        typeLabel: "CCU",
+        beds: 6,
+        receivesOperations: true,
+      },
+    ],
+    lineItems: [
+      { area: "department", quantity: 1, currency: "EGP", unitPrice: 500, subtotal: 500 },
+    ],
+    submittedAtMs: now,
+    trialStartedAtMs: now - 60000,
+    trialEligible: true,
+    isRenewal: false,
+    createdBy: DOC_A,
+    createdAtMs: now,
+    schemaVersion: 1,
     ...overrides,
   };
 }
@@ -127,6 +159,8 @@ test.beforeEach(async () => {
       setDoc(doc(db, path.team(WS, DOC_B)), teamDoc(DOC_B, UNIT_B)),
       setDoc(doc(db, path.unit(WS, UNIT_A)), unitDoc(UNIT_A, DOC_A)),
       setDoc(doc(db, path.unit(WS, UNIT_B)), unitDoc(UNIT_B, DOC_B)),
+      setDoc(doc(db, path.license(WS, UNIT_A)), { workspaceId: WS, unitId: UNIT_A, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 30 * 86400000, updatedBy: OWNER, schemaVersion: 1 }),
+      setDoc(doc(db, path.license(WS, UNIT_B)), { workspaceId: WS, unitId: UNIT_B, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 30 * 86400000, updatedBy: OWNER, schemaVersion: 1 }),
       setDoc(doc(db, path.patient(WS, "pA")), {
         unitId: UNIT_A,
         unitIds: [UNIT_A],
@@ -143,9 +177,9 @@ test.after(async () => {
 
 // ── Subscription requests ────────────────────────────────────────────────
 
-test("a member may file a request for a unit they belong to", async () => {
+test("members cannot create retired subscription requests even for their own unit", async () => {
   const db = dbFor(DOC_A);
-  await assertSucceeds(setDoc(doc(db, path.request(WS, "r1")), requestDoc()));
+  await assertFails(setDoc(doc(db, path.request(WS, "r1")), requestDoc()));
 });
 
 test("a member may not file a request for a unit they do not belong to", async () => {
@@ -179,7 +213,9 @@ test("the owner approves a request", async () => {
     updateDoc(doc(db, path.request(WS, "r5")), {
       status: "approved",
       paymentVerified: true,
-      decidedAtMs: Date.now(),
+      paymentVerifiedAtMs: Date.now(),
+      paymentVerifiedBy: OWNER,
+      approvedAtMs: Date.now(),
     }),
   );
 });
@@ -212,14 +248,164 @@ test("a requester withdraws a pending request but not an approved one", async ()
   await assertFails(updateDoc(doc(dbFor(DOC_A), path.request(WS, "r10")), { status: "withdrawn" }));
 });
 
-test("an expired subscription still allows a renewal request but blocks clinical writes", async () => {
+test("master-file events are append-only and visible only through the parent file's authorized units", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), path.master(WS, "mpf-pA")), {
+      id: "mpf-pA",
+      ownerUnitId: UNIT_A,
+      contextIds: [UNIT_A],
+      sourcePatientIds: ["pA"],
+    });
+  });
+  const event = {
+    id: "admission-1",
+    refId: "mpf-pA",
+    createdBy: DOC_A,
+    schemaVersion: 1,
+    kind: "patient-admission",
+    atMs: Date.now(),
+    title: "Patient admitted",
+    summary: "Admission recorded",
+    detail: "",
+    context: { unitId: UNIT_A },
+  };
+  const memberA = dbFor(DOC_A);
+  await assertSucceeds(setDoc(doc(memberA, path.masterEvent(WS, "mpf-pA", event.id)), event));
+  await assertSucceeds(getDoc(doc(memberA, path.masterEvent(WS, "mpf-pA", event.id))));
+  await assertFails(updateDoc(doc(memberA, path.masterEvent(WS, "mpf-pA", event.id)), { summary: "changed" }));
+  await assertFails(deleteDoc(doc(memberA, path.masterEvent(WS, "mpf-pA", event.id))));
+  await assertFails(getDoc(doc(dbFor(DOC_B), path.masterEvent(WS, "mpf-pA", event.id))));
+});
+
+test("a unit member cannot share a master file to a unit outside their own membership", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), path.master(WS, "mpf-pA")), {
+      id: "mpf-pA",
+      ownerUnitId: UNIT_A,
+      contextIds: [UNIT_A],
+      sourcePatientIds: ["pA"],
+    });
+  });
+  await assertFails(updateDoc(doc(dbFor(DOC_A), path.master(WS, "mpf-pA")), {
+    contextIds: [UNIT_A, UNIT_B],
+    updatedAtMs: Date.now(),
+  }));
+});
+
+test("a master file shared by a member of both units is visible in the destination unit without duplicating the file", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, path.master(WS, "mpf-pA")), {
+      id: "mpf-pA", ownerUnitId: UNIT_A, contextIds: [UNIT_A], sourcePatientIds: ["pA"],
+    });
+    await setDoc(doc(db, path.member(WS, "userBoth")), {
+      ...memberDoc("userBoth", UNIT_A), unitIds: [UNIT_A, UNIT_B],
+    });
+    await setDoc(doc(db, path.team(WS, "userBoth")), {
+      ...teamDoc("userBoth", UNIT_A), assignedUnitIds: [UNIT_A, UNIT_B],
+    });
+  });
+  const fileRef = doc(dbFor("userBoth"), path.master(WS, "mpf-pA"));
+  await assertSucceeds(updateDoc(fileRef, { contextIds: [UNIT_A, UNIT_B], updatedAtMs: Date.now() }));
+  await assertSucceeds(getDoc(doc(dbFor(DOC_B), path.master(WS, "mpf-pA"))));
+  const event = { id: "shared-event", refId: "mpf-pA", createdBy: "userBoth", schemaVersion: 1,
+    kind: "patient-transfer", atMs: Date.now(), title: "Transfer", summary: "Unit A to B", detail: "",
+    context: { unitId: UNIT_B } };
+  await assertSucceeds(setDoc(doc(dbFor("userBoth"), path.masterEvent(WS, "mpf-pA", event.id)), event));
+  await assertSucceeds(getDoc(doc(dbFor(DOC_B), path.masterEvent(WS, "mpf-pA", event.id))));
+});
+
+test("an expired unit license blocks that unit but preserves membership and active sibling access", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await updateDoc(doc(context.firestore(), path.license(WS, UNIT_A)), { expiresAtMs: Date.now() - 3600000 });
+  });
+  const memberDb = dbFor(DOC_A);
+  await assertSucceeds(getDoc(doc(memberDb, path.member(WS, DOC_A))));
+  await assertSucceeds(getDoc(doc(memberDb, path.license(WS, UNIT_A))));
+  await assertFails(getDoc(doc(memberDb, path.patient(WS, "pA"))));
+  await assertFails(updateDoc(doc(memberDb, path.patient(WS, "pA")), { status: "Critical" }));
+  await assertSucceeds(getDoc(doc(dbFor(DOC_B), path.unit(WS, UNIT_B))));
+  await assertSucceeds(getDoc(doc(dbFor(OWNER), path.patient(WS, "pA"))));
+});
+
+test("only the platform owner can issue a one-use code; a unit member redeems it for all members", async () => {
+  const ownerDb = dbFor(OWNER);
+  const memberDb = dbFor(DOC_A);
+  const hash = 'a'.repeat(64);
+  const now = Date.now();
+  const codeRef = doc(ownerDb, path.licenseCode(WS, hash));
+  const licenseRef = doc(memberDb, path.license(WS, UNIT_A));
+  const license = (await getDoc(doc(ownerDb, path.license(WS, UNIT_A)))).data();
+  const expiresAtMs = Math.max(Number(license.expiresAtMs), now) + 30 * 86400000;
+  await assertFails(setDoc(doc(memberDb, path.licenseCode(WS, hash)), { workspaceId: WS, unitId: UNIT_A, codeHash: hash }));
+  await assertSucceeds(setDoc(codeRef, { workspaceId: WS, unitId: UNIT_A, codeHash: hash, issuedBy: OWNER, issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: 'active', schemaVersion: 1 }));
+  await assertFails(updateDoc(doc(dbFor(DOC_B), path.licenseCode(WS, hash)), { status: 'redeemed', redeemedBy: DOC_B, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs }));
+  await assertFails(updateDoc(doc(ownerDb, path.license(WS, UNIT_A)), { expiresAtMs: expiresAtMs + 86400000 }));
+  await assertSucceeds(updateDoc(doc(memberDb, path.licenseCode(WS, hash)), { status: 'redeemed', redeemedBy: DOC_A, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs }));
+  await assertSucceeds(updateDoc(licenseRef, { workspaceId: WS, unitId: UNIT_A, issuedAtMs: now, expiresAtMs, updatedBy: DOC_A, schemaVersion: 1, activationCodeHash: hash }));
+  await assertFails(updateDoc(doc(dbFor(DOC_B), path.licenseCode(WS, hash)), { status: 'redeemed', redeemedBy: DOC_B, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs }));
+  await assertSucceeds(getDoc(doc(dbFor(DOC_A), path.patient(WS, "pA"))));
+});
+
+test("customer-created pending units stay clinically blocked until the owner approves and activates them", async () => {
+  const now = Date.now();
+  const requestId = `${WS}__${UNIT_A}`;
+  const ownerDb = dbFor(OWNER);
+  const memberDb = dbFor(DOC_A);
+  const memberRequestRef = doc(memberDb, path.activationRequest(requestId));
+  const requestRef = doc(ownerDb, path.activationRequest(requestId));
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await updateDoc(doc(db, path.unit(WS, UNIT_A)), { activationStatus: "pending" });
+    await updateDoc(doc(db, path.member(WS, DOC_A)), { role: "department_admin" });
+    await deleteDoc(doc(db, path.license(WS, UNIT_A)));
+    for (let index = 1; index <= 6; index += 1) {
+      await setDoc(doc(db, `workspaces/${WS}/beds/bed-${index}`), { unitId: UNIT_A, bedNumber: `Bed ${index}`, status: "Empty" });
+    }
+  });
+  const requestedAtMs = Date.now();
+  await assertSucceeds(getDocs(query(collection(memberDb, `workspaces/${WS}/beds`), where('unitId', '==', UNIT_A))));
+  await assertFails(getDoc(doc(memberDb, path.patient(WS, "pA"))));
+  await assertSucceeds(setDoc(memberRequestRef, {
+    requestId, workspaceId: WS, unitId: UNIT_A, unitName: "Unit A", requestedBedCount: 6,
+    requestedBy: DOC_A, requestedByName: "Doctor userA", requestedAtMs, status: "pending", schemaVersion: 1,
+  }));
+  await assertFails(getDoc(doc(memberDb, path.activationRequest(requestId))));
+  await assertFails(getDocs(collection(memberDb, "unitActivationRequests")));
+  await assertSucceeds(getDoc(requestRef));
+  await assertSucceeds(getDocs(collection(ownerDb, "unitActivationRequests")));
+
+  const approvalStartedAtMs = Date.now();
+  await assertFails(updateDoc(doc(memberDb, path.activationRequest(requestId)), { status: "approving", approvedBy: DOC_A, approvalStartedAtMs }));
+  await assertSucceeds(updateDoc(requestRef, { status: "approving", approvedBy: OWNER, approvalStartedAtMs }));
+  await assertSucceeds(updateDoc(doc(ownerDb, path.unit(WS, UNIT_A)), { activationStatus: "active", activatedAtMs: approvalStartedAtMs }));
+  await assertFails(getDoc(doc(memberDb, path.patient(WS, "pA"))));
+  await assertSucceeds(setDoc(doc(ownerDb, path.license(WS, UNIT_A)), {
+    workspaceId: WS, unitId: UNIT_A, issuedAtMs: approvalStartedAtMs,
+    expiresAtMs: approvalStartedAtMs + 30 * 86400000, updatedBy: OWNER,
+    schemaVersion: 1, activationRequestId: requestId,
+  }));
+  await assertSucceeds(updateDoc(requestRef, { status: "approved", approvedAtMs: Date.now() }));
+  await assertSucceeds(getDoc(doc(memberDb, path.patient(WS, "pA"))));
+});
+
+test("platform-owner-created pending units can receive their initial license without an approval request", async () => {
+  const now = Date.now();
+  const ownerDb = dbFor(OWNER);
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), path.unit(WS, "owner-created")), { ...unitDoc("owner-created", OWNER), activationStatus: "pending" });
+  });
+  await assertSucceeds(updateDoc(doc(ownerDb, path.unit(WS, "owner-created")), { activationStatus: "active", activatedAtMs: now }));
+  await assertSucceeds(setDoc(doc(ownerDb, path.license(WS, "owner-created")), {
+    workspaceId: WS, unitId: "owner-created", issuedAtMs: now,
+    expiresAtMs: now + 30 * 86400000, updatedBy: OWNER, schemaVersion: 1,
+  }));
+});
+
+test("expired subscription clocks do not lock an otherwise licensed unit", async () => {
   await seedExpiredSubscription();
   const memberDb = dbFor(DOC_A);
-  // The renewal path must survive read-only mode, otherwise the workspace can
-  // never be reactivated.
-  await assertSucceeds(setDoc(doc(memberDb, path.request(WS, "r11")), requestDoc()));
-  // ... but the clinical data is frozen for everyone except the owner.
-  await assertFails(updateDoc(doc(memberDb, path.patient(WS, "pA")), { status: "Critical" }));
+  await assertSucceeds(updateDoc(doc(memberDb, path.patient(WS, "pA")), { status: "Critical" }));
 });
 
 test("unauthenticated callers are denied everywhere", async () => {

@@ -74,6 +74,12 @@ function invitePath(inviteId) {
 function unitPath(unitId) {
   return path("units", unitId);
 }
+function unitLicensePath(unitId) {
+  return path("unitLicenses", unitId);
+}
+function unitLicenseCodePath(hash) {
+  return path("unitLicenseCodes", hash);
+}
 
 function rosterPath(unitId, uid) {
   return path("units", unitId, "roster", uid);
@@ -328,6 +334,7 @@ async function seed() {
         unitId: UNIT_X,
         label: "FAKE X",
       }),
+      setDoc(doc(db, "workspaces", WS_B, "unitLicenses", UNIT_X), { workspaceId: WS_B, unitId: UNIT_X, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 30 * 86400000, updatedBy: "admin_root", schemaVersion: 1 }),
       // A doctor who works in two teams with the same account: member of the
       // master workspace AND of Team Bravo. This is the workspace-picker case.
       setDoc(doc(db, path("members", "userI")), {
@@ -476,6 +483,8 @@ async function seed() {
         features: [],
         createdAtMs: Date.now() - 60000,
       }),
+      setDoc(doc(db, unitLicensePath(UNIT_A)), { workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 30 * 86400000, updatedBy: "admin_root", schemaVersion: 1 }),
+      setDoc(doc(db, unitLicensePath(UNIT_B)), { workspaceId: WORKSPACE, unitId: UNIT_B, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 30 * 86400000, updatedBy: "admin_root", schemaVersion: 1 }),
       // ---- temporary invite plus its routing index ----
       setDoc(doc(db, invitePath(INVITE_A)), inviteDoc()),
       setDoc(doc(db, "invites", INDEX_A), {
@@ -1468,6 +1477,9 @@ test("33. the unit's consultant edits presentation but never the bed count", asy
 test("34. self-service unit creation carries the required metadata", async () => {
   const now = Date.now();
   const a = dbFor("userA");
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), path("members", "userA")), { role: "department_admin" });
+  });
   const goodUnit = (unitId) => ({
     unitId,
     name: "Self Ward",
@@ -1521,53 +1533,16 @@ test("34. self-service unit creation carries the required metadata", async () =>
   );
 });
 
-test("35. an expired subscription turns the workspace read-only for members", async () => {
+test("35. an expired unit license blocks only that unit and retains membership", async () => {
   await testEnv.withSecurityRulesDisabled(async (context) => {
-    const db = context.firestore();
-    await setDoc(doc(db, subPath()), {
-      trialEndsAtMs: Date.now() - 3 * 86400000,
-      periodEndMs: Date.now() - 86400000,
-      graceEndsAtMs: Date.now() - 60000,
-    });
+    await updateDoc(doc(context.firestore(), unitLicensePath(UNIT_A)), { expiresAtMs: Date.now() - 60000 });
   });
-
   const c = dbFor("userC");
-  // Reads still work...
-  await assertSucceeds(getDoc(doc(c, patientPath(PATIENT_A))));
-  await assertSucceeds(
-    getDocs(query(collection(c, path("patients")), where("unitId", "==", UNIT_A))),
-  );
-  await assertSucceeds(getDoc(doc(c, subPath())));
-
-  // ...every clinical write is denied.
-  await assertFails(
-    setDoc(doc(c, patientPath("lockedPatient")), {
-      patientId: "lockedPatient",
-      unitId: UNIT_A,
-      label: "LOCKED",
-    }),
-  );
-  await assertFails(
-    updateDoc(doc(c, patientPath(PATIENT_A)), { label: "LOCKED" }),
-  );
-  await assertFails(deleteDoc(doc(c, patientPath(PATIENT_A))));
-
-  // Capacity and invites are writes too.
-  await assertFails(
-    setDoc(doc(dbFor("userA"), path("beds", "bedLockedSub")), {
-      bedId: "bedLockedSub",
-      unitId: UNIT_A,
-      label: "LOCKED",
-    }),
-  );
-  await assertFails(
-    setDoc(
-      doc(dbFor("userA"), invitePath(hashOf("CV-SUB-LOCKED"))),
-      inviteDoc({ expiresAtMs: Date.now() + 3600000 }),
-    ),
-  );
-
-  // The platform owner keeps writing.
+  await assertSucceeds(getDoc(doc(dbFor("userA"), path("members", "userA"))));
+  await assertFails(getDoc(doc(c, patientPath(PATIENT_A))));
+  await assertFails(setDoc(doc(c, patientPath("lockedPatient")), { patientId: "lockedPatient", unitId: UNIT_A }));
+  await assertSucceeds(getDoc(doc(c, patientPath(PATIENT_B))));
+  await assertSucceeds(updateDoc(doc(c, patientPath(PATIENT_B)), { label: "SIBLING-ACTIVE" }));
   await assertSucceeds(
     setDoc(doc(dbFor("admin_root"), patientPath("ownerPatient")), {
       patientId: "ownerPatient",
@@ -1580,75 +1555,26 @@ test("35. an expired subscription turns the workspace read-only for members", as
   );
 });
 
-test("36. the subscription clock only ever moves forward", async () => {
-  const day = 86400000;
+test("36. only the platform owner can renew a unit license and renewal restores unit access", async () => {
   const now = Date.now();
   const owner = dbFor("admin_root");
-
-  await assertSucceeds(
-    setDoc(doc(owner, subPath()), {
-      trialEndsAtMs: now + 7 * day,
-      periodEndMs: now + 30 * day,
-      graceEndsAtMs: now + 37 * day,
-    }),
-  );
-
-  // An active clock lets members work normally, and they can read the clock.
-  await assertSucceeds(
-    setDoc(doc(dbFor("userC"), patientPath("duringTrial")), {
-      patientId: "duringTrial",
-      unitId: UNIT_A,
-      label: "OK",
-    }),
-  );
-  await assertSucceeds(getDoc(doc(dbFor("userC"), subPath())));
-
-  // Rewinding a paid period is refused.
-  await assertFails(
-    updateDoc(doc(owner, subPath()), { periodEndMs: now + 20 * day }),
-  );
-  // Renewing forward is allowed.
-  await assertSucceeds(
-    updateDoc(doc(owner, subPath()), { periodEndMs: now + 60 * day }),
-  );
-
-  // A member can never edit the clock, not even forward.
-  await assertFails(
-    updateDoc(doc(dbFor("userA"), subPath()), { periodEndMs: now + 90 * day }),
-  );
+  const member = dbFor("userA");
+  const hash = "b".repeat(64);
+  const codeRef = doc(owner, unitLicenseCodePath(hash));
+  await testEnv.withSecurityRulesDisabled(async context => updateDoc(doc(context.firestore(), unitLicensePath(UNIT_A)), { expiresAtMs: now - 1000 }));
+  await assertFails(setDoc(doc(member, unitLicenseCodePath(hash)), { workspaceId: WORKSPACE, unitId: UNIT_A, codeHash: hash }));
+  await assertSucceeds(setDoc(codeRef, { workspaceId: WORKSPACE, unitId: UNIT_A, codeHash: hash, issuedBy: "admin_root", issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: "active", schemaVersion: 1 }));
+  await assertSucceeds(updateDoc(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000 }));
+  await assertSucceeds(updateDoc(doc(member, unitLicensePath(UNIT_A)), { workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: now, expiresAtMs: now + 30 * 86400000, updatedBy: "userA", schemaVersion: 1, activationCodeHash: hash }));
+  await assertSucceeds(getDoc(doc(dbFor("userA"), patientPath(PATIENT_A))));
+  await assertFails(updateDoc(doc(owner, unitLicensePath(UNIT_A)), { expiresAtMs: now + 90 * 86400000 }));
 });
 
-test("37. a workspace without a subscription document keeps working", async () => {
+test("37. a unit without a license is locked while another licensed unit stays active", async () => {
+  await testEnv.withSecurityRulesDisabled(async context => deleteDoc(doc(context.firestore(), unitLicensePath(UNIT_A))));
   const c = dbFor("userC");
-
-  // No document at all: grandfathered.
-  await assertSucceeds(
-    setDoc(doc(c, patientPath("grandfathered")), {
-      patientId: "grandfathered",
-      unitId: UNIT_A,
-      label: "OK",
-    }),
-  );
-  await assertSucceeds(getDoc(doc(c, subPath())));
-
-  // A clock without a grace field locks nothing either.
-  await testEnv.withSecurityRulesDisabled(async (context) => {
-    const db = context.firestore();
-    await setDoc(doc(db, subPath()), {
-      trialEndsAtMs: Date.now() - 86400000,
-      periodEndMs: Date.now() - 86400000,
-    });
-  });
-  await assertSucceeds(
-    updateDoc(doc(c, patientPath("grandfathered")), { label: "STILL-OK" }),
-  );
-  await assertSucceeds(
-    setDoc(doc(c, patientPath("grandfathered2")), {
-      patientId: "grandfathered2",
-      unitId: UNIT_A,
-      label: "OK",
-    }),
-  );
+  await assertFails(getDoc(doc(c, patientPath(PATIENT_A))));
+  await assertSucceeds(getDoc(doc(c, patientPath(PATIENT_B))));
 });
 
 test("38. the audit trail is append-only and owner-read only", async () => {
@@ -1802,40 +1728,13 @@ test("41. a first join is born with exactly the granted unit", async () => {
   await assertFails(create("userQ", { accessCodeHash: HASH_TEAM_B }));
 });
 
-test("42. only the workspace creator may open its first three-day trial", async () => {
-  const DAY = 86400000;
-  const clock = ({ days = 3, now = Date.now(), extra = {} } = {}) => ({
-    status: "trial",
-    trialStartedAtMs: now,
-    trialEndsAtMs: now + days * DAY,
-    periodEndMs: now + days * DAY,
-    graceEndsAtMs: now + (days + 2) * DAY,
-    updatedBy: "creator",
-    plan: "standard",
-    ...extra,
-  });
-  const clockRef = (workspaceId, uid) =>
-    doc(dbFor(uid), "workspaces", workspaceId, "subscription", "current");
-
-  // The creator opens the one trial this workspace will ever get.
-  await assertSucceeds(setDoc(clockRef(WS_TRIAL_OK, "userM"), clock()));
-  // A clock document can be created once; no second trial.
-  await assertFails(setDoc(clockRef(WS_TRIAL_OK, "userM"), clock()));
-  // A non-creator account cannot open it at all.
-  await assertFails(setDoc(clockRef(WS_TRIAL_OK, "userE"), clock()));
-
-  // The shape is fixed: the grace window must sit exactly two days past the trial.
-  await assertFails(setDoc(
-    clockRef(WS_TRIAL_SHAPE, "userN"),
-    clock({ extra: { graceEndsAtMs: Date.now() + 3 * DAY } }),
-  ));
-  // ... periodEndMs must equal the trial end, not float free.
-  await assertFails(setDoc(
-    clockRef(WS_TRIAL_SHAPE, "userN"),
-    clock({ extra: { periodEndMs: Date.now() + 30 * DAY } }),
-  ));
-  // ... and nobody may grant themselves a longer trial.
-  await assertFails(setDoc(clockRef(WS_TRIAL_LONG, "userO"), clock({ days: 30 })));
+test("42. workspace creators cannot start the retired trial clock", async () => {
+  const now = Date.now();
+  const clockRef = (workspaceId, uid) => doc(dbFor(uid), "workspaces", workspaceId, "subscription", "current");
+  await assertFails(setDoc(clockRef(WS_TRIAL_OK, "userM"), {
+    status: "trial", trialStartedAtMs: now, trialEndsAtMs: now + 3 * 86400000,
+    periodEndMs: now + 3 * 86400000, graceEndsAtMs: now + 5 * 86400000,
+  }));
 });
 
 // ---------------------------------------------------------------------------
@@ -2258,6 +2157,9 @@ test("65. the creation flow uploads the unit, its beds, and only then closes the
   const now = Date.now();
   const a = dbFor("userA");
   const unitId = "unitCreated";
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), path("members", "userA")), { role: "department_admin" });
+  });
 
   // Step 1: the unit document, with an OPEN capacity.
   await assertSucceeds(
@@ -2293,6 +2195,21 @@ test("65. the creation flow uploads the unit, its beds, and only then closes the
       updatedAt: new Date().toISOString(),
     }),
   );
+
+  // The owner issues a one-use code; the creator, now an authorized member,
+  // redeems it to activate the unit before closing the setup window.
+  const licenseHash = "c".repeat(64);
+  await assertSucceeds(setDoc(doc(dbFor("admin_root"), unitLicenseCodePath(licenseHash)), {
+    workspaceId: WORKSPACE, unitId, codeHash: licenseHash, issuedBy: "admin_root",
+    issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: "active", schemaVersion: 1,
+  }));
+  await assertSucceeds(updateDoc(doc(a, unitLicenseCodePath(licenseHash)), {
+    status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000,
+  }));
+  await assertSucceeds(setDoc(doc(a, unitLicensePath(unitId)), {
+    workspaceId: WORKSPACE, unitId, issuedAtMs: now, expiresAtMs: now + 30 * 86400000,
+    updatedBy: "userA", schemaVersion: 1, activationCodeHash: licenseHash,
+  }));
 
   // Step 4: only now may the capacity window be closed.
   await assertSucceeds(

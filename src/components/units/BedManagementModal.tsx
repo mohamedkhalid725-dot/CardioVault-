@@ -3,6 +3,7 @@ import { X, Plus, Minus, Trash2, BedDouble, Lock } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Unit } from '../../types/clinical';
 import { getUnitById, isMasterAccount } from '../../services/workspaceAccess';
+import { isAvailableLifecycleBed } from '../../services/patientLifecycleAccess';
 
 // A unit consultant may resize the unit only during the first hour after it is
 // created and only while its capacity is not locked; afterwards the owner alone can.
@@ -74,7 +75,7 @@ export const BedManagementModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const selectedUnit = units.find((u) => u.id === unitId);
   const unitBeds = beds.filter((b) => b.unitId === unitId);
-  const occupied = unitBeds.filter((b) => b.patientId || patients.some((p) => !p.isArchived && p.bedId === b.id));
+  const occupied = unitBeds.filter((b) => !isAvailableLifecycleBed(b, patients));
 
   // Fall back to the local unit record while the cloud read is in flight. A unit
   // with no createdAtMs has no provisioning window, so it is treated as locked.
@@ -102,7 +103,7 @@ export const BedManagementModal: React.FC<Props> = ({ isOpen, onClose }) => {
     const bed = beds.find((b) => b.id === id);
     if (!bed) return;
     if (blockIfLocked()) return;
-    if (bed.patientId || patients.some((p) => !p.isArchived && p.bedId === id)) {
+    if (!isAvailableLifecycleBed(bed, patients)) {
       showToast('This bed contains an active patient. Transfer or discharge the patient first.', 'error');
       return;
     }
@@ -117,7 +118,7 @@ export const BedManagementModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const decrement = () => {
     if (blockIfLocked()) return;
-    const empty = [...unitBeds].reverse().find((b) => !b.patientId && !patients.some((p) => !p.isArchived && p.bedId === b.id));
+    const empty = [...unitBeds].reverse().find((b) => isAvailableLifecycleBed(b, patients));
     if (!empty) {
       showToast('Cannot reduce beds while all beds are occupied.', 'error');
       return;

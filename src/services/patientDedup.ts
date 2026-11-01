@@ -1,4 +1,5 @@
 import type { Patient, Unit } from '../types/clinical';
+import type { MasterPatientFile } from '../types/clinicArea';
 
 /**
  * Name matching for the "one clinical file, two units" flow.
@@ -59,6 +60,7 @@ export function normalizePatientName(value: unknown): string {
 
 export interface PatientNameMatch {
   patientId: string;
+  masterFileId: string;
   name: string;
   mrn: string;
   age: number;
@@ -67,6 +69,7 @@ export interface PatientNameMatch {
   unitName: string;
   /** True when the candidate file already lives in the unit being admitted to. */
   isSameUnit: boolean;
+  isArchived: boolean;
 }
 
 /**
@@ -84,6 +87,7 @@ export function findPatientNameMatches(
   patients: ReadonlyArray<Patient> | null | undefined,
   units: ReadonlyArray<Unit> | null | undefined,
   currentUnitId?: string,
+  masterFiles: ReadonlyArray<MasterPatientFile> = [],
 ): PatientNameMatch[] {
   const target = normalizePatientName(name);
   if (!target) return [];
@@ -93,21 +97,36 @@ export function findPatientNameMatches(
   }
   if (!unitById.size) return [];
   const wanted = currentUnitId ? String(currentUnitId) : '';
+  const masterFilesBySourceId = new Map<string, MasterPatientFile[]>();
+  for (const file of masterFiles || []) {
+    if (!file?.id || !file.contextIds?.includes(wanted) || normalizePatientName(file.name) !== target) continue;
+    for (const sourceId of file.sourcePatientIds || []) {
+      const linked = masterFilesBySourceId.get(sourceId) || [];
+      linked.push(file);
+      masterFilesBySourceId.set(sourceId, linked);
+    }
+  }
   const seen = new Set<string>();
   const matches: PatientNameMatch[] = [];
   for (const patient of patients || []) {
-    if (!patient || patient.isArchived) continue;
+    if (!patient) continue;
     const patientId = String(patient.id || '');
     if (!patientId || seen.has(patientId)) continue;
     const unitId = String(patient.unitId || '');
-    // The caller's own units only - never a unit they are not a member of.
+    // Admission lookup is deliberately scoped to the selected unit only.
     const unit = unitById.get(unitId);
-    if (!unit) continue;
+    if (!unit || (wanted && unitId !== wanted)) continue;
     const displayName = String(patient.fullName || patient.name || '');
     if (normalizePatientName(displayName) !== target) continue;
+    const linkedMasterFiles = masterFilesBySourceId.get(patientId) || [];
+    const masterFileId = String(patient.masterFileId || (linkedMasterFiles.length === 1 ? linkedMasterFiles[0].id : ''));
+    const stableKey = masterFileId || `mpf-${encodeURIComponent(patientId)}`;
+    if (seen.has(stableKey)) continue;
+    seen.add(stableKey);
     seen.add(patientId);
     matches.push({
       patientId,
+      masterFileId,
       name: displayName,
       mrn: String(patient.mrn || ''),
       age: Number(patient.age || 0),
@@ -115,6 +134,19 @@ export function findPatientNameMatches(
       unitId,
       unitName: String(unit.name || unitId),
       isSameUnit: !!wanted && unitId === wanted,
+      isArchived: !!patient.isArchived,
+    });
+  }
+  for (const file of masterFiles || []) {
+    if (!file || !file.id || !file.contextIds?.includes(wanted)) continue;
+    if (normalizePatientName(file.name) !== target || seen.has(file.id) || file.sourcePatientIds?.some(id => seen.has(id))) continue;
+    const unit = unitById.get(wanted);
+    if (!unit) continue;
+    seen.add(file.id);
+    matches.push({
+      patientId: file.sourcePatientIds?.[0] || '', masterFileId: file.id, name: file.name,
+      mrn: '', age: Number(file.ageYears) || 0, bedNumber: '', unitId: wanted,
+      unitName: String(unit.name || wanted), isSameUnit: true, isArchived: true,
     });
   }
   return matches;

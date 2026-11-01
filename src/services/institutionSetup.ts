@@ -98,6 +98,8 @@ export const MAX_TEAM_SIZE = 10_000;
  * the form can never build a request the rules would refuse.
  */
 export const MAX_CLINIC_SERVICES = 20;
+/** Firestore validates each requested unit individually; this cap keeps rule evaluation below its 1000-expression limit. */
+export const MAX_REQUEST_UNIT_DRAFTS = 50;
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface SetupStorage {
@@ -538,6 +540,9 @@ export function validateInstitutionSetup(
   }
 
   const units = Array.isArray(draft?.unitDrafts) ? draft.unitDrafts : [];
+  if (units.length > MAX_REQUEST_UNIT_DRAFTS) {
+    errors.units = `A single request can include at most ${MAX_REQUEST_UNIT_DRAFTS} units. Submit additional units in another request.`;
+  }
   const minimumUnitsRequired = requestType !== 'clinic';
   if (minimumUnitsRequired && units.length < 1) errors.units = 'Add at least one unit.';
   if (requestType === 'clinic' && units.length > 0) {
