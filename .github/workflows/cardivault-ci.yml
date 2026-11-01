@@ -11,6 +11,9 @@ permissions:
   contents: write
 
 env:
+  # Vite embeds this public Firebase project ID into the production web bundle.
+  # Keep it explicit: webFirebase.ts intentionally has no production fallback.
+  VITE_FIREBASE_PROJECT_ID: ccu-notebook
   VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
   VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
   HAS_CARDIOVAULT_DEBUG_KEYSTORE: ${{ secrets.CARDIOVAULT_DEBUG_KEYSTORE_BASE64 }}
