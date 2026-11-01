@@ -114,10 +114,16 @@ export const AuthorizationService = {
    * e-mail address, so this is the async half of the check in the sync resolver.
    */
   applyPlatformOwner(firebaseUser: { uid: string; email?: string | null; displayName?: string | null }): UserProfile {
+    const ownerEmail = (firebaseUser.email || '').trim().toLowerCase();
+    // A name the physician saved himself always wins over the Google account
+    // name. Otherwise every sign-in silently reverted the profile.
+    const storedOwner = this.getUsers().find(
+      user => user.userId === firebaseUser.uid || (ownerEmail && user.email === ownerEmail),
+    );
     const ownerProfile: UserProfile = {
       userId: firebaseUser.uid,
-      name: firebaseUser.displayName || 'Dr. Mohamed Khalid',
-      email: (firebaseUser.email || '').trim().toLowerCase(),
+      name: storedOwner?.name || firebaseUser.displayName || 'Dr. Mohamed Khalid',
+      email: ownerEmail,
       role: 'department_admin',
       departmentId: 'dept-cardiology',
       assignedUnitIds: [],
@@ -172,7 +178,8 @@ export const AuthorizationService = {
         const repaired = users.map(u => (u.userId === stored.userId || (cleanEmail && u.email.toLowerCase() === cleanEmail)) ? { ...u, role: safeRole } : u);
         this.saveUsers(repaired);
       }
-      const updated: UserProfile = normalizeUserProfile({ ...existing, role: safeRole, userId: firebaseUser.uid, name: firebaseUser.displayName || existing.name });
+      const storedName = existing.name && existing.name !== 'Clinician' ? existing.name : '';
+      const updated: UserProfile = normalizeUserProfile({ ...existing, role: safeRole, userId: firebaseUser.uid, name: storedName || firebaseUser.displayName || cleanEmail.split('@')[0] || 'Clinician' });
       this.setCurrentUser(updated);
       return updated;
     }

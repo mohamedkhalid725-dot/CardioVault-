@@ -9,7 +9,7 @@ import {webCurrentUser,webGoogleSignIn,checkWebRedirectResult,webEmailSignIn,web
 import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,ensureUnitBedsNow,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
 import {clearUnitBedsPending,desiredBeds,markUnitBedsPending,normalizeBedCount,UnitBedsIncompleteError,type UnitSetupResult}from'../services/unitBeds';
-import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,setUnitCapacityLocked,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid } from '../services/workspaceAccess';
+import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,setUnitCapacityLocked,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid,updateOwnDisplayName as saveOwnDisplayName } from '../services/workspaceAccess';
 import {listIndexedWorkspaces,registerWorkspaceInIndex,readWorkspaceName,type IndexedWorkspace } from '../services/workspaceIndex';
 import {getSubscription} from '../services/workspaceSubscription';
 import {syncMemberSubscriptionFromCloud} from '../services/subscriptionRequestCloud';
@@ -54,6 +54,8 @@ export interface AppContextType{
   logout:()=>void;
   currentUser:UserProfile;
   setCurrentUser:(user:UserProfile)=>void;
+  /** Saves the signed-in physician's display name locally and on the cloud team profile. */
+  updateOwnDisplayName:(name:string)=>Promise<void>;
   currentView:AppView;
   setCurrentView:(view:AppView)=>void;
   currentUnitId:string|null;
@@ -150,9 +152,15 @@ function currentFirebaseUid(profileUid?:string):string{
 // Ownership is the /platformOwners document. The local clinical profile must agree
 // with it, otherwise the unit/patient scope filters treat the owner as a unit-less
 // 'pending' account and his dashboard loads empty.
-const resolveProfileFor=async(user:any)=> (await isMasterAccount())
-  ? AuthorizationService.applyPlatformOwner(user)
-  : AuthorizationService.resolveUserForFirebaseAuth(user);
+const resolveProfileFor=async(user:any)=>{
+  const profile=(await isMasterAccount())
+    ? AuthorizationService.applyPlatformOwner(user)
+    : AuthorizationService.resolveUserForFirebaseAuth(user);
+  // The name saved by the physician is the session name everywhere (header, audit
+  // trail, team roster). The Google account name is only a fallback for a new profile.
+  if(profile?.name)StorageService.saveProfileName(profile.name);
+  return profile;
+};
 
 export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[theme,setThemeState]=useState<'dark'|'light'>('dark');
@@ -274,6 +282,16 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    showToast(`Switched active user to ${user.name} (${user.role.toUpperCase()})`, 'info');
  };
 
+  // Saves the physician's display name on the cloud team profile and in the live
+  // session, so the header, roster and audit trail agree immediately. A failure is
+  // thrown to the caller: the UI must never report a save that did not happen.
+  const updateOwnDisplayName=async(name:string)=>{
+   const savedName=await saveOwnDisplayName(name);
+   setCurrentUserState(prev=>prev?.userId?{...prev,name:savedName,updatedAt:new Date().toISOString()}:prev);
+   StorageService.saveAuth({...StorageService.getAuth(),userName:savedName});
+   setAuth(prev=>({...prev,userName:savedName}));
+  };
+
   const hydrateClinicalState=()=>{
    const u=StorageService.getUnits();
    const p=StorageService.getPatients();
@@ -286,6 +304,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
     void refreshHospitals();
   };
  useEffect(()=>{const onRestore=()=>hydrateClinicalState();window.addEventListener('cardiovault-data-restored',onRestore);window.addEventListener('cardiovault-workspace-access-granted',onRestore);return()=>{window.removeEventListener('cardiovault-data-restored',onRestore);window.removeEventListener('cardiovault-workspace-access-granted',onRestore);};},[]);
+ // The cloud team profile is the authority for the display name: when the owner
+ // workspace is opened it can restore a name that this device did not have yet.
+ useEffect(()=>{const onName=(event:Event)=>{const name=String((event as CustomEvent<{name?:string}>).detail?.name||'').trim();if(!name)return;StorageService.saveAuth({...StorageService.getAuth(),userName:name});setAuth(prev=>({...prev,userName:name}));setCurrentUserState(prev=>prev?.userId?{...prev,name}:prev);};window.addEventListener('cardiovault-profile-name-updated',onName);return()=>window.removeEventListener('cardiovault-profile-name-updated',onName);},[]);
  useEffect(()=>{if(isLocalPreview()||!Capacitor.isNativePlatform())return;let handle:{remove:()=>Promise<void>}|null=null;const attach=async()=>{try{handle=await FirebaseAuthentication.addListener('authStateChange',async({user}:any)=>{if(!user?.uid){if(Date.now()<authNullGraceUntil.current)return;const saved=StorageService.getAuth();if(!saved.isAuthenticated)return;let recovered:any=null;try{recovered=await waitForNativeFirebaseUser();}catch{}if(recovered?.uid){authNullGraceUntil.current=0;const profile=await resolveProfileFor(recovered);setCurrentUserState(profile);const session={...saved,isAuthenticated:true,isLocked:false,userEmail:recovered.email||saved.userEmail,userName:StorageService.getProfileName()||saved.userName||recovered.displayName||recovered.email?.split('@')[0],pinCode:''};StorageService.saveAuth(session);setAuth(session);return;}const signedOut={...saved,isAuthenticated:false,isLocked:false,pinCode:''};clearActiveClinicalWorkspace();StorageService.saveAuth(signedOut);setAuth(signedOut);setCurrentView('login');return;}authNullGraceUntil.current=0;const profile=await resolveProfileFor(user);setCurrentUserState(profile);setStoredWorkspaceAccess(null);const session={...StorageService.getAuth(),isAuthenticated:true,isLocked:false,userEmail:user.email||'',userName:StorageService.getProfileName()||user.displayName||user.email?.split('@')[0]||'Physician',pinCode:''};StorageService.saveAuth(session);setAuth(session);setCurrentView('home');localStorage.setItem('cardiovault_google_uid',user.uid);void (async()=>{try{if(await isMasterAccount()){await ensureOwnerWorkspace();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}const cloud=await loadCurrentUserFromCloud();if(cloud?.found||cloud?.access)hydrateClinicalState();if(cloud?.access)window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));}catch(error){console.warn('Native auth state cloud restore failed:',error);}})();});}catch(error){console.warn('Native Firebase auth listener failed:',error);}};void attach();return()=>{if(handle)void handle.remove();};},[]);
  useEffect(()=>{let active=true;installCloudSyncBridge();const boot=async()=>{if(isLocalPreview()){const saved=StorageService.getAuth();seedPreviewData();const demo={...saved,isAuthenticated:true,isLocked:false,userEmail:PREVIEW_USER.email,userName:PREVIEW_USER.name,pinCode:''};StorageService.saveAuth(demo);setAuth(demo);setCurrentUserState({userId:PREVIEW_USER.uid,name:PREVIEW_USER.name,email:PREVIEW_USER.email,role:'department_admin',clinicRole:'doctor',departmentId:'dept-cardiology',assignedUnitIds:['unit-preview-cardiology','unit-preview-ccu'],status:'active',updatedAt:new Date().toISOString()});localStorage.setItem('cardiovault_google_uid',PREVIEW_USER.uid);setStoredWorkspaceAccess({workspaceId:PREVIEW_WORKSPACE_ID,role:'owner',unitId:null,unitName:null});hydrateClinicalState();setCurrentView('home');window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-granted'));return;}const savedAuth=StorageService.getAuth();setThemeState(StorageService.getTheme());if(!Capacitor.isNativePlatform()){const redirectedUser=await checkWebRedirectResult();const webUser=redirectedUser||webCurrentUser();if(webUser){const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:webUser.email||savedAuth.userEmail,userName:StorageService.getProfileName()||savedAuth.userName||webUser.displayName,pinCode:''};setAuth(session);StorageService.saveAuth(session);localStorage.setItem('cardiovault_google_uid',webUser.uid);setCurrentUserState(await resolveProfileFor(webUser));hydrateClinicalState();setCurrentView('home');void loadCurrentUserFromCloud().then(cloud=>{if(active&&(cloud?.found||cloud?.access))hydrateClinicalState();});}else{setAuth({...savedAuth,isAuthenticated:false,isLocked:false});setCurrentView('login');}return;}const firebaseUser=await waitForNativeFirebaseUser();if(!firebaseUser?.uid){clearActiveClinicalWorkspace();const signedOut={...savedAuth,isAuthenticated:false,isLocked:false,pinCode:''};setAuth(signedOut);StorageService.saveAuth(signedOut);setCurrentView('login');return;}const profile=await resolveProfileFor(firebaseUser);setCurrentUserState(profile);setStoredWorkspaceAccess(null);const session={...savedAuth,isAuthenticated:true,isLocked:false,userEmail:firebaseUser.email||savedAuth.userEmail,userName:StorageService.getProfileName()||savedAuth.userName||firebaseUser.displayName,pinCode:''};setAuth(session);StorageService.saveAuth(session);hydrateClinicalState();setCurrentView('home');try{const cloud=await loadCurrentUserFromCloud();if(!active)return;if(cloud?.found)hydrateClinicalState();setLastSyncTime(cloud?.found?new Date().toLocaleTimeString():'');}catch(error){console.warn('Cloud session restore failed:',error);}};void boot();return()=>{active=false;};},[]);
  useEffect(()=>{if(isLocalPreview()||!auth.isAuthenticated)return;let active=true;const check=async()=>{try{if(await isMasterAccount())return;const valid=await validateCurrentWorkspaceAccess();if(valid===false&&active){logout();window.dispatchEvent(new CustomEvent('cardiovault-workspace-access-revoked'));showToast('Your Unit Access Code has been changed or revoked. Please sign in again with the new code.','warning');}}catch(error){console.warn('Workspace access monitor failed:',error);}};const initial=window.setTimeout(()=>void check(),3000);const timer=window.setInterval(()=>void check(),15000);return()=>{active=false;window.clearTimeout(initial);window.clearInterval(timer);};},[auth.isAuthenticated]);
@@ -675,6 +696,6 @@ const readmitPatient=(id:string,unitId:string,bedId:string):boolean=>{
  const syncNow=async()=>{if(isLocalPreview()){showToast('Cloud sync is disabled in the isolated local preview.','info');return;}setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}setLastSyncTime(new Date().toLocaleTimeString());showToast('Cloud sync completed successfully.','success');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
  const resetDatabase=()=>{if(patients.length>0||units.length>0){const answer=window.prompt('This ERASES all units, beds and patients. Type RESET to confirm.');if(String(answer||'').trim().toUpperCase()!=='RESET'){showToast('Reset cancelled.','info');return;}}StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
-  return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,addPreviewUnits,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,hospitals,addHospital,assignUnitToHospital,canWriteUnit,groupUnitsByHospital,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,updateOwnDisplayName,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,addPreviewUnits,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,hospitals,addHospital,assignUnitToHospital,canWriteUnit,groupUnitsByHospital,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
 };
 export const useApp=()=>{const c=useContext(AppContext);if(!c)throw new Error('useApp must be used inside AppProvider');return c;};

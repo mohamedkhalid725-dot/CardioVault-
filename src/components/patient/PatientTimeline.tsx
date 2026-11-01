@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowRight,
   Activity,
   ArrowRightLeft,
   Clock3,
@@ -16,12 +17,15 @@ import {
   X,
 } from 'lucide-react';
 import { Patient } from '../../types/clinical';
+import type { PatientSectionId } from '../../types/clinical';
 import { ClinicalAudioPlayer } from './ClinicalAudioPlayer';
 import { useApp } from '../../context/AppContext';
 
 interface Props {
   patient: Patient;
   onClose: () => void;
+  /** Jumps to the matching section inside the patient file (ECG, Labs, Imaging…). */
+  onOpenSection?: (section: PatientSectionId) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -52,6 +56,24 @@ const MEDICAL_CATEGORIES: TimelineCategory[] = [
   'medications',
   'consultations',
 ];
+
+/**
+ * The patient-file section that owns each timeline category, so a record opened
+ * from the timeline can jump straight to its list inside the patient file.
+ */
+const CATEGORY_SECTION: Record<TimelineCategory, PatientSectionId> = {
+  labs: 'labs',
+  imaging: 'imaging',
+  vitals: 'vitals',
+  progressNotes: 'progress',
+  ecg: 'ecg',
+  procedures: 'procedure',
+  medications: 'medication',
+  consultations: 'orders',
+  admissions: 'overview',
+  transfers: 'overview',
+  discharges: 'overview',
+};
 
 interface CategoryDef {
   id: TimelineCategory;
@@ -680,7 +702,7 @@ export const buildTimelineItems = (patient: Patient, category: TimelineCategory,
 /* Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
+export const PatientTimeline: React.FC<Props> = ({ patient, onClose, onOpenSection }) => {
   const { currentUser } = useApp();
   const isSecretary = currentUser?.clinicRole === 'secretary';
 
@@ -876,42 +898,58 @@ export const PatientTimeline: React.FC<Props> = ({ patient, onClose }) => {
               ) : (
                 <div className="space-y-2">
                   {items.map((item) => (
-                    <button
+                    <div
                       key={item.key}
-                      onClick={() => {
-                        setSelectedItem(item);
-                        setView('detail');
-                      }}
-                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-4 flex items-center justify-between group hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors"
+                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex items-stretch overflow-hidden hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0">
-                          <item.icon className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            {item.badge && (
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                                  item.badgeColor || 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-                                }`}
-                              >
-                                {item.badge}
-                              </span>
-                            )}
-                            <b className="text-sm text-slate-900 dark:text-white truncate">
-                              {item.label}
-                            </b>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedItem(item);
+                          setView('detail');
+                        }}
+                        className="flex-1 min-w-0 p-4 flex items-center justify-between gap-3 text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-white dark:bg-[#111C2E] border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0">
+                            <item.icon className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                           </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                            {item.detail}
-                          </p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              {item.badge && (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                    item.badgeColor || 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                                  }`}
+                                >
+                                  {item.badge}
+                                </span>
+                              )}
+                              <b className="text-sm text-slate-900 dark:text-white truncate">
+                                {item.label}
+                              </b>
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                              {item.detail}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        {item.time ? fmtDate(item.time) : 'Date not recorded'}
-                      </div>
-                    </button>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {item.time ? fmtDate(item.time) : 'Date not recorded'}
+                        </div>
+                      </button>
+                      {onOpenSection && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSection(CATEGORY_SECTION[item.category])}
+                          aria-label="Open this record inside the patient file"
+                          title="Open in patient file"
+                          className="shrink-0 w-12 flex items-center justify-center border-l border-slate-200 dark:border-slate-800 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10"
+                        >
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

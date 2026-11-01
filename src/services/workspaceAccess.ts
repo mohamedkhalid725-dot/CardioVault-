@@ -30,7 +30,16 @@ const newCode=()=>{const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const bytes
 export const getStoredWorkspaceAccess=():WorkspaceAccessState|null=>{try{const value=JSON.parse(localStorage.getItem(ACTIVE_KEY)||'null');return value?.workspaceId?value:null;}catch{return null;}};
 export function getActiveWorkspaceId():string{return getStoredWorkspaceAccess()?.workspaceId||MASTER_WORKSPACE_ID;}
 export const setStoredWorkspaceAccess=(state:WorkspaceAccessState|null)=>{if(state)localStorage.setItem(ACTIVE_KEY,JSON.stringify(state));else localStorage.removeItem(ACTIVE_KEY);};
-export async function ensureOwnerWorkspace():Promise<WorkspaceAccessState|null>{const id=await uid();if(!id||!(await isMasterAccount()))return null;const ownerEmail=String((await currentUser())?.email||MASTER_ACCOUNT_EMAIL).trim().toLowerCase();const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};const workspaceRef=`workspaces/${MASTER_WORKSPACE_ID}`;try{let data:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:workspaceRef});data=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(workspaceRef));data=result.exists()?result.data():null;}if(data?.ownerUid===id||data?.createdBy===id){setStoredWorkspaceAccess(state);}else if((data?.ownerUid||data?.createdBy)&&(data.ownerUid||data.createdBy)!==id){return null;}else{const payload={createdBy:id,createdByEmail:ownerEmail,schemaVersion:12,createdAt:data?.createdAt||new Date().toISOString()};if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:workspaceRef,data:payload,merge:true});else await webSetDoc(webDoc(workspaceRef),payload,{merge:true});setStoredWorkspaceAccess(state);}}catch(error){console.warn('Master workspace bootstrap failed:',error);return null;}try{const owner=AuthorizationService.getCurrentUser();const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;const team={...owner,userId:id,uid:id,name:owner.name||'Dr. Mohamed Khalid',email:ownerEmail,role:'department_admin',departmentId:'dept-cardiology',assignedUnitIds:[],status:'active',updatedAt:new Date().toISOString()};if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:teamRef,data:team,merge:true});else await webSetDoc(webDoc(teamRef),team,{merge:true});}catch(error){console.warn('Owner team registration failed:',error);}return state;}
+export async function ensureOwnerWorkspace():Promise<WorkspaceAccessState|null>{const id=await uid();if(!id||!(await isMasterAccount()))return null;const ownerEmail=String((await currentUser())?.email||MASTER_ACCOUNT_EMAIL).trim().toLowerCase();const state={workspaceId:MASTER_WORKSPACE_ID,role:'owner' as const,unitId:null,unitName:null};const workspaceRef=`workspaces/${MASTER_WORKSPACE_ID}`;try{let data:any=null;if(Capacitor.isNativePlatform()){const result:any=await FirebaseFirestore.getDocument({reference:workspaceRef});data=safe(result?.snapshot);}else{const result=await webGetDoc(webDoc(workspaceRef));data=result.exists()?result.data():null;}if(data?.ownerUid===id||data?.createdBy===id){setStoredWorkspaceAccess(state);}else if((data?.ownerUid||data?.createdBy)&&(data.ownerUid||data.createdBy)!==id){return null;}else{const payload={createdBy:id,createdByEmail:ownerEmail,schemaVersion:12,createdAt:data?.createdAt||new Date().toISOString()};if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:workspaceRef,data:payload,merge:true});else await webSetDoc(webDoc(workspaceRef),payload,{merge:true});setStoredWorkspaceAccess(state);}}catch(error){console.warn('Master workspace bootstrap failed:',error);return null;}try{const owner=AuthorizationService.getCurrentUser();const teamRef=`workspaces/${MASTER_WORKSPACE_ID}/team/${id}`;
+  // The name the physician saved is authoritative. The Google account name is only
+  // the fallback for the very first registration, never a silent overwrite.
+  let storedTeamName='';
+  try{if(Capacitor.isNativePlatform()){storedTeamName=String(safe((await FirebaseFirestore.getDocument({reference:teamRef})).snapshot)?.name||'').trim();}else{const snap=await webGetDoc(webDoc(teamRef));storedTeamName=String((snap.exists()?snap.data():null)?.name||'').trim();}}catch{}
+  const teamName=storedTeamName||String(owner.name||'').trim()||'Dr. Mohamed Khalid';
+  const team={...owner,userId:id,uid:id,name:teamName,email:ownerEmail,role:'department_admin',departmentId:'dept-cardiology',assignedUnitIds:[],status:'active',updatedAt:new Date().toISOString()};
+  if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:teamRef,data:team,merge:true});else await webSetDoc(webDoc(teamRef),team,{merge:true});
+  if(storedTeamName&&storedTeamName!==owner.name){AuthorizationService.setCurrentUser({...owner,name:storedTeamName,updatedAt:new Date().toISOString()});window.dispatchEvent(new CustomEvent('cardiovault-profile-name-updated',{detail:{name:storedTeamName}}));}
+}catch(error){console.warn('Owner team registration failed:',error);}return state;}
 export async function getActiveOwnerWorkspace():Promise<WorkspaceAccessState|null>{const stored=getStoredWorkspaceAccess();if(stored?.role==='owner')return stored;return await ensureOwnerWorkspace();}
 export async function redeemUnitAccessCode(raw:string):Promise<WorkspaceAccessState>{
   const id=await uid();
@@ -250,6 +259,36 @@ export async function setOwnClinicalProfile(name:string,role:SelfClinicalRole):P
   const local=users.find(u=>u.userId===id);
   if(local)AuthorizationService.saveUsers(users.map(u=>u.userId===id?{...u,name:cleanName,role,updatedAt:patch.updatedAt}:u));
   return {...(local||{}),...patch,userId:id};
+}
+/**
+ * Saves the display name of the signed-in account on its own team profile.
+ * `name` is the only field a member may change without the owner, and the same
+ * write works for the platform owner because his profile also lives in /team.
+ * It deliberately does not touch `role`, so it can never be used to self-promote.
+ */
+export async function updateOwnDisplayName(name:string):Promise<string>{
+  const cleanName=String(name||'').trim().replace(/\s+/g,' ');
+  if(!cleanName)throw new Error('Enter a name before saving.');
+  if(cleanName.length>80)throw new Error('Name must be 80 characters or fewer.');
+  const id=await uid();
+  if(!id)throw new Error('A Firebase account must be signed in.');
+  const updatedAt=new Date().toISOString();
+  if(!isLocalPreview()){
+    const ref=`workspaces/${getActiveWorkspaceId()}/team/${id}`;
+    const patch={name:cleanName,updatedAt};
+    try{
+      if(Capacitor.isNativePlatform())await FirebaseFirestore.setDocument({reference:ref,data:patch,merge:true});
+      else await webSetDoc(webDoc(ref),patch,{merge:true});
+    }catch(error:any){
+      const code=String(error?.code||'unknown');
+      const message=String(error?.message||error||'Unknown Firestore error');
+      console.error('Display name save failed:',{code,message,path:ref,error});
+      throw new Error(`FIRESTORE_NAME_SAVE_FAILED\nCode: ${code}\nMessage: ${message}\nPath: ${ref}`);
+    }
+  }
+  const users=AuthorizationService.getUsers();
+  if(users.some(user=>user.userId===id))AuthorizationService.saveUsers(users.map(user=>user.userId===id?{...user,name:cleanName,updatedAt}:user));
+  return cleanName;
 }
 export async function getTeamDirectoryMembers():Promise<any[]>{
   const id=await uid();
