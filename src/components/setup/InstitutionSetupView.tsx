@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   BedDouble,
@@ -9,7 +9,6 @@ import {
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
-  CreditCard,
   Layers,
   Plus,
   RotateCcw,
@@ -21,10 +20,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import type { InstitutionSetupDraft, InstitutionUnitDraft, UnitTypeId } from '../../types/departmentTeam';
-import type { PaymentMethodChoice, PricingLineItem, SubscriptionRequestType } from '../../types/clinicArea';
 import { BUILTIN_UNIT_TYPES, defaultBedCountFor } from '../../services/unitCatalog';
 import {
-  MAX_CLINIC_SERVICES,
   REQUIRED_STEPS,
   clearDraft,
   createUnitsFromDraft,
@@ -38,18 +35,10 @@ import {
   setupProgress,
   unitReceivesOperations,
   unitTypeLabel,
+  MAX_REQUEST_UNIT_DRAFTS,
   validateInstitutionSetup,
-  validateSetupCompanion,
   type SetupCompanionRecord,
 } from '../../services/institutionSetup';
-import { ReadOnlyAreaError, buildLineItems, loadRequests, submitRequest } from '../../services/subscriptionRequests';
-import {
-  describeCloudReason,
-  mirrorSubscriptionRequest,
-  onboardingRequestId,
-  submitOnboardingRequest,
-} from '../../services/subscriptionRequestCloud';
-import { startWorkspaceTrial } from '../../services/workspaceSubscription';
 import { planProductionSetupUnits, runProductionSetup } from '../../services/institutionSetupProduction';
 import { StorageService } from '../../services/storage';
 import { isLocalPreview } from '../../config/localPreview';
@@ -57,32 +46,9 @@ import { isLocalPreview } from '../../config/localPreview';
 /**
  * Institution setup wizard.
  *
- * The wizard keeps ONE device-local draft (plus its subscription companion
- * record) so a reload resumes exactly where the typing stopped. What "Save"
- * does depends on the build:
- *
- *  - Production: submits the subscription request, delivers it to the owner
- *    through `mirrorSubscriptionRequest`, then creates the configured units and
- *    their beds through the real `addUnit` / `completeUnitSetup` path. Unit ids
- *    are the draft `tempId`s, so a retry never duplicates a unit and an
- *    owner-issued code points at the real unit document.
- *  - Isolated local preview: keeps the device-only `addPreviewUnits` path, with
- *    no Firestore write of any kind.
- *
- * Agent C additions (approved plan §7/§8/§19):
- *  - STEP 'request' is the FIRST step: request type (قسم / عيادة / الاثنين
- *    معاً), contact phone, clinic extras (doctors count, services) — stored in
- *    the companion record so the read-only draft contract never changes.
- *  - The Payment step replaces the plan step: payment method choice FIRST
- *    (currency follows the method), itemized lines per area, the
- *    awaiting-confirmation pricing note, and honest InstaPay / WhatsApp /
- *    Visa-not-live blocks.
- *  - Final save submits the subscription request once (starts the 3-day
- *    trial — never a payment) and then creates the units locally. The
- *    read-only gate inside createUnitsFromDraft blocks unit creation after a
- *    trial expires / code is revoked without approval.
- *  - Per-keystroke persistence for BOTH records: a reload resumes exactly
- *    where the typing stopped (draft + companion).
+ * Creates workspace units and beds. Unit access activation is handled
+ * separately by the platform owner; this wizard has no request, trial, or
+ * payment flow.
  */
 
 interface StepDef {
@@ -92,45 +58,12 @@ interface StepDef {
 }
 
 const STEPS: StepDef[] = [
-  { id: 'request', label: 'Request', icon: ClipboardList },
   { id: 'institution', label: 'Institution', icon: Building2 },
   { id: 'units', label: 'Units', icon: Layers },
   { id: 'team', label: 'Team', icon: Users },
-  { id: 'payment', label: 'Payment', icon: CreditCard },
   { id: 'review', label: 'Review', icon: ClipboardCheck },
 ];
 
-const REQUEST_TYPE_OPTIONS: { id: SubscriptionRequestType; label: string; hint: string }[] = [
-  { id: 'department', label: 'Department', hint: 'One or more units — billed per unit' },
-  { id: 'clinic', label: 'Clinic', hint: 'Clinic doctor seats — billed per doctor' },
-  { id: 'both', label: 'Department and clinic', hint: 'Both areas are priced separately' },
-];
-
-const REQUEST_TYPE_LABEL: Record<SubscriptionRequestType, string> = {
-  department: 'Department',
-  clinic: 'Clinic',
-  both: 'Department and clinic',
-};
-
-const PAYMENT_METHOD_LABEL: Record<PaymentMethodChoice, string> = {
-  instapay: 'InstaPay',
-  visa: 'Visa',
-};
-
-const INSTAPAY_LINK = 'https://ipn.eg/S/mohmd272/instapay/2mMDmP';
-const INSTAPAY_BENEFICIARY = 'mohmd272@instapay';
-const WHATSAPP_LINK = 'https://wa.me/201013040631';
-const WHATSAPP_LABEL = '+201013040631';
-const AWAITING_CONFIRMATION_NOTE =
-  'Subscriptions renew every 30 days. Early renewal adds 30 days after the current expiry; late renewal starts on approval.';
-const TRIAL_NOTICE =
-  'The request is saved in this local preview and starts a 3-day trial. This does not confirm payment; the owner must approve it.';
-const PRODUCTION_TRIAL_NOTICE =
-  'The request is sent to the owner and starts a 3-day trial. This is not a payment - the owner checks the transfer by hand before approving.';
-const ONBOARDING_TRIAL_NOTICE =
-  'The request goes to the owner and starts your one 3-day trial clock. This is not a payment - the owner checks the transfer by hand, then activates the workspace.';
-const VISA_NOT_LIVE_NOTE = 'Visa checkout is not connected yet. Contact the owner on WhatsApp to arrange payment.';
-const INSTAPAY_WARNING = 'Opening the link or sending a transfer does not verify payment. The owner confirms payment manually.';
 
 const inputClass =
   'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 dark:border-slate-700 dark:bg-[#0B1526] dark:text-slate-100';
@@ -154,20 +87,9 @@ const SummaryRow = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-const lineItemLabel = (area: PricingLineItem['area']): string =>
-  area === 'department' ? 'Department (units)' : 'Clinic (doctors)';
-
 const friendlySaveError = (error: unknown): string => {
   const raw = String((error as Error)?.message || error || '').trim();
-  if (error instanceof ReadOnlyAreaError || raw.startsWith('read-only-area')) {
-    return 'This area is read-only until the owner approves the request or renews the subscription.';
-  }
   switch (raw.split(':')[0]) {
-    case 'invalid-phone': return 'Enter a valid contact phone number (at least 7 digits).';
-    case 'request-type-missing': return 'Choose a request type first.';
-    case 'units-required': return 'Add at least one department unit.';
-    case 'doctors-count-required': return 'Enter the clinic doctor count (1–200).';
-    case 'payment-method-missing': return 'Choose a payment method first.';
     case 'institution-name-required': return 'Enter the institution or clinic name.';
     default: return raw || 'Could not save locally. Please try again.';
   }
@@ -178,9 +100,7 @@ const emptyCompanion: SetupCompanionRecord = { id: 'current', updatedAtMs: 0, sc
 interface InstitutionSetupViewProps {
   /**
    * 'standard' is the in-app wizard (the account already has workspace access).
-   * 'onboarding' is the standalone first-run wizard a brand-new account reaches
-   * from the access gate, before it owns any membership. It only files the
-   * subscription request; it never creates a unit.
+    * 'onboarding' displays the owner-issued access-code instructions.
    */
   mode?: 'standard' | 'onboarding';
   onExit?: () => void;
@@ -195,7 +115,6 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
   const [actionError, setActionError] = useState('');
   const [saveNotice, setSaveNotice] = useState('');
   const [saving, setSaving] = useState(false);
-  const [serviceInput, setServiceInput] = useState('');
   // The wizard itself is identical in both builds; only the save path and the
   // copy differ. Production writes the request to Firestore and creates real
   // units; the isolated preview keeps its device-only draft.
@@ -218,46 +137,14 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
     saveDraft(next);
   }, [currentUser?.name]);
 
-  const requestType = companion.requestType;
-  const validation = useMemo(() => validateInstitutionSetup(draft, requestType), [draft, requestType]);
-  const progress = useMemo(() => setupProgress(draft, requestType), [draft, requestType]);
-
-  // Request-step check WITHOUT the unit count: units come in a later step and
-  // must not gate the very first screen.
-  const companionStepCheck = useMemo(() => validateSetupCompanion(companion), [companion]);
-  // Save-time check WITH the unit count + the payment method requirement.
-  const companionSaveCheck = useMemo(() => {
-    const check = validateSetupCompanion(companion, draft.unitDrafts.length);
-    if (!companion.paymentMethod) {
-      check.errors.paymentMethod = 'Choose a payment method in the Payment step.';
-    }
-    check.ok = Object.keys(check.errors).length === 0;
-    return check;
-  }, [companion, draft.unitDrafts.length]);
-
-  // Itemized pricing preview (method drives the currency; nothing is paid here).
-  const lineItems = useMemo<PricingLineItem[]>(
-    () =>
-      companion.paymentMethod
-        ? buildLineItems(
-            requestType || 'department',
-            requestType === 'clinic' ? 0 : draft.unitDrafts.length,
-            companion.doctorsCount || 0,
-            companion.paymentMethod,
-          )
-        : [],
-    [companion.paymentMethod, companion.doctorsCount, requestType, draft.unitDrafts.length],
-  );
-  const totalLine = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
-  const lineCurrency = lineItems[0]?.currency || 'EGP';
+  const validation = useMemo(() => validateInstitutionSetup(draft), [draft]);
+  const progress = useMemo(() => setupProgress(draft), [draft]);
 
   const step = STEPS[stepIndex];
   const isLastStep = stepIndex === STEPS.length - 1;
   const totalBeds = validation.totalBeds;
   const unitCount = draft.unitDrafts.length;
-  const requestSubmitted = !!companion.lastSubmittedRequestId;
-  const canSave = validation.ok && companionSaveCheck.ok;
-  const trialNotice = previewMode ? TRIAL_NOTICE : onboardingMode ? ONBOARDING_TRIAL_NOTICE : PRODUCTION_TRIAL_NOTICE;
+  const canSave = validation.ok;
 
   const update = (patch: Partial<InstitutionSetupDraft>) => {
     setDraft((previous) => saveDraft({ ...previous, ...patch }));
@@ -281,6 +168,7 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
   };
 
   const addUnit = () => {
+    if (draft.unitDrafts.length >= MAX_REQUEST_UNIT_DRAFTS) return;
     setDraft((previous) =>
       saveDraft({ ...previous, unitDrafts: [...previous.unitDrafts, emptyUnitDraft('cardiology')] }),
     );
@@ -306,31 +194,9 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
     });
   };
 
-  const addService = () => {
-    const label = serviceInput.trim();
-    if (!label) return;
-    if ((companion.clinicServices || []).length >= MAX_CLINIC_SERVICES) {
-      setActionError(`You can list up to ${MAX_CLINIC_SERVICES} clinic services.`);
-      setServiceInput('');
-      return;
-    }
-    if (companion.clinicServices?.includes(label)) {
-      setServiceInput('');
-      return;
-    }
-    updateCompanion({ clinicServices: [...(companion.clinicServices || []), label] });
-    setServiceInput('');
-  };
-
-  const removeService = (label: string) => {
-    updateCompanion({ clinicServices: (companion.clinicServices || []).filter((entry) => entry !== label) });
-  };
-
   const stepIsValid = (stepId: string): boolean => {
     const errors = validation.errors;
     switch (stepId) {
-      case 'request':
-        return companionStepCheck.ok;
       case 'institution':
         return !errors.institutionName;
       case 'units':
@@ -341,8 +207,6 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
         );
       case 'team':
         return !errors.adminName && !errors.adminEmail && !errors.teamSize;
-      case 'payment':
-        return !!companion.paymentMethod;
       case 'review':
       default:
         // The payment step requires the method (above), and review is only a
@@ -353,14 +217,8 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
 
   const goNext = () => {
     if (!stepIsValid(step.id)) return;
-    if (step.id === 'payment') {
-      // The payment step completes BOTH the wizard's own id and the legacy
-      // required step id 'plan', so REQUIRED_STEPS validation stays satisfied.
-      setDraft((previous) =>
-        saveDraft(markStepCompleted(markStepCompleted(previous, 'payment'), 'plan')),
-      );
-    } else if (step.id === 'request') {
-      setDraft((previous) => saveDraft(markStepCompleted(previous, 'request')));
+    if (step.id === 'team') {
+      setDraft((previous) => saveDraft(markStepCompleted(markStepCompleted(previous, 'team'), 'plan')));
     } else if ((REQUIRED_STEPS as readonly string[]).includes(step.id)) {
       setDraft((previous) => saveDraft(markStepCompleted(previous, step.id)));
     }
@@ -368,240 +226,43 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
   };
 
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
-
-  /**
-   * First-run save for an account that owns no membership yet.
-   *
-   * Order is the safety contract:
-   *   1. build + validate the request locally (nothing is written on failure);
-   *   2. create/reuse the account's OWN workspace;
-   *   3. create/reuse the ONE deterministic request document;
-   *   4. write the owner's discovery index last.
-   *
-   * No unit and no bed is created here. The rules refuse a unit to an account
-   * without a membership, and creating structure before the owner has seen the
-   * request is exactly the misleading success we must avoid. A retry reuses the
-   * same request id, so nothing is duplicated.
-   */
-  const saveOnboarding = async () => {
-    const uid = String(currentUser?.userId || '').trim();
-    if (!uid) throw new Error('Sign in again before sending the request.');
-
-    const requestId = onboardingRequestId(uid);
-    const { request } = submitRequest({
-      id: requestId,
-      phone: companion.phone || '',
-      requestType: requestType as SubscriptionRequestType,
-      institutionName: draft.institutionName,
-      unitDrafts: draft.unitDrafts.map((unit) => ({
-        id: unit.tempId,
-        name: unit.name,
-        typeLabel: unitTypeLabel(unit),
-        beds: unit.beds,
-        receivesOperations: unitReceivesOperations(companion, unit.tempId),
-      })),
-      doctorsCount: requestType !== 'department' ? companion.doctorsCount || 0 : 0,
-      clinicServices: requestType !== 'department' ? companion.clinicServices || [] : [],
-      chosenPaymentMethod: companion.paymentMethod as PaymentMethodChoice,
-      actorUid: uid,
-      actorName: currentUser?.name,
-      actorEmail: currentUser?.email,
-    });
-
-    const result = await submitOnboardingRequest(request, {
-      uid,
-      email: currentUser?.email,
-      name: currentUser?.name,
-      workspaceName: draft.institutionName,
-    });
-
-    setCompanion(
-      saveSetupCompanion({
-        lastSubmittedRequestId: requestId,
-        lastSubmittedAtMs: request.submittedAtMs,
-        lastRequestDeliveredAtMs: result.delivered ? Date.now() : 0,
-      }),
-    );
-
-    if (!result.ok) {
-      setSaved(null);
-      const prefix = result.delivered
-        ? 'The request itself was saved in your workspace, but the owner queue index did not update. '
-        : '';
-      setActionError(
-        `${prefix}${describeCloudReason(result.reason)} Nothing was created: units are only added after the owner activates the workspace.`,
-      );
-      return;
-    }
-
-    const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
-    setDraft(saveDraft(withSteps));
-    setSaved({ count: 0, totalBeds: 0 });
-
-    // The planned 3-day trial is opened on the account's own workspace, once.
-    // A refusal here is not a failure of the request: say so instead of
-    // pretending a trial started.
-    const trial = await startWorkspaceTrial(result.workspaceId || '').catch(() => null);
-    let trialNote = '';
-    if (trial?.trialEndsAtMs) {
-      trialNote = ` Your 3-day trial clock started and ends on ${new Date(trial.trialEndsAtMs).toLocaleDateString()}.`;
-    } else {
-      trialNote = ' The 3-day trial clock could not be started here; the owner starts it when the workspace is activated.';
-    }
-
-    if (!result.created && result.status && result.status !== 'pending') {
-      // Do not claim a fresh delivery for a request the owner has already
-      // decided: say what the stored decision actually is.
-      setSaveNotice(
-        `This request was already submitted and its current status is "${result.status}". Nothing was sent twice and no unit was created.${trialNote}`,
-      );
-      return;
-    }
-
-    setSaveNotice(
-      `Request ${requestId} is with the owner. No unit or bed was created yet: the owner reviews the request, confirms the payment by hand and activates the workspace. ` +
-        `You can safely press Save again - the same request is reused, never duplicated.${trialNote}`,
-    );
-  };
-
   const save = async () => {
     if (saving) return;
     setActionError('');
     setSaveNotice('');
     if (!canSave) return;
+    if (onboardingMode) {
+      setActionError('A unit must first be created and activated by the platform owner. Ask the owner for a unit access code; no subscription request or payment is needed.');
+      return;
+    }
     setSaving(true);
     try {
-      if (onboardingMode) {
-        await saveOnboarding();
-        return;
-      }
-      const previousRequest = loadRequests().find((request) => request.id === companion.lastSubmittedRequestId);
-      const alreadyCreated = new Set(units.map((unit) => unit.id));
-      const coveredUnitIds = new Set((previousRequest?.unitDrafts || []).map((unit) => String(unit.id || '')));
-      const unrequestedUnits = draft.unitDrafts.filter(
-        (unit) => !alreadyCreated.has(unit.tempId) && !coveredUnitIds.has(unit.tempId),
-      );
-      const isFirstRequest = !previousRequest;
-      const shouldSubmit = isFirstRequest || unrequestedUnits.length > 0;
-      let deliveredRequestId =
-        (companion.lastRequestDeliveredAtMs || 0) > 0 ? String(companion.lastSubmittedRequestId || '') : '';
-
-      // 1) The request goes first: the owner must see it even if creating the
-      //    units fails afterwards. A follow-up request covers only newly added
-      //    units, so it cannot restart another unit's trial clock.
-      let currentRequest = previousRequest || null;
-      if (shouldSubmit) {
-        const requestUnits = isFirstRequest ? draft.unitDrafts : unrequestedUnits;
-        const newRequestType: SubscriptionRequestType = isFirstRequest
-          ? (requestType as SubscriptionRequestType)
-          : 'department';
-        const { request } = submitRequest({
-          phone: companion.phone || '',
-          requestType: newRequestType,
-          institutionName: draft.institutionName,
-          unitDrafts: requestUnits.map((unit) => ({
-            id: unit.tempId,
-            name: unit.name,
-            typeLabel: unitTypeLabel(unit),
-            beds: unit.beds,
-            receivesOperations: unitReceivesOperations(companion, unit.tempId),
-          })),
-          doctorsCount: isFirstRequest && newRequestType !== 'department' ? companion.doctorsCount || 0 : 0,
-          clinicServices: isFirstRequest && newRequestType !== 'department' ? companion.clinicServices || [] : [],
-          chosenPaymentMethod: companion.paymentMethod as PaymentMethodChoice,
-          actorUid: currentUser?.userId,
-          actorName: currentUser?.name,
-          actorEmail: currentUser?.email,
-        });
-        currentRequest = request;
-        deliveredRequestId = '';
-        setCompanion(
-          saveSetupCompanion({
-            lastSubmittedRequestId: request.id,
-            lastSubmittedAtMs: request.submittedAtMs,
-            lastRequestDeliveredAtMs: 0,
-          }),
-        );
-      }
-
-      // 2) Deliver the request to the owner when this build can reach Firestore.
-      //    A request whose delivery never confirmed is retried here, including
-      //    after a unit-creation failure, so nothing is silently left on device.
-      let cloudNotice = '';
-      if (!previewMode && currentRequest && currentRequest.id !== deliveredRequestId) {
-        const mirror = await mirrorSubscriptionRequest(currentRequest, {
-          subscriberId: currentUser?.userId,
-        });
-        if (mirror.ok) {
-          deliveredRequestId = currentRequest.id;
-          setCompanion(saveSetupCompanion({ lastRequestDeliveredAtMs: Date.now() }));
-          cloudNotice =
-            'Request delivered to the owner and visible from any signed-in device. The owner confirms payment by hand.';
-        } else {
-          cloudNotice = `${describeCloudReason(mirror.reason)} Press Save again to retry the delivery - nothing is duplicated.`;
-        }
-        setSaveNotice(cloudNotice);
-      }
-
       if (previewMode) {
-        // 3a) Isolated preview: device-only units, exactly as before.
         const created = createUnitsFromDraft(draft, units, undefined, currentUser?.userId);
         const createdCount = addPreviewUnits(created);
         const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
         setDraft(saveDraft(withSteps));
-        setSaved({
-          count: createdCount,
-          totalBeds: created.reduce((sum, unit) => sum + (Number(unit.totalBeds) || 0), 0),
-        });
+        setSaved({ count: createdCount, totalBeds: created.reduce((sum, unit) => sum + (Number(unit.totalBeds) || 0), 0) });
+        setSaveNotice('Setup saved locally for this isolated preview.');
         return;
       }
-
-      // 3b) Production: create the missing units from the saved list (not this
-      //     render's copy), then finish every configured unit. A retry reuses the
-      //     same unit ids, so nothing is created twice.
       const plan = planProductionSetupUnits(draft, StorageService.getUnits(), currentUser?.userId);
-      if (plan.targets.length === 0) {
-        // A clinic-only request has no department unit to provision; the request
-        // itself is the deliverable.
-        const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
-        setDraft(saveDraft(withSteps));
-        setSaved({ count: 0, totalBeds: 0 });
-        if (!cloudNotice) {
-          setSaveNotice('No department unit was configured, so only the clinic scope was requested.');
-        }
-        return;
-      }
-
       const outcome = await runProductionSetup({
         plan,
-        createUnit: (unit) =>
-          createUnit(unit.name, unit.type, unit.totalBeds, {
-            id: unit.id,
-            unitTypeId: unit.unitTypeId,
-            config: unit.config,
-          }),
-        completeUnit: (unitId) => completeUnitSetup(unitId),
+        createUnit: unit => createUnit(unit.name, unit.type, unit.totalBeds, { id: unit.id, unitTypeId: unit.unitTypeId, config: unit.config }),
+        completeUnit: unitId => completeUnitSetup(unitId),
       });
-
       if (outcome.ok) {
         const withSteps = REQUIRED_STEPS.reduce((acc, required) => markStepCompleted(acc, required), draft);
         setDraft(saveDraft(withSteps));
         setSaved({ count: outcome.completed.length, totalBeds: outcome.totalBeds });
+        setSaveNotice('Units and beds were created. Each unit needs a 30-day license from the platform owner before members can access it.');
         return;
       }
-
-      // Partial: keep the draft and the submitted request id so the next Save
-      // finishes only the missing work.
       setSaved(null);
-      const details = outcome.failures
-        .slice(0, 3)
-        .map((failure) => `${failure.name}: ${failure.message}`)
-        .join(' ');
+      const details = outcome.failures.slice(0, 3).map(failure => `${failure.name}: ${failure.message}`).join(' ');
       const extra = outcome.failures.length > 3 ? ` (+${outcome.failures.length - 3} more)` : '';
-      setActionError(
-        `${outcome.completed.length} of ${plan.targets.length} units finished. ${details}${extra} ` +
-          'Press Save again - units and beds that already exist are never duplicated.',
-      );
+      setActionError(`${outcome.completed.length} of ${plan.targets.length} units finished. ${details}${extra} Press Save again to retry; existing units and beds are not duplicated.`);
     } catch (error) {
       setSaved(null);
       setActionError(friendlySaveError(error));
@@ -641,30 +302,18 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
     return [];
   })();
 
+  if (onboardingMode) return (
+    <div className="min-h-[60vh] flex items-center justify-center p-4">
+      <section className={`${cardClass} w-full max-w-lg space-y-4`}>
+        <h1 className="text-xl font-extrabold text-slate-900 dark:text-white">Unit access required</h1>
+        <p className="text-sm text-slate-600 dark:text-slate-300">The platform owner must create or activate a unit and send you its access code. Entering that code adds you to the unit; there is no subscription request, trial, or payment step.</p>
+        {onExit && <button type="button" onClick={onExit} className="inline-flex items-center gap-1 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold dark:border-slate-700"><ChevronLeft className="h-4 w-4" /> Back to access code</button>}
+      </section>
+    </div>
+  );
+
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      {onboardingMode && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-[#111C2E]">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-              New institution
-            </p>
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-              Request a subscription - no workspace membership is needed to send it.
-            </p>
-          </div>
-          {onExit && (
-            <button
-              type="button"
-              onClick={onExit}
-              className="inline-flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-cyan-400 hover:text-cyan-700 dark:border-slate-700 dark:text-slate-200 dark:hover:text-cyan-300"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Back
-            </button>
-          )}
-        </div>
-      )}
       <div
         className={`rounded-3xl border p-4 ${
           previewMode
@@ -676,20 +325,9 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
           <ShieldCheck className="h-4 w-4 shrink-0" />
           {previewMode
             ? 'Local preview data - saved on this device only, not synced.'
-            : onboardingMode
-              ? 'First-run setup: the request is delivered to the owner and appears in the owner queue on every device. No unit is created until the owner activates the workspace.'
-              : 'Saved to your workspace: the request goes to the owner, and units and beds are created in the cloud.'}
+             : 'Units and beds are created in your workspace. Each unit needs its own 30-day license from the platform owner before members can access it.'}
         </p>
       </div>
-
-      {requestSubmitted && (
-        <div className="rounded-3xl border border-cyan-300 bg-cyan-50 p-4 text-cyan-900 dark:border-cyan-500/40 dark:bg-cyan-500/10 dark:text-cyan-200">
-          <p className="flex items-center gap-2 text-sm font-medium">
-            <ClipboardList className="h-4 w-4 shrink-0" />
-            {trialNotice}
-          </p>
-        </div>
-      )}
 
       {saveNotice && (
         <div className="rounded-3xl border border-slate-300 bg-slate-50 p-4 text-slate-800 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-200">
@@ -706,10 +344,8 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
             <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Institution setup</h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {previewMode
-                ? 'Start with a subscription request, add the institution and units, then review. Nothing is created in the cloud.'
-                : onboardingMode
-                  ? 'Start with a subscription request, add the institution and the units you plan to run, then send it. The owner reviews it before anything is created.'
-                  : 'Start with a subscription request, add the institution and units, then review. Saving sends the request to the owner and creates the units and their beds.'}
+                ? 'Configure the institution and units, then save to the isolated local preview. Nothing is created in the cloud.'
+                : 'Configure the institution and units, then save them to your workspace. Ask the platform owner to activate each unit for 30 days.'}
             </p>
           </div>
           <div className="flex gap-2 text-xs">
@@ -761,159 +397,6 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
       </div>
 
       <div className={cardClass}>
-        {step.id === 'request' && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Subscription request</h2>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {previewMode
-                  ? 'Submitting starts a 3-day local preview trial. No payment is recorded; activation requires owner approval.'
-                  : onboardingMode
-                    ? 'Submitting sends the request to the owner and starts your one 3-day trial clock. No payment is recorded in the app; the owner confirms the transfer and activates the workspace.'
-                    : 'Submitting sends the request to the owner and starts a 3-day trial. No payment is recorded in the app; activation requires the owner to confirm the transfer.'}
-              </p>
-            </div>
-
-            <div>
-              <span className={labelClass}>Request type</span>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {REQUEST_TYPE_OPTIONS.map((option) => {
-                  const selected = requestType === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => updateCompanion({ requestType: option.id })}
-                      className={`rounded-2xl border p-3 text-start transition ${
-                        selected
-                          ? 'border-cyan-500 bg-cyan-50 dark:border-cyan-400 dark:bg-cyan-500/10'
-                          : 'border-slate-200 hover:border-cyan-300 dark:border-slate-700'
-                      }`}
-                    >
-                      <span className="block text-sm font-semibold text-slate-900 dark:text-white">
-                        {option.label}
-                      </span>
-                      <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
-                        {option.hint}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <FieldError message={companionStepCheck.errors.requestType} />
-            </div>
-
-            <div>
-              <label className={labelClass} htmlFor="setup-phone">
-                Contact phone number
-              </label>
-              <input
-                id="setup-phone"
-                className={inputClass}
-                value={companion.phone || ''}
-                onChange={(event) => updateCompanion({ phone: event.target.value })}
-                inputMode="tel"
-                placeholder="e.g. 01012345678"
-              />
-              <FieldError message={companionStepCheck.errors.phone} />
-            </div>
-
-            {requestType === 'clinic' && (
-              <div>
-                <label className={labelClass} htmlFor="setup-clinic-name">
-                  Clinic name
-                </label>
-                <input
-                  id="setup-clinic-name"
-                  className={inputClass}
-                  value={draft.institutionName}
-                  onChange={(event) => update({ institutionName: event.target.value })}
-                  placeholder="e.g. Dr. Mahmoud's Clinic"
-                />
-              </div>
-            )}
-
-            {(requestType === 'clinic' || requestType === 'both') && (
-              <>
-                <div>
-                  <label className={labelClass} htmlFor="setup-doctors-count">
-                    Number of clinic doctors
-                  </label>
-                  <input
-                    id="setup-doctors-count"
-                    type="number"
-                    min={1}
-                    max={200}
-                    className={inputClass}
-                    value={companion.doctorsCount ?? ''}
-                    onChange={(event) => {
-                      const parsed = Number(event.target.value);
-                      updateCompanion({
-                        doctorsCount: Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0,
-                      });
-                    }}
-                  />
-                  <FieldError message={companionStepCheck.errors.doctorsCount} />
-                </div>
-
-                <div>
-                  <label className={labelClass} htmlFor="setup-service-input">
-                    Clinic services (optional)
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      id="setup-service-input"
-                      className={inputClass}
-                      value={serviceInput}
-                      onChange={(event) => setServiceInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          addService();
-                        }
-                      }}
-                      placeholder="e.g. Cardiology consultations"
-                    />
-                    <button
-                      type="button"
-                      onClick={addService}
-                      className="inline-flex items-center gap-1 rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-cyan-600"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </div>
-                  {companion.clinicServices && companion.clinicServices.length > 0 && (
-                    <ul className="mt-2 flex flex-wrap gap-2">
-                      {companion.clinicServices.map((label) => (
-                        <li
-                          key={label}
-                          className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        >
-                          {label}
-                          <button
-                            type="button"
-                            onClick={() => removeService(label)}
-                            aria-label={`remove ${label}`}
-                            className="text-slate-400 transition hover:text-rose-500"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </>
-            )}
-
-            {(requestType === 'department' || requestType === 'both') && (
-              <p className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                Add units in the next step. Each unit is priced on its own line.
-              </p>
-            )}
-          </div>
-        )}
-
         {step.id === 'institution' && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">Institution</h2>
@@ -940,10 +423,11 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
               <button
                 type="button"
                 onClick={addUnit}
+                disabled={draft.unitDrafts.length >= MAX_REQUEST_UNIT_DRAFTS}
                 className="inline-flex items-center gap-1 rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-cyan-600"
               >
                 <Plus className="h-4 w-4" />
-                Add unit
+                {draft.unitDrafts.length >= MAX_REQUEST_UNIT_DRAFTS ? `Limit reached (${MAX_REQUEST_UNIT_DRAFTS})` : 'Add unit'}
               </button>
             </div>
 
@@ -1045,8 +529,7 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
                         <FieldError message={validation.errors[`unit.${unit.tempId}.beds`]} />
                       </div>
 
-                      {(requestType === 'department' || requestType === 'both') && (
-                        <label className="flex items-center gap-2 self-end rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                      <label className="flex items-center gap-2 self-end rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
                           <input
                             type="checkbox"
                             className="h-4 w-4 accent-cyan-600"
@@ -1054,8 +537,7 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
                             onChange={(event) => toggleUnitOperations(unit.tempId, event.target.checked)}
                           />
                           Unit receives operations
-                        </label>
-                      )}
+                      </label>
                     </div>
 
                     {rowErrors.length > 0 && (
@@ -1125,157 +607,15 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
             </div>
           </div>
         )}
-
-        {step.id === 'payment' && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Payment method</h2>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Choose a method to see the total. The 30-day price depends on the selected method.
-              </p>
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              {(
-                [
-                  { id: 'instapay' as const, title: 'InstaPay', hint: 'EGP 500 per unit or doctor / 30 days' },
-                  { id: 'visa' as const, title: 'Visa', hint: 'USD 20 per unit or doctor / 30 days — contact the owner' },
-                ]
-              ).map((option) => {
-                const selected = companion.paymentMethod === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => updateCompanion({ paymentMethod: option.id })}
-                    className={`rounded-2xl border p-3 text-start transition ${
-                      selected
-                        ? 'border-cyan-500 bg-cyan-50 dark:border-cyan-400 dark:bg-cyan-500/10'
-                        : 'border-slate-200 hover:border-cyan-300 dark:border-slate-700'
-                    }`}
-                  >
-                    <span className="block text-sm font-semibold text-slate-900 dark:text-white">
-                      {option.title}
-                    </span>
-                    <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
-                      {option.hint}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {companion.paymentMethod ? (
-              <div className="space-y-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
-                <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-                  {AWAITING_CONFIRMATION_NOTE}
-                </p>
-                <ul className="space-y-1 text-sm">
-                  {lineItems.length === 0 && (
-                    <li className="text-xs text-slate-500 dark:text-slate-400">
-                      No priced lines yet — add details in earlier steps.
-                    </li>
-                  )}
-                  {lineItems.map((item) => (
-                    <li
-                      key={item.area}
-                      className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/60"
-                    >
-                      <span className="text-slate-700 dark:text-slate-200">{lineItemLabel(item.area)}</span>
-                      <span className="text-slate-800 dark:text-slate-100">
-                        {item.quantity} × {item.unitPrice} {item.currency} = {item.subtotal} {item.currency}
-                      </span>
-                    </li>
-                  ))}
-                  {requestType === 'both' && lineItems.length === 2 && (
-                    <li className="flex items-center justify-between rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-900 dark:bg-cyan-500/10 dark:text-cyan-200">
-                      <span>Total</span>
-                      <span>
-                        {totalLine} {lineCurrency}
-                      </span>
-                    </li>
-                  )}
-                </ul>
-
-                {companion.paymentMethod === 'instapay' ? (
-                  <div className="space-y-2 rounded-2xl border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200">
-                    <p>
-                      InstaPay transfer link:{' '}
-                      <a
-                        href={INSTAPAY_LINK}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold underline"
-                      >
-                        {INSTAPAY_LINK}
-                      </a>
-                    </p>
-                    <p>
-                      Beneficiary: <b>{INSTAPAY_BENEFICIARY}</b>
-                    </p>
-                    <p className="font-semibold">{INSTAPAY_WARNING}</p>
-                    <p>
-                      For questions or alternatives, contact the owner on WhatsApp:{' '}
-                      <a
-                        href={WHATSAPP_LINK}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold underline"
-                      >
-                        {WHATSAPP_LABEL}
-                      </a>
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-                    <p className="font-semibold">{VISA_NOT_LIVE_NOTE}</p>
-                    <p>
-                      WhatsApp:{' '}
-                      <a
-                        href={WHATSAPP_LINK}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold underline"
-                      >
-                        {WHATSAPP_LABEL}
-                      </a>
-                    </p>
-                    <p>No payment is processed in the app. A Visa provider is not connected yet.</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {companionStepCheck.ok ? 'Choose a payment method to see the itemized price.' : ''}
-              </p>
-            )}
-          </div>
-        )}
-
         {step.id === 'review' && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">Review</h2>
 
             <div>
-              <SummaryRow label="Request type" value={requestType ? REQUEST_TYPE_LABEL[requestType] : '—'} />
-              <SummaryRow label="Phone" value={companion.phone || '—'} />
               <SummaryRow label="Institution" value={draft.institutionName || '—'} />
               <SummaryRow label="Admin" value={draft.adminName || '—'} />
               <SummaryRow label="Email" value={draft.adminEmail || '—'} />
               <SummaryRow label="Team size" value={String(draft.teamSize)} />
-              {(requestType === 'clinic' || requestType === 'both') && (
-                <SummaryRow label="Doctors" value={String(companion.doctorsCount ?? '—')} />
-              )}
-              {(requestType === 'clinic' || requestType === 'both') && (
-                <SummaryRow
-                  label="Clinic services"
-                  value={companion.clinicServices?.length ? companion.clinicServices.join(', ') : '—'}
-                />
-              )}
-              <SummaryRow
-                label="Payment method"
-                value={companion.paymentMethod ? PAYMENT_METHOD_LABEL[companion.paymentMethod] : '—'}
-              />
               {draft.planId && (
                 <SummaryRow label="Plan (legacy)" value={draft.planId} />
               )}
@@ -1307,57 +647,13 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
               </ul>
             </div>
 
-            <div>
-              <p className="mb-1 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Itemized pricing (per chosen method)
-              </p>
-              <ul className="space-y-1">
-                {lineItems.map((item) => (
-                  <li
-                    key={item.area}
-                    className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60"
-                  >
-                    <span className="text-slate-700 dark:text-slate-200">{lineItemLabel(item.area)}</span>
-                    <span className="text-slate-800 dark:text-slate-100">
-                      {item.quantity} × {item.unitPrice} {item.currency} = {item.subtotal} {item.currency}
-                    </span>
-                  </li>
-                ))}
-                {requestType === 'both' && lineItems.length === 2 && (
-                  <li className="flex items-center justify-between rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-900 dark:bg-cyan-500/10 dark:text-cyan-200">
-                    <span>Total</span>
-                    <span>
-                      {totalLine} {lineCurrency}
-                    </span>
-                  </li>
-                )}
-              </ul>
-              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{AWAITING_CONFIRMATION_NOTE}</p>
-            </div>
-
-            {validation.ok && companionSaveCheck.ok ? (
+            {validation.ok ? (
               <p className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
                 <CheckCircle2 className="h-4 w-4" />
-                {requestSubmitted
-                  ? previewMode
-                    ? 'Ready to save the units locally (request already submitted).'
-                    : onboardingMode
-                      ? 'The request is already with the owner. Sending it again reuses the same record - nothing is duplicated.'
-                      : 'Ready: the request is already submitted, so Save only finishes the remaining units and beds.'
-                  : previewMode
-                    ? 'Ready to save: the request will be stored locally and a 3-day trial will start.'
-                    : onboardingMode
-                      ? 'Ready to send: the request goes to the owner and starts your one 3-day trial clock. No unit is created yet.'
-                      : 'Ready to save: the request is sent to the owner, a 3-day trial starts, and the units are created.'}
+                Ready to save this institution and its unit/bed setup.
               </p>
             ) : (
               <div className="space-y-1 rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
-                {Object.entries(companionSaveCheck.errors).map(([key, message]) => (
-                  <p key={`companion-${key}`} className="flex items-start gap-1">
-                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    {message}
-                  </p>
-                ))}
                 {visibleErrors.map(([key, message]) => (
                   <p key={key} className="flex items-start gap-1">
                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -1380,19 +676,6 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
           </div>
         )}
 
-        {step.id !== 'request' && step.id !== 'review' && Object.entries(companionStepCheck.errors).length > 0 && (
-          <div className="mt-4 rounded-2xl bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-            <p className="mb-1 flex items-center gap-1 font-semibold">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              The subscription request is incomplete. Return to the first step:
-            </p>
-            {Object.entries(companionStepCheck.errors).map(([key, message]) => (
-              <p key={`companion-banner-${key}`}>
-                {REQUEST_ERROR_LABEL[key] || 'Subscription request'}: {message}
-              </p>
-            ))}
-          </div>
-        )}
       </div>
 
       <div className={`${cardClass} flex flex-wrap items-center justify-between gap-3`}>
@@ -1429,19 +712,9 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
           {saved && (
             <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" />
-              {onboardingMode
-                ? 'Request delivered - nothing is created until the owner activates the workspace.'
-                : saved.count === 0
-                  ? 'Request delivered - no department unit was configured.'
-                  : previewMode
-                    ? `Setup saved locally - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds are now available in this preview.`
-                    : `Setup complete - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds created. Only the owner can change bed counts now.`}
-            </span>
-          )}
-          {saved && requestSubmitted && (
-            <span className="inline-flex items-center gap-1 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-              <ClipboardList className="h-4 w-4" />
-              {trialNotice}
+              {previewMode
+                ? `Setup saved locally - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds are now available in this preview.`
+                : `Setup complete - ${saved.count} ${saved.count === 1 ? 'unit' : 'units'} and ${saved.totalBeds} beds created. Only the owner can change bed counts now.`}
             </span>
           )}
           <button
@@ -1451,19 +724,7 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
             className="inline-flex items-center gap-1 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
           >
             <Check className="h-4 w-4" />
-            {saving
-              ? 'Saving…'
-              : requestSubmitted
-                ? previewMode
-                  ? 'Save setup'
-                  : onboardingMode
-                    ? 'Send request again (safe)'
-                    : 'Finish setup'
-                : previewMode
-                  ? 'Submit request and save setup'
-                  : onboardingMode
-                    ? 'Submit request to the owner'
-                    : 'Submit request and create units'}
+            {saving ? 'Saving…' : 'Save setup'}
           </button>
           {saved && (
             <button
@@ -1479,14 +740,6 @@ export const InstitutionSetupView = ({ mode = 'standard', onExit }: InstitutionS
       </div>
     </div>
   );
-};
-
-const REQUEST_ERROR_LABEL: Record<string, string> = {
-  requestType: 'Request type',
-  phone: 'Contact phone',
-  doctorsCount: 'Doctor count',
-  units: 'Units',
-  paymentMethod: 'Payment method',
 };
 
 export default InstitutionSetupView;

@@ -3,6 +3,7 @@ import{ArrowLeft,Edit,ArrowRightLeft,LogOut,ChevronDown}from'lucide-react';
 import{useApp}from'../../context/AppContext';
 import{Patient,PatientStatus}from'../../types/clinical';
 import{AuthorizationService}from'../../services/authorizationService';
+import{canTransferBetweenUnits,isAvailableLifecycleBed}from'../../services/patientLifecycleAccess';
 interface PatientFileHeaderProps{patient:Patient;onEditClick?:()=>void;readOnly?:boolean;onBackClick?:()=>void;}
 
 export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEditClick,readOnly=false,onBackClick})=>{
@@ -13,18 +14,19 @@ export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEdit
  // rechecks source+destination authorization and bed occupancy immediately
  // before saving; this pre-check disables Confirm when no bed is available.
  const authorizedUnits=AuthorizationService.filterAuthorizedUnits(units,currentUser);
- const transferUnits=authorizedUnits.filter(u=>canWriteUnit(u.id)&&AuthorizationService.canPerformAction(currentUser,'transfer_patient',{unitId:u.id}));
- const currentUnit=getUnitById(patient.unitId);const currentBed=beds.find(b=>b.id===patient.bedId);const availableBeds=beds.filter(b=>b.unitId===targetUnitId&&(!b.patientId||!!patients.find(p=>p.id===b.patientId)?.isArchived));
+   const transferUnits=authorizedUnits.filter(u=>canTransferBetweenUnits(currentUser,patient.unitId,u.id,canWriteUnit,(user,unitId)=>AuthorizationService.canPerformAction(user,'transfer_patient',{unitId})));
+   const sourceTransferAllowed=transferUnits.length>0;
+   const currentUnit=getUnitById(patient.unitId);const currentBed=beds.find(b=>b.id===patient.bedId);const availableBeds=beds.filter(b=>b.unitId===targetUnitId&&isAvailableLifecycleBed(b,patients));
  const topSentinel=useRef<HTMLDivElement|null>(null); useEffect(()=>{const node=topSentinel.current;if(!node)return;const observer=new IntersectionObserver(([entry])=>setCompact(!entry.isIntersecting),{root:null,threshold:0,rootMargin:'-58px 0px 0px 0px'});observer.observe(node);return()=>observer.disconnect();},[]);
- const handleTransfer=(e:React.FormEvent)=>{e.preventDefault();if(!targetBedId)return;if(transferPatient(patient.id,targetUnitId,targetBedId))setShowTransferModal(false);};
- const handleDischarge=(e:React.FormEvent)=>{e.preventDefault();dischargePatient(patient.id,dischargeReason,dischargeSummary);setShowDischargeModal(false);};
+ const handleTransfer=async(e:React.FormEvent)=>{e.preventDefault();if(!targetBedId)return;if(await transferPatient(patient.id,targetUnitId,targetBedId))setShowTransferModal(false);};
+ const handleDischarge=async(e:React.FormEvent)=>{e.preventDefault();if(await dischargePatient(patient.id,dischargeReason,dischargeSummary))setShowDischargeModal(false);};
  const handleStatusChange=(newStatus:PatientStatus)=>{if(!readOnly)updatePatient(patient.id,{status:newStatus});};
- const openTransfer=()=>{const valid=transferUnits.find(u=>u.id===patient.unitId);setTargetUnitId(valid?patient.unitId:(transferUnits[0]?.id||''));setTargetBedId('');setShowTransferModal(true);};
+  const openTransfer=()=>{setTargetUnitId(transferUnits[0]?.id||'');setTargetBedId('');setShowTransferModal(true);};
  return <>
   <div ref={topSentinel} className="h-px w-full" aria-hidden="true" />
   <div className="sticky z-40 w-full bg-white/96 dark:bg-[#111C2E]/96 backdrop-blur-xl border-b border-slate-200/90 dark:border-slate-800/90 shadow-sm" style={{top:'3.65rem'}}>
    <div className="max-w-7xl mx-auto w-full px-3 sm:px-6">
-    <div className="relative h-[4.05rem]">
+     <div className="relative min-h-[4.05rem] pb-11 sm:pb-0">
      <div className={`absolute inset-x-0 top-0 flex items-center gap-2.5 min-h-[4.05rem] ${compact?'opacity-100 translate-y-0':'opacity-100'}`}>
       <button onClick={()=>onBackClick?onBackClick():setCurrentView(readOnly?'archive':'census')} className="rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 p-2 shrink-0 transition-colors"><ArrowLeft className="w-5 h-5"/></button>
       <div className="relative shrink-0">
@@ -35,9 +37,9 @@ export const PatientFileHeader:React.FC<PatientFileHeaderProps>=({patient,onEdit
        <div className="flex items-center gap-2 min-w-0"><h1 className={`font-extrabold truncate ${compact?'text-sm':'text-lg sm:text-xl'}`}>{patient.fullName}</h1>{readOnly?<span className="text-[9px] font-bold px-2 py-1 rounded-full bg-amber-500/15 text-amber-600 shrink-0">READ ONLY</span>:<div className="relative shrink-0"><select value={patient.status} onChange={e=>handleStatusChange(e.target.value as PatientStatus)} className={`appearance-none text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-full border pr-6 ${patient.status==='Critical'?'bg-rose-500/15 text-rose-500 border-rose-500/40':patient.status==='Unstable'?'bg-amber-500/15 text-amber-500 border-amber-500/40':patient.status==='Stable'?'bg-emerald-500/15 text-emerald-500 border-emerald-500/40':'bg-slate-100 text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}><option>Not documented</option><option>Critical</option><option>Unstable</option><option>Stable</option></select><ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"/></div>}</div>
        <div className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">MRN: <b>{patient.mrn}</b> • {currentUnit?.name||'Unit'} • Bed {currentBed?.bedNumber||'Archived'} • {patient.age}y / {patient.sex}</div>
       </div>
-      {!compact&&!readOnly&&<div className="hidden sm:flex items-center gap-1.5 shrink-0"><button onClick={onEditClick} className="flex items-center gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-bold"><Edit className="w-3 h-3 text-cyan-500"/>Edit</button><button onClick={transferUnits.some(u=>u.id===patient.unitId)?openTransfer:undefined} disabled={!transferUnits.some(u=>u.id===patient.unitId)} className={`flex items-center gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-bold ${transferUnits.some(u=>u.id===patient.unitId)?'text-sky-500':'text-slate-400'}`}><ArrowRightLeft className="w-3 h-3 text-sky-500"/>Transfer</button><button onClick={()=>setShowDischargeModal(true)} className="flex items-center gap-1 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-rose-600 px-2.5 py-1.5 text-[10px] font-bold"><LogOut className="w-3 h-3"/>Discharge</button></div>}
+        {!compact&&!readOnly&&<div className="absolute left-12 right-0 top-[4.05rem] flex items-center gap-1.5 sm:static sm:ml-auto sm:shrink-0"><button onClick={onEditClick} className="hidden sm:flex items-center gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-bold"><Edit className="w-3 h-3 text-cyan-500"/>Edit</button><button onClick={openTransfer} disabled={!sourceTransferAllowed||transferUnits.length===0} className={`flex items-center gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-bold ${sourceTransferAllowed&&transferUnits.length?'text-sky-500':'text-slate-400'}`}><ArrowRightLeft className="w-3 h-3 text-sky-500"/>Transfer</button><button onClick={()=>setShowDischargeModal(true)} className="flex items-center gap-1 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-rose-600 px-2.5 py-1.5 text-[10px] font-bold"><LogOut className="w-3 h-3"/>Discharge</button></div>}
      </div>
-     {!compact&&<div className="absolute left-12 right-0 top-[4.05rem] flex items-center justify-between gap-2 pb-3"><div className="min-w-0 text-[10px] sm:text-xs text-slate-500 truncate"><b className="text-slate-700 dark:text-slate-300">Diagnosis:</b> {patient.primaryDiagnosis||'Not documented'}</div></div>}
+      {!compact&&<div className="hidden sm:flex absolute left-12 right-0 top-[4.05rem] items-center justify-between gap-2 pb-3"><div className="min-w-0 text-[10px] sm:text-xs text-slate-500 truncate"><b className="text-slate-700 dark:text-slate-300">Diagnosis:</b> {patient.primaryDiagnosis||'Not documented'}</div></div>}
     </div>
    </div>
   </div>

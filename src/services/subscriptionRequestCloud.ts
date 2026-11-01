@@ -47,6 +47,7 @@
 
 import type { SubscriptionCodeRecord, SubscriptionRequest } from '../types/clinicArea';
 import { isLocalPreview } from '../config/localPreview.ts';
+import { MAX_REQUEST_UNIT_DRAFTS } from './institutionSetup.ts';
 import { PRICE_EGP, PRICE_USD, cacheCodes, cacheRequests, loadCodes, loadRequests } from './subscriptionRequests.ts';
 import type { SubscriptionStorage } from './subscriptionRequests.ts';
 
@@ -89,6 +90,7 @@ export type CloudSkipReason =
   | 'subscriber-mismatch'
   | 'method-invalid'
   | 'units-required'
+  | 'units-limit'
   | 'doctors-count-invalid'
   | 'clinic-services-invalid'
   | 'amount-invalid'
@@ -193,6 +195,9 @@ export function buildCloudRequestDoc(
   const fail = (reason: CloudSkipReason): CloudRequestBuild => ({ ok: false, reason, unitIds });
 
   if (!request || !clean(request.id)) return fail('invalid-request');
+  if (asArray<SubscriptionRequest['unitDrafts'][number]>(request.unitDrafts).length > MAX_REQUEST_UNIT_DRAFTS) {
+    return fail('units-limit');
+  }
   const workspaceId = clean(context?.workspaceId);
   if (!workspaceId) return fail('no-workspace');
   const subscriberId = clean(context?.subscriberId);
@@ -1094,6 +1099,8 @@ export function describeCloudReason(reason?: string): string {
       return 'Cloud delivery is disabled on this build, so this record stays on this device.';
     case 'units-required':
       return 'A department request needs at least one department unit of your membership. Add a unit to deliver it to the owner.';
+    case 'units-limit':
+      return `A single request can include at most ${MAX_REQUEST_UNIT_DRAFTS} units. Submit additional units in another request.`;
     case 'doctors-count-invalid':
       return 'A clinic request needs a doctor count between 1 and 200 before it can be delivered.';
     case 'clinic-services-invalid':

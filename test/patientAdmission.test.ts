@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type {Patient} from '../src/types/clinical.ts';
-import { isAtOrAfterCurrentAdmission, prepareReadmittedPatient, toLocalIsoTimestamp, formatLocalAdmissionDate, formatLocalAdmissionTime } from '../src/services/patientAdmission.ts';
+import { isAtOrAfterCurrentAdmission, prepareReadmittedPatient, toLocalIsoTimestamp, formatLocalAdmissionDate, formatLocalAdmissionTime, resolveAdmissionRetry } from '../src/services/patientAdmission.ts';
 
 const patientResetFixture:any={
-  id:'p-reset',mrn:'MRN-RESET',fullName:'Fixture Patient',name:'Fixture Alias',age:55,sex:'Male',gender:'male',weight:80,height:175,photoUrl:'photo://old',
+  id:'p-reset',mrn:'MRN-RESET',fullName:'Fixture Patient',name:'Fixture Alias',age:55,sex:'Male',gender:'male',weight:80,height:175,photoUrl:'photo://old',masterFileId:'master-reset',
   unitId:'unit-old',unitIds:['unit-old'],bedId:'bed-old',bedNumber:'B-01',departmentId:'dept-old',status:'Critical',admissionDate:'2026-10-01',admissionTime:'09:00',primaryDiagnosis:'Old ACS',diagnosis:'Old diagnosis',secondaryDiagnoses:['Old secondary'],allergies:['Old allergy'],codeStatus:'Full Code',
   isArchived:true,archiveReason:'Discharged Home',archiveDate:'2026-10-08',currentAdmissionStartedAt:'2026-10-01T09:00:00+03:00',additionalConditions:['Previous admission condition'],dischargeSummary:'Old discharge',
   pastAdmissions:[],
@@ -27,6 +27,13 @@ const admitted = {
   clinicalSummary: { chiefComplaint: 'Chest pain' },
   vitalsHistory: [{ id: 'v1' }], labResults: [{ id: 'l1' }],
 } as any;
+
+test('partial admission retry reuses the committed patient instead of creating another active record', () => {
+  const committed = { id: 'attempt-1', masterFileId: 'master-1', unitId: 'unit-a', bedId: 'bed-a', isArchived: false } as any;
+  assert.equal(resolveAdmissionRetry([committed], 'attempt-1', 'unit-a', 'bed-a', 'master-1'), committed);
+  assert.equal(resolveAdmissionRetry([committed], 'attempt-1', 'unit-a', 'bed-a', 'master-1')?.id, 'attempt-1');
+  assert.throws(() => resolveAdmissionRetry([committed], 'attempt-1', 'unit-b', 'bed-b'), /already used/);
+});
 
 test('current-admission filter excludes records before the explicit admission start', () => {
   const startedAt = '2026-10-06T10:00:00+03:00';

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { appendAuditEvent } from '../../services/localAuditLog';
+import { isAvailableLifecycleBed } from '../../services/patientLifecycleAccess';
 import { assertUnitWritable, computeUnitEntitlementState, subscriptionHistoryExists } from '../../services/subscriptionRequests';
 import type { WaitingEntry, WaitingStatus } from '../../types/departmentTeam';
 import {
@@ -176,7 +177,7 @@ export const WaitingListView: React.FC<WaitingListViewProps> = ({ workspaceId: w
   }, [patients, patientQuery]);
 
   const freeBeds = useMemo(
-    () => beds.filter((bed) => bed.unitId === unitId && !bed.patientId),
+    () => beds.filter((bed) => bed.unitId === unitId && isAvailableLifecycleBed(bed, patients)),
     [beds, unitId]
   );
 

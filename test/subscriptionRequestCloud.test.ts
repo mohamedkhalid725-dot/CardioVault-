@@ -128,6 +128,23 @@ test('buildCloudRequestDoc satisfies every create predicate in firestore.rules',
   assert.equal(doc.amount, 1000, 'two units at EGP 500');
 });
 
+test('buildCloudRequestDoc refuses requests above the Firestore-safe unit-draft cap', () => {
+  const request = {
+    ...departmentRequest(),
+    unitDrafts: Array.from({ length: 51 }, (_, index) => ({
+      id: `unit-${index + 1}`,
+      name: `Unit ${index + 1}`,
+      typeLabel: 'CCU',
+      beds: 6,
+      receivesOperations: false,
+    })),
+  };
+  assert.equal(
+    buildCloudRequestDoc(request, { workspaceId: WORKSPACE, subscriberId: UID }).reason,
+    'units-limit',
+  );
+});
+
 test('buildCloudRequestDoc delivers a priced clinic-only request', () => {
   const request = clinicOnlyRequest();
   assert.deepEqual(requestUnitIds(request), []);
