@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - phase1-mic-staging
+      - v2.1-build
 
 permissions:
   contents: read
@@ -31,6 +32,12 @@ jobs:
 
       - name: Summary input tests
         run: npm run test:summary-input
+
+      - name: Master patient file tests
+        run: npm run test:master-files
+
+      - name: Department team tests
+        run: npm run test:department-team
 
       - name: Web build
         run: npm run build
