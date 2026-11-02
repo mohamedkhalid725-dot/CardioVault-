@@ -475,13 +475,18 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       // Lab observations are events above; analyte charts and numeric tables exist only here.
       if (has('labs')) {
         titleBlock('Appendix — Laboratory Trends & Results');
+        let previousLabPanel = '';
         for (const analyte of aggregateLabResults(p)) {
+          if (analyte.panel !== previousLabPanel) {
+            previousLabPanel = analyte.panel;
+            titleBlock(analyte.panel);
+          }
           const numeric = analyte.results.flatMap(r => {
             const n=Number(r.value), t=r.timestamp?Date.parse(r.timestamp):NaN;
             return Number.isFinite(n)&&Number.isFinite(t)?[{n,t,unit:String(r.unit||'')}]:[];
           });
           const units=[...new Set(numeric.map(point=>point.unit))];
-          para(analyte.name, analyte.panel);
+          para(analyte.name, '');
           if(numeric.length&&units.length===1){
             const points=numeric.sort((a,b)=>a.t-b.t),min=Math.min(...points.map(point=>point.n)),max=Math.max(...points.map(point=>point.n));
             const span=max-min||Math.max(Math.abs(max)*.1,1),low=min-span*.1,high=max+span*.1,x0=points[0].t,x1=points[points.length-1].t;

@@ -1,10 +1,11 @@
 import type { LabPanel, LabResult, Patient } from '../../../types/clinical';
+import { panelForTest } from '../../../services/labResultParser.ts';
 
-const LEGACY_FIELDS: Array<{ field: keyof Omit<LabPanel, 'date' | 'customLabs'>; name: string; unit: string }> = [
-  ['hb','Hemoglobin','g/dL'],['wbc','WBC','10^3/µL'],['platelets','Platelets','10^3/µL'],['hct','Hematocrit','%'],['rbc','RBC','10^6/µL'],['mcv','MCV','fL'],['mch','MCH','pg'],['mchc','MCHC','g/dL'],
-  ['urea','Urea / BUN','mg/dL'],['creatinine','Creatinine','mg/dL'],['egfr','eGFR','mL/min/1.73 m²'],['uricAcid','Uric Acid','mg/dL'],['na','Sodium','mmol/L'],['k','Potassium','mmol/L'],['cl','Chloride','mmol/L'],['ca','Calcium','mg/dL'],['mg','Magnesium','mg/dL'],['phosphate','Phosphate','mg/dL'],
-  ['ast','AST','U/L'],['alt','ALT','U/L'],['alp','ALP','U/L'],['bilirubin','Total Bilirubin','mg/dL'],['albumin','Albumin','g/dL'],['totalProtein','Total Protein','g/dL'],['pt','PT','sec'],['inr','INR','ratio'],['aptt','aPTT','sec'],['fibrinogen','Fibrinogen','mg/dL'],['troponin','Troponin','ng/L'],['ckmb','CK-MB','ng/mL'],['bnp','BNP','pg/mL'],['ntProBnp','NT-proBNP','pg/mL'],['crp','CRP','mg/L'],['esr','ESR','mm/hr'],['procalcitonin','Procalcitonin','ng/mL'],['glucose','Glucose','mg/dL'],['hba1c','HbA1c','%'],['cholesterol','Total Cholesterol','mg/dL'],['triglycerides','Triglycerides','mg/dL'],['ldl','LDL-C','mg/dL'],['hdl','HDL-C','mg/dL'],['lactate','Lactate','mmol/L'],['dDimer','D-Dimer','mg/L FEU'],['tsh','TSH','mIU/L'],
-].map(([field,name,unit])=>({field:field as keyof Omit<LabPanel,'date'|'customLabs'>,name,unit}));
+const LEGACY_FIELDS: Array<{ field: keyof Omit<LabPanel, 'date' | 'customLabs'>; name: string; unit: string; panel: string }> = [
+  ['hb','Hemoglobin','g/dL','CBC'],['wbc','WBC','10^3/µL','CBC'],['platelets','Platelets','10^3/µL','CBC'],['hct','Hematocrit','%','CBC'],['rbc','RBC','10^6/µL','CBC'],['mcv','MCV','fL','CBC'],['mch','MCH','pg','CBC'],['mchc','MCHC','g/dL','CBC'],
+  ['urea','Urea / BUN','mg/dL','Renal'],['creatinine','Creatinine','mg/dL','Renal'],['egfr','eGFR','mL/min/1.73 m²','Renal'],['uricAcid','Uric Acid','mg/dL','Renal'],['na','Sodium','mmol/L','Electrolytes'],['k','Potassium','mmol/L','Electrolytes'],['cl','Chloride','mmol/L','Electrolytes'],['ca','Calcium','mg/dL','Electrolytes'],['mg','Magnesium','mg/dL','Electrolytes'],['phosphate','Phosphate','mg/dL','Electrolytes'],
+  ['ast','AST','U/L','LFT'],['alt','ALT','U/L','LFT'],['alp','ALP','U/L','LFT'],['bilirubin','Total Bilirubin','mg/dL','LFT'],['albumin','Albumin','g/dL','LFT'],['totalProtein','Total Protein','g/dL','LFT'],['pt','PT','sec','Coagulation'],['inr','INR','ratio','Coagulation'],['aptt','aPTT','sec','Coagulation'],['fibrinogen','Fibrinogen','mg/dL','Coagulation'],['troponin','Troponin','ng/L','Cardiac Markers'],['ckmb','CK-MB','ng/mL','Cardiac Markers'],['bnp','BNP','pg/mL','Cardiac Markers'],['ntProBnp','NT-proBNP','pg/mL','Cardiac Markers'],['crp','CRP','mg/L','Inflammatory'],['esr','ESR','mm/hr','Inflammatory'],['procalcitonin','Procalcitonin','ng/mL','Inflammatory'],['glucose','Glucose','mg/dL','Metabolic'],['hba1c','HbA1c','%','Metabolic'],['cholesterol','Total Cholesterol','mg/dL','Lipid Profile'],['triglycerides','Triglycerides','mg/dL','Lipid Profile'],['ldl','LDL-C','mg/dL','Lipid Profile'],['hdl','HDL-C','mg/dL','Lipid Profile'],['lactate','Lactate','mmol/L','Metabolic'],['dDimer','D-Dimer','mg/L FEU','Coagulation'],['tsh','TSH','mIU/L','Thyroid'],
+ ].map(([field,name,unit,panel])=>({field:field as keyof Omit<LabPanel,'date'|'customLabs'>,name,unit,panel}));
 
 export type ExportLabResult = LabResult & { legacy?: boolean; panel?: string };
 
@@ -17,13 +18,13 @@ export const pdfChartX = (timestamp: number, start: number, end: number, left: n
 
 export const legacyLabResults = (panels: LabPanel[] = []): ExportLabResult[] => panels.flatMap(panel => {
   const timestamp = typeof panel.date === 'string' ? panel.date : '';
-  const fields = LEGACY_FIELDS.flatMap(({field,name,unit}) => {
+  const fields = LEGACY_FIELDS.flatMap(({field,name,unit,panel: clinicalPanel}) => {
     const value = panel[field] as unknown;
     if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) return [];
-    return [{testName:name,value:value as string|number,unit,timestamp,panel:'Legacy'}];
+    return [{testName:name,value:value as string|number,unit,timestamp,panel:clinicalPanel}];
   });
   const custom = Array.isArray(panel.customLabs) ? panel.customLabs.flatMap(result => result?.value == null || !String(result.name||'').trim() ? [] : [{
-    testName:String(result.name).trim(),value:result.value,unit:result.unit||'',referenceRange:result.referenceRange||'',timestamp,panel:'Legacy custom',
+     testName:String(result.name).trim(),value:result.value,unit:result.unit||'',referenceRange:result.referenceRange||'',timestamp,panel:panelForTest(String(result.name).trim()),
   }]) : [];
   return [...fields,...custom].map(result=>({...result,legacy:true}));
 });
@@ -44,14 +45,14 @@ export const orderLabResults = <T extends {timestamp?: string}>(results:T[]):T[]
   return ta===null?(tb===null?0:1):tb===null?-1:ta-tb;
 });
 
-/** Merge old and new storage formats by analyte, so each analyte has exactly one chart/table. */
+/** Combine observations only when their clinical panel, analyte, and unit all match. */
 export const aggregateLabResults = (patient: Pick<Patient,'labResults'|'labs'>) => {
   const all: ExportLabResult[] = [...(patient.labResults||[]),...legacyLabResults(patient.labs||[])].map(r=>({
-    ...r,panel:String(r.panel||'Laboratory'),testName:String(r.testName||r.name||'Laboratory Test').trim(),
+    ...r,panel:String(r.panel||panelForTest(String(r.testName||r.name||'Laboratory Test'))),testName:String(r.testName||r.name||'Laboratory Test').trim(),
   }));
   const analytes = new Map<string,ExportLabResult[]>();
-  all.forEach(result=>{const key=result.testName!.trim().toLocaleLowerCase();analytes.set(key,[...(analytes.get(key)||[]),result]);});
-  return [...analytes].map(([key,results])=>({key,name:results[0].testName||'Laboratory Test',panel:[...new Set(results.map(r=>r.panel||'Laboratory'))].join(' / '),results:orderLabResults(results)})).sort((a,b)=>a.name.localeCompare(b.name));
+  all.forEach(result=>{const key=JSON.stringify([result.panel||'Laboratory',result.testName!.trim().toLocaleLowerCase(),String(result.unit||'').trim().toLocaleLowerCase()]);analytes.set(key,[...(analytes.get(key)||[]),result]);});
+  return [...analytes].map(([key,results])=>({key,name:results[0].testName||'Laboratory Test',panel:results[0].panel||'Laboratory',results:orderLabResults(results)})).sort((a,b)=>a.panel.localeCompare(b.panel)||a.name.localeCompare(b.name)||String(a.results[0]?.unit||'').localeCompare(String(b.results[0]?.unit||'')));
 };
 
 export type PdfTimelineEvent = {timestamp?:string;type:string;title:string;details:string;source:string};

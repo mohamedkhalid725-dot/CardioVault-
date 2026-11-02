@@ -8,8 +8,8 @@ test('aggregates each analyte once and retains every modern value in ascending t
     {panel:'Chemistry',testName:'Creatinine',value:1,unit:'mg/dL',timestamp:'2025-01-01'},
     {panel:'CBC',testName:'WBC',value:5,unit:'10^3/uL',timestamp:'2025-01-01'},
   ]});
-  assert.deepEqual(result.map(x=>x.name),['Creatinine','WBC']);
-  assert.deepEqual(result[0].results.map(x=>x.value),[1,2]);
+  assert.deepEqual(result.map(x=>`${x.panel}:${x.name}`),['CBC:WBC','Chemistry:Creatinine']);
+  assert.deepEqual(result.find(x=>x.name==='Creatinine')?.results.map(x=>x.value),[1,2]);
 });
 
 test('merges legacy standard fields and custom analytes with modern data', () => {
@@ -17,9 +17,9 @@ test('merges legacy standard fields and custom analytes with modern data', () =>
     labResults:[{panel:'Chemistry',name:'Creatinine',value:1.2,unit:'mg/dL',timestamp:'2025-01-03'}],
     labs:[{date:'2025-01-01',creatinine:1,customLabs:[{name:'Novel marker',value:'positive',unit:'qualitative',referenceRange:'negative'}]} as any],
   });
-  const creatinine=groups.find(a=>a.name==='Creatinine');
-  assert.equal(creatinine?.results.length,2);
-  assert.deepEqual(creatinine?.results.map(r=>r.value),[1,1.2]);
+  const creatinine=groups.filter(a=>a.name==='Creatinine');
+  assert.deepEqual(creatinine.map(group=>[group.panel,group.results.length]),[['Chemistry',1],['Renal',1]]);
+  assert.deepEqual(creatinine.map(group=>group.results[0].value),[1.2,1]);
   assert.ok(groups.some(a=>a.name==='Novel marker'));
 });
 
@@ -101,10 +101,30 @@ test('each lab observation has one timeline event and one merged appendix analyt
     {panel:'Chemistry',testName:'Creatinine',value:2,unit:'mg/dL',timestamp:'2025-01-02'},
   ]};
   const timeline=buildPdfTimeline(patient,['labs']).filter(event=>event.type==='Laboratory');
-  const appendix=aggregateLabResults(patient).find(analyte=>analyte.name==='Creatinine');
+  const appendix=aggregateLabResults(patient).filter(analyte=>analyte.name==='Creatinine');
   assert.equal(timeline.length,2);
-  assert.equal(appendix?.results.length,2);
+  assert.equal(appendix.reduce((count,group)=>count+group.results.length,0),2);
   assert.deepEqual(timeline.map(event=>event.details),['1 mg/dL','2 mg/dL']);
   // No lab table is produced by the timeline extractor: only the appendix series contains result rows.
-  assert.equal(appendix?.results.filter(result=>result.value===1||result.value===2).length,2);
+  assert.equal(appendix.reduce((count,group)=>count+group.results.filter(result=>result.value===1||result.value===2).length,0),2);
+});
+
+test('classifies legacy analytes into clinical panels and orders panel headings then analytes', () => {
+  const groups=aggregateLabResults({labResults:[],labs:[{date:'2025-01-01',tsh:2,na:140,creatinine:1,hb:12,customLabs:[{name:'LDL',value:100}]} as any]});
+  assert.deepEqual(groups.map(group=>`${group.panel}:${group.name}`),[
+    'CBC:Hemoglobin','Electrolytes:Sodium','Lipid Profile:LDL','Renal:Creatinine','Thyroid:TSH',
+  ]);
+  assert.equal(groups.reduce((count,group)=>count+group.results.length,0),5);
+});
+
+test('uses inferred modern panels and keeps same-named analytes separate across panels and units', () => {
+  const groups=aggregateLabResults({labs:[],labResults:[
+    {testName:'Hemoglobin',value:12,unit:'g/dL',timestamp:'2025-01-01'},
+    {panel:'CBC',testName:'Hemoglobin',value:13,unit:'g/dL',timestamp:'2025-01-02'},
+    {panel:'Chemistry',testName:'Hemoglobin',value:120,unit:'g/L',timestamp:'2025-01-03'},
+  ]});
+  assert.deepEqual(groups.map(group=>[group.panel,group.name,group.results.length]),[
+    ['CBC','Hemoglobin',2],['Chemistry','Hemoglobin',1],
+  ]);
+  assert.deepEqual(groups[0].results.map(result=>result.value),[12,13]);
 });
