@@ -1016,6 +1016,36 @@ test("22. the platform owner keeps full access to the legacy master workspace", 
   await assertSucceeds(updateDoc(doc(db, patientPath(PATIENT_B)), { label: "OWNER-EDIT" }));
 });
 
+test("platform owner can backfill master files without workspace membership; members stay unit-scoped", async () => {
+  const owner = dbFor("admin_root");
+  const unitA = dbFor("userA");
+  const ownerFile = doc(owner, path("masterFiles", "owner-backfill-unit-b"));
+
+  // admin_root is a platform owner but intentionally has no members/{uid} row.
+  await assertSucceeds(setDoc(ownerFile, {
+    workspaceId: WORKSPACE,
+    createdBy: "admin_root",
+    contextIds: [UNIT_B],
+  }));
+
+  // A normal member can create a file for their own unit, but cannot add another.
+  await assertSucceeds(setDoc(doc(unitA, path("masterFiles", "member-unit-a")), {
+    workspaceId: WORKSPACE,
+    createdBy: "userA",
+    contextIds: [UNIT_A],
+  }));
+  await assertFails(setDoc(doc(unitA, path("masterFiles", "member-cross-unit")), {
+    workspaceId: WORKSPACE,
+    createdBy: "userA",
+    contextIds: [UNIT_A, UNIT_B],
+  }));
+  await assertFails(setDoc(doc(unitA, path("masterFiles", "member-unit-b")), {
+    workspaceId: WORKSPACE,
+    createdBy: "userA",
+    contextIds: [UNIT_B],
+  }));
+});
+
 test("23. a member cannot promote themselves to consultant", async () => {
   const db = dbFor("userF");
   const selfRef = doc(db, path("team", "userF"));
