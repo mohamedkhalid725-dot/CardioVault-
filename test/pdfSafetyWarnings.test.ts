@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getPdfSafetyWarnings } from '../src/components/patient/sections/pdfSafetyWarnings';
+import { getPdfSafetyWarnings } from '../src/components/patient/sections/pdfSafetyWarnings.ts';
 
 test('reports age, cross-source heart-rate, and GCS inconsistencies', () => {
   const warnings = getPdfSafetyWarnings({ age: 60 }, {
