@@ -31,6 +31,7 @@ export interface PatientMasterFileBackfillProgress {
   total: number;
   completed: number;
   failed: Array<{ patientId: string; message: string }>;
+  cancelled: boolean;
 }
 
 export interface PatientMasterFileBackfillResult extends PatientMasterFileBackfillProgress {
@@ -102,15 +103,20 @@ export async function executePatientMasterFileBackfill(
   preview: PatientMasterFileBackfillPreview,
   onProgress?: (progress: PatientMasterFileBackfillProgress) => void,
   nowMs = Date.now(),
+  signal?: AbortSignal,
 ): Promise<PatientMasterFileBackfillResult> {
   if (preview.workspaceId !== workspaceId) throw new Error('The workspace changed after preview. Run the preview again.');
   const patientById = new Map(patients.map(patient => [String(patient.id || ''), patient]));
   const result: PatientMasterFileBackfillResult = {
-    processed: 0, total: preview.candidatePatientIds.length, completed: 0, failed: [],
+    processed: 0, total: preview.candidatePatientIds.length, completed: 0, failed: [], cancelled: false,
     missingMasterFilesCreated: 0, indexesRepaired: 0, eventsCreatedOrConfirmed: 0, eventsWithoutOriginalDate: 0,
   };
 
   for (let offset = 0; offset < preview.candidatePatientIds.length; offset += BACKFILL_BATCH_SIZE) {
+    if (signal?.aborted) {
+      result.cancelled = true;
+      break;
+    }
     const batchIds = preview.candidatePatientIds.slice(offset, offset + BACKFILL_BATCH_SIZE);
     for (const patientId of batchIds) {
       const patient = patientById.get(patientId);
@@ -158,9 +164,11 @@ export async function executePatientMasterFileBackfill(
         result.failed.push({ patientId, message: String((error as any)?.message || error) });
       } finally {
         result.processed += 1;
-        onProgress?.({ processed: result.processed, total: result.total, completed: result.completed, failed: [...result.failed] });
+        onProgress?.({ processed: result.processed, total: result.total, completed: result.completed, failed: [...result.failed], cancelled: false });
       }
     }
   }
+  result.cancelled ||= !!signal?.aborted && result.processed < result.total;
+  if (result.cancelled) onProgress?.({ processed: result.processed, total: result.total, completed: result.completed, failed: [...result.failed], cancelled: true });
   return result;
 }
