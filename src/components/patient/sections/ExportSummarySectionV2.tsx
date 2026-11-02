@@ -11,6 +11,7 @@ import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { installArabicTextSupport } from '../../../services/pdfArabicSupport';
 import { aggregateLabResults, buildPdfTimeline } from './labExportData';
+import { getPdfSafetyWarnings } from './pdfSafetyWarnings';
 
 // CCU case-presentation template: selected groups feed a single chronological report timeline.
 const sections = [
@@ -188,47 +189,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       // CardioVault header brand mark (app icon). Loaded once per export.
       const logoPng = await loadLogoDataUrl();
 
-      // ---- cross-source discrepancy scan (existing data only, never invented) ----
-      const discrepancies: Badge[] = [];
-      {
-        // Age mentions inside free text vs the recorded age.
-        const freeText = [
-          p.clinicalSummary?.chiefComplaint, p.clinicalSummary?.hpi, p.clinicalSummary?.summary,
-          ...((p.progressNotes || []).map((n: any) => `${n.assessment || ''} ${n.subjective || ''} ${n.objective || ''}`)),
-        ].filter(Boolean).join('\n');
-        const mentions = new Set<number>();
-        const re = /(?:age\s*[:=]?\s*(\d{1,3})|(\d{1,3})\s*(?:-?years?-old|years?\s*old|y\.?o\.?|yo\b))|(?:\u0627\u0644\u0639\u0645\u0631\s*[:=]?\s*(\d{1,3})|(\d{1,3})\s*(?:\u0633\u0646\u0629|\u0633\u0646\u0647|\u0639\u0627\u0645))/gi;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(freeText)) !== null) {
-          const n = Number(m[1] || m[2] || m[3] || m[4]);
-          if (n >= 0 && n <= 120) mentions.add(n);
-        }
-        mentions.forEach(a => {
-          if (typeof patient.age === 'number' && Math.abs(a - patient.age) > 1) {
-            discrepancies.push({ t: `Age discrepancy: file ${patient.age} vs note ${a}`, kind: 'amber' });
-          }
-        });
-        // Heart-rate cross-check: latest vitals vs latest ECG vs cardiology spot value.
-        const hrs: Array<[string, number]> = [];
-        const lv = p.vitalsHistory?.[0];
-        if (lv?.hr) hrs.push(['vitals', Number(lv.hr)]);
-        if (p.ecgRecords?.[0]?.heartRate) hrs.push(['ECG', Number(p.ecgRecords[0].heartRate)]);
-        if (p.cardiology?.heartRate) hrs.push(['cardiology', Number(p.cardiology.heartRate)]);
-        for (let i = 0; i < hrs.length; i += 1) {
-          for (let j = i + 1; j < hrs.length; j += 1) {
-            if (Math.abs(hrs[i][1] - hrs[j][1]) > 10) {
-              discrepancies.push({ t: `HR discrepancy: ${hrs[i][0]} ${hrs[i][1]} vs ${hrs[j][0]} ${hrs[j][1]}`, kind: 'amber' });
-            }
-          }
-        }
-        // GCS components vs recorded total.
-        if (lv && lv.gcsEye != null && lv.gcsVerbal != null && lv.gcsMotor != null && lv.gcsTotal != null) {
-          const sum = Number(lv.gcsEye) + Number(lv.gcsVerbal) + Number(lv.gcsMotor);
-          if (sum !== Number(lv.gcsTotal)) {
-            discrepancies.push({ t: `GCS discrepancy: components E${lv.gcsEye}V${lv.gcsVerbal}M${lv.gcsMotor} (=${sum}) vs total ${lv.gcsTotal}`, kind: 'amber' });
-          }
-        }
-      }
+      const discrepancies: Badge[] = getPdfSafetyWarnings(patient, p);
 
       let y = 0;
 
@@ -487,11 +448,20 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       kvGrid([
         ['Full Name', patient.fullName || patient.name], ['MRN', patient.mrn],
         ['Age / Sex', `${val(patient.age)} / ${val(patient.sex)}`],
+        ['Weight', patient.weight], ['Height', patient.height],
+        ['Attended Clinician', patient.attendedClinician],
+        ['Attended Nurse', patient.attendedNurse],
         ['Current Diagnosis', patient.primaryDiagnosis || patient.diagnosis],
         ['Allergies', [...(p.clinicalSummary?.allergies || []), ...(patient.allergies || [])].filter(Boolean).join(', ')],
         ['Current Status / Code Status', `${val(patient.status)} / ${val(patient.codeStatus)}`],
         ['Unit / Bed', `${val(unit?.name)} / ${val(bed?.bedNumber)}`],
       ]);
+      // These are derived safety checks, not dated clinical events. Keep their
+      // provenance explicit and never assign a fabricated event date.
+      if (discrepancies.length) {
+        titleBlock('Clinical Safety Warnings — Derived from Recorded Data (Undated)');
+        discrepancies.forEach(warning => para('Warning', warning.t, [warning]));
+      }
       newPage();
       const timeline = buildPdfTimeline(p, selected);
       const datedEvents = timeline.filter(event => event.timestamp);
