@@ -1,8 +1,9 @@
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
-import { webDoc, getDoc as webGetDoc, setDoc as webSetDoc } from './webFirebase';
+import { getDocsFromServer, writeBatch as webWriteBatch } from 'firebase/firestore';
+import { webCollection, webDoc, getDoc as webGetDoc, setDoc as webSetDoc } from './webFirebase';
 import { getActiveWorkspaceId, getCurrentUid, isMasterAccount } from './workspaceAccess';
-import { createUnitLicenseRecord, type UnitLicenseRecord } from './unitLicense';
+import { createUnitLicenseRecord, UNIT_LICENSE_MS, type UnitLicenseRecord } from './unitLicense';
 import { sha256Hex } from './codeHash';
 
 export const unitLicensePath = (workspaceId: string, unitId: string) =>
@@ -25,6 +26,124 @@ const writePath = async (path: string, data: Record<string, any>, merge: boolean
   if (Capacitor.isNativePlatform()) await FirebaseFirestore.setDocument({ reference: path, data, merge });
   else await webSetDoc(webDoc(path), data, { merge });
 };
+
+type BatchOperation = { type: 'set' | 'delete'; reference: string; data?: Record<string, any>; options?: { merge: boolean } };
+
+async function commitBatch(operations: BatchOperation[]): Promise<void> {
+  if (!operations.length) return;
+  if (operations.length > 500) throw new Error('This operation exceeds Firestore’s 500-write safety limit. No changes were made.');
+  if (Capacitor.isNativePlatform()) {
+    await FirebaseFirestore.writeBatch({ operations });
+    return;
+  }
+  const batch = webWriteBatch(webDoc(operations[0].reference).firestore);
+  for (const operation of operations) {
+    const reference = webDoc(operation.reference);
+    if (operation.type === 'delete') batch.delete(reference);
+    else batch.set(reference, operation.data || {}, { merge: operation.options?.merge === true });
+  }
+  await batch.commit();
+}
+
+async function listServerDocuments(path: string): Promise<Array<{ id: string; data: Record<string, any> }>> {
+  if (Capacitor.isNativePlatform()) {
+    await FirebaseFirestore.enableNetwork();
+    const result: any = await FirebaseFirestore.getCollection({ reference: path });
+    const snapshots = Array.isArray(result?.snapshots) ? result.snapshots : [];
+    if (snapshots.some((snapshot: any) => snapshot?.metadata?.fromCache !== false)) {
+      throw new Error('Could not verify current Firestore data. Connect to the internet and retry; no licenses were changed.');
+    }
+    return snapshots.flatMap((snapshot: any) => {
+      const data = typeof snapshot?.data === 'function' ? snapshot.data() : snapshot?.data;
+      const id = String(snapshot?.id || snapshot?.documentId || data?.id || '');
+      return data && id ? [{ id, data }] : [];
+    });
+  }
+  const snapshot = await getDocsFromServer(webCollection(path));
+  return snapshot.docs.map(item => ({ id: item.id, data: item.data() }));
+}
+
+export interface UnitLicenseResetPreview {
+  workspaceId: string;
+  eligibleUnitIds: string[];
+  activeCodesToCancel: number;
+}
+
+/** Reads authoritative cloud state before asking the owner to confirm a reset. */
+export async function previewUnitLicenseReset(): Promise<UnitLicenseResetPreview> {
+  if (!(await isMasterAccount())) throw new Error('Only the platform owner can reset unit licenses.');
+  const workspaceId = getActiveWorkspaceId();
+  const [units, beds, codes] = await Promise.all([
+    listServerDocuments(`workspaces/${workspaceId}/units`),
+    listServerDocuments(`workspaces/${workspaceId}/beds`),
+    listServerDocuments(`workspaces/${workspaceId}/unitLicenseCodes`),
+  ]);
+  const bedCounts = new Map<string, number>();
+  for (const { data } of beds) {
+    const unitId = String(data.unitId || '');
+    if (unitId && data.deleted !== true && !data.deletedAt) bedCounts.set(unitId, (bedCounts.get(unitId) || 0) + 1);
+  }
+  const eligibleUnitIds = units
+    .filter(({ id, data }) => data.deleted !== true && !data.deletedAt && (bedCounts.get(id) || 0) > 0)
+    .map(({ id }) => id);
+  const activeCodesToCancel = codes.filter(({ data }) => data.status === 'active').length;
+  return { workspaceId, eligibleUnitIds, activeCodesToCancel };
+}
+
+/** Resets eligible units and invalidates outstanding CVLs in bounded batches. */
+export async function resetEligibleUnitLicenses(preview: UnitLicenseResetPreview, options: { nowMs?: number } = {}): Promise<{ unitCount: number; cancelledCodeCount: number }> {
+  if (!(await isMasterAccount())) throw new Error('Only the platform owner can reset unit licenses.');
+  if (preview.workspaceId !== getActiveWorkspaceId()) throw new Error('The active workspace changed. Refresh the license list and retry.');
+  const fresh = await previewUnitLicenseReset();
+  if (fresh.workspaceId !== preview.workspaceId || fresh.eligibleUnitIds.join('|') !== preview.eligibleUnitIds.join('|') || fresh.activeCodesToCancel !== preview.activeCodesToCancel) {
+    throw new Error('Unit or bed eligibility changed since confirmation. Refresh and confirm the reset again; no changes were made.');
+  }
+  const [unitDocs, bedDocs, codes] = await Promise.all([
+    listServerDocuments(`workspaces/${preview.workspaceId}/units`),
+    listServerDocuments(`workspaces/${preview.workspaceId}/beds`),
+    listServerDocuments(`workspaces/${preview.workspaceId}/unitLicenseCodes`),
+  ]);
+  const actualBedUnits = new Set(bedDocs.filter(({ data }) => data.deleted !== true && !data.deletedAt).map(({ data }) => String(data.unitId || '')).filter(Boolean));
+  const unitById = new Map(unitDocs.map(document => [document.id, document.data]));
+  const eligible = preview.eligibleUnitIds.filter(id => {
+    const unit = unitById.get(id);
+    return !!unit && unit.deleted !== true && !unit.deletedAt && actualBedUnits.has(id);
+  });
+  if (eligible.length !== preview.eligibleUnitIds.length) throw new Error('Unit or bed eligibility changed before reset. Refresh and confirm again; no changes were made.');
+  const activeCodes = codes.filter(({ data }) => data.status === 'active');
+  if (activeCodes.length !== fresh.activeCodesToCancel) throw new Error('The outstanding CVL codes changed before reset. Refresh and confirm again; no changes were made.');
+  const uid = await getCurrentUid();
+  if (!uid) throw new Error('The platform owner must be signed in.');
+  const nowMs = Math.floor(options.nowMs ?? Date.now());
+  const chunks = <T,>(items: T[], size: number): T[][] => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
+  // Revoke old codes first; if revocation fails, do not change any license.
+  let cancelledCodes = 0;
+  try {
+    for (const codeChunk of chunks(activeCodes, 400)) {
+      await commitBatch(codeChunk.map(({ id }) => ({ type: 'delete' as const, reference: unitLicenseCodePath(preview.workspaceId, id) })));
+      cancelledCodes += codeChunk.length;
+    }
+  } catch (error: any) {
+    throw new Error(`${cancelledCodes} of ${activeCodes.length} old CVL codes were cancelled; no unit licenses were reset. Refresh and retry. ${String(error?.message || error)}`);
+  }
+  let appliedUnits = 0;
+  try {
+    // Keep each batch small: every license write checks the corresponding unit
+    // document in Security Rules, and Firestore has a separate rules read limit.
+    for (const unitChunk of chunks(eligible, 10)) {
+      await commitBatch(unitChunk.map(unitId => ({
+        type: 'set' as const,
+        reference: unitLicensePath(preview.workspaceId, unitId),
+        data: { workspaceId: preview.workspaceId, unitId, issuedAtMs: nowMs, expiresAtMs: nowMs + UNIT_LICENSE_MS, updatedBy: uid, schemaVersion: 1 },
+        options: { merge: false },
+      })));
+      appliedUnits += unitChunk.length;
+    }
+  } catch (error: any) {
+    throw new Error(`${cancelledCodes} old CVL codes were cancelled and ${appliedUnits} of ${eligible.length} unit licenses were reset. Remaining units were unchanged. Refresh and retry the reset to complete it. ${String(error?.message || error)}`);
+  }
+  return { unitCount: eligible.length, cancelledCodeCount: cancelledCodes };
+}
 
 export async function getUnitLicense(workspaceId: string, unitId: string): Promise<UnitLicenseRecord | null> {
   try {
@@ -136,10 +255,14 @@ export async function redeemUnitLicenseCode(rawCode: string, options: { nowMs?: 
     const current = await getUnitLicense(workspaceId, unitId);
     const record = createUnitLicenseRecord({ workspaceId, unitId, updatedBy: uid, nowMs, currentExpiryMs: current?.expiresAtMs });
     licenseExpiresAtMs = record.expiresAtMs;
-    await writePath(codePath, {
-      status: 'redeemed', redeemedBy: uid, redeemedAtMs: nowMs,
-      licenseExpiresAtMs, activationCodeHash: codeHash,
-    }, true);
+    const license: UnitLicenseRecord & { activationCodeHash: string } = { ...record, activationCodeHash: codeHash };
+    await commitBatch([
+      { type: 'set', reference: codePath, data: {
+        ...codeRecord, status: 'redeemed', redeemedBy: uid, redeemedAtMs: nowMs, licenseExpiresAtMs,
+      }, options: { merge: true } },
+      { type: 'set', reference: unitLicensePath(workspaceId, unitId), data: license, options: { merge: true } },
+    ]);
+    return license;
   } else if (codeRecord.status !== 'redeemed' || codeRecord.redeemedBy !== uid || !Number.isFinite(licenseExpiresAtMs)) {
     throw new Error('This unit license code has already been redeemed.');
   }

@@ -28,6 +28,7 @@ import {assignUnitHospitalDocument,createHospitalDocument,loadHospitalsForUnits,
 import {firestoreHospitalPersistence}from'../services/firestoreHospitalPersistence';
 import {firestoreUnitVerificationIO}from'../services/firestoreUnitPersistence';
 import {UnitCloudVerificationError,verifyUnitSetupInCloud}from'../services/unitPersistence';
+import {withOperationTimeout}from'../services/operationTimeout';
 
 export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail'|'results-center'|'institution-setup'|'waiting-list'|'clinic'|'payments'|'master-file'|'operation-waiting'|'owner-requests';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
@@ -35,6 +36,7 @@ interface ToastInfo{id:string;message:string;type:'success'|'info'|'warning'|'er
 interface PendingDepartmentLifecycleWrite {
  id:string;workspaceId:string;patient:{id:string;masterFileId?:string;fullName:string;age:number;unitId:string;unitIds?:string[]};unitId:string;title:string;summary:string;detail:string;atMs:number;
 }
+
 const PENDING_LIFECYCLE_WRITES_KEY='cardiovault_pending_master_lifecycle_v1';
 function readPendingLifecycleWrites():PendingDepartmentLifecycleWrite[]{try{const parsed=JSON.parse(localStorage.getItem(PENDING_LIFECYCLE_WRITES_KEY)||'[]');return Array.isArray(parsed)?parsed.filter(item=>item?.id&&item?.workspaceId&&item?.patient?.id):[];}catch{return[];}}
 function savePendingLifecycleWrite(write:PendingDepartmentLifecycleWrite):void{const writes=readPendingLifecycleWrites();localStorage.setItem(PENDING_LIFECYCLE_WRITES_KEY,JSON.stringify([...writes.filter(item=>item.id!==write.id),write]));}
@@ -195,7 +197,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const[isTeamPickerOpen,setIsTeamPickerOpen]=useState(false);
  const[isSwitchingTeam,setIsSwitchingTeam]=useState(false);
   const teamPickerShown=useRef(false);
-  const masterBackfillAttempted=useRef(new Set<string>());
+   const masterBackfillAttempted=useRef(new Set<string>());
+   const unitSetupInFlight=useRef(new Set<string>());
+   const unitSetupTimedOut=useRef(new Set<string>());
   const[favoritePatientIds,setFavoritePatientIds]=useState<string[]>(()=>{
    try { const raw = localStorage.getItem('cardiovault_fav_patients'); return raw ? JSON.parse(raw) : []; } catch { return []; }
   });
@@ -695,7 +699,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   }
   if(changed)commitBeds(Array.from(byId.values()));
  };
- const completeUnitSetup=async(unitId:string):Promise<UnitSetupResult>=>{
+  const runCompleteUnitSetup=async(unitId:string):Promise<UnitSetupResult>=>{
  const unit=StorageService.getUnits().find(item=>item.id===unitId);
  const expected=normalizeBedCount(unit?.totalBeds);
  if(!unit)return{ok:false,unitId,expected:0,present:0,created:0,missing:[],message:'This unit is no longer on this device.'};
@@ -708,33 +712,34 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   lockUnitCapacity(unitId);clearUnitBedsPending(unitId);
   return{ok:true,unitId,expected,present,created:missing.length,missing:[],message:'Saved only in the isolated local preview.'};
  }
- let confirmedPresent=0;let provisioningBeds=false;
- try{
-  const uploaded=await syncCurrentUserNow();
-  const cloudUnit=await firestoreUnitVerificationIO.getUnit(unitId);
+  let confirmedPresent=0;let provisioningBeds=false;const deadlineAtMs=Date.now()+60000;
+  const stage=<T,>(promise:Promise<T>,name:string)=>withOperationTimeout(promise,Math.max(1,deadlineAtMs-Date.now()),`Unit setup timed out while ${name}. Check the connection and retry; no later setup steps were started.`,()=>unitSetupTimedOut.current.add(unitId),()=>unitSetupTimedOut.current.delete(unitId));
+  try{
+   const uploaded=await stage(syncCurrentUserNow(),'syncing the unit');
+   const cloudUnit=await stage(firestoreUnitVerificationIO.getUnit(unitId),'verifying the unit');
   if(!cloudUnit){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'';throw new Error(`The unit document is not confirmed in Firestore.${uploaded?'':detail?` Cloud sync: ${detail}`:''}`);}
   if(Number(cloudUnit.totalBeds)!==expected)throw new Error(`The unit is in Firestore, but declares ${Number(cloudUnit.totalBeds)||0} beds instead of ${expected}.`);
-  const owner=await isMasterAccount();
+   const owner=await stage(isMasterAccount(),'checking owner permissions');
   if(!owner){
-   try{await registerCreatedUnit(unitId);}
+    try{await stage(registerCreatedUnit(unitId),'registering unit membership');}
    catch(error){throw new Error(`The unit could not be added to your team membership: ${String((error as any)?.message||error)}`);}
   }
-  if(owner&&unit.hospitalId){await assignUnitHospitalDocument(firestoreHospitalPersistence,getActiveWorkspaceId(),unitId,unit.hospitalId);}
+   if(owner&&unit.hospitalId){await stage(assignUnitHospitalDocument(firestoreHospitalPersistence,getActiveWorkspaceId(),unitId,unit.hospitalId),'linking the hospital');}
   provisioningBeds=true;
-  const ensured=await ensureUnitBedsNow(unitId,expected);
-  const verified=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected);
+   const ensured=await stage(ensureUnitBedsNow(unitId,expected),'saving beds');
+   const verified=await stage(verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected),'verifying saved beds');
   confirmedPresent=verified.beds.length;applyCloudBeds(verified.beds);
   // Close the local window first so an overlapping sync cannot reopen capacity.
   lockUnitCapacity(unitId);
-  await setUnitCapacityLocked(unitId,true);
-   const finalVerification=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected,true);
+   await stage(setUnitCapacityLocked(unitId,true),'locking unit capacity');
+    const finalVerification=await stage(verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected,true),'confirming capacity lock');
    confirmedPresent=finalVerification.beds.length;applyCloudBeds(finalVerification.beds);
-   if(await isMasterAccount()){
-    await autoActivateOwnerCreatedUnit(getActiveWorkspaceId(),unitId);
+    if(await stage(isMasterAccount(),'checking activation permissions')){
+     await stage(autoActivateOwnerCreatedUnit(getActiveWorkspaceId(),unitId),'activating the owner-created unit');
     const activeUnits=StorageService.getUnits().map(item=>item.id===unitId?{...item,activationStatus:'active' as const,activatedAtMs:Date.now()}:item);
     commitUnits(activeUnits);
    }else{
-    await submitUnitActivationRequest(unit,StorageService.getProfileName()||authStateRef.current.userName||'Workspace administrator');
+     await stage(submitUnitActivationRequest(unit,StorageService.getProfileName()||authStateRef.current.userName||'Workspace administrator'),'submitting the activation request');
    }
    clearUnitBedsPending(unitId);
    const active=StorageService.getUnits().find(item=>item.id===unitId)?.activationStatus==='active';
@@ -745,7 +750,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   console.warn('Unit setup incomplete:',error);markUnitBedsPending(unitId,expected);
   let cloudPresent=error instanceof UnitCloudVerificationError?error.confirmedPresent:confirmedPresent;
   if(!cloudPresent&&confirmedPresent===0){
-   try{const partial=await verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected);cloudPresent=partial.beds.length;}
+    try{const partial=await withOperationTimeout(verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected),5000,'Unit setup could not check partial bed progress before timing out.');cloudPresent=partial.beds.length;}
    catch(verificationError){if(verificationError instanceof UnitCloudVerificationError)cloudPresent=verificationError.confirmedPresent;}
   }
   return{ok:false,unitId,expected,present:cloudPresent,created:0,missing:[],message};
@@ -764,6 +769,12 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    }
    showToast(isLocalPreview()?`Local preview only: setup is incomplete; ${result.present} of ${result.expected} beds are saved on this device. ${result.message}`:`Cloud setup is incomplete; ${result.present} of ${result.expected} beds are confirmed in Firestore. ${result.message} Open Manage Units and tap "Finish setup" to retry.`,'error');
  };
+  const completeUnitSetup=async(unitId:string):Promise<UnitSetupResult>=>{
+   if(unitSetupInFlight.current.has(unitId)||unitSetupTimedOut.current.has(unitId))return{ok:false,unitId,expected:0,present:0,created:0,missing:[],message:'A setup operation is still finishing in the background. Wait for it to settle before retrying.'};
+   unitSetupInFlight.current.add(unitId);
+   try{return await runCompleteUnitSetup(unitId);}
+   finally{unitSetupInFlight.current.delete(unitId);}
+  };
  // Freezes capacity in the local record as soon as the creation wizard finishes, so
  // the UI stops offering bed-count changes even before the cloud copy is locked. It
  // uses the functional updater because it is called in the same tick as addUnit,
