@@ -387,6 +387,27 @@ service cloud.firestore {
             && get(activationRequestPath(activationRequestId)).data.approvedBy == request.auth.uid
             && get(activationRequestPath(activationRequestId)).data.approvalStartedAtMs == request.resource.data.issuedAtMs);
     }
+    // The owner reset client verifies live bed documents from the server; rules
+    // constrain the write to an owner and an existing, non-deleted unit because
+    // Firestore Rules cannot count a collection's bed documents.
+    function validOwnerUnitLicenseReset(workspaceId,unitId) {
+      return adminOf(workspaceId)
+        && unitExists(workspaceId,unitId)
+        && unitData(workspaceId,unitId).get('deleted',false) != true
+        && !unitData(workspaceId,unitId).keys().hasAny(['deletedAt'])
+        && request.resource.data.keys().hasOnly(['workspaceId','unitId','issuedAtMs','expiresAtMs','updatedBy','schemaVersion'])
+        && request.resource.data.keys().hasAll(['workspaceId','unitId','issuedAtMs','expiresAtMs','updatedBy','schemaVersion'])
+        && request.resource.data.workspaceId == workspaceId
+        && request.resource.data.unitId == unitId
+        && request.resource.data.issuedAtMs is int
+        && request.resource.data.issuedAtMs >= request.time.toMillis() - 120000
+        && request.resource.data.issuedAtMs <= request.time.toMillis() + 120000
+        && request.resource.data.expiresAtMs is int
+        && request.resource.data.expiresAtMs >= request.time.toMillis() + 2592000000 - 120000
+        && request.resource.data.expiresAtMs <= request.time.toMillis() + 2592000000 + 120000
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.schemaVersion == 1;
+    }
     function validUnitActivationRequestCreate(requestId) {
       return signedIn()
         && request.resource.data.keys().hasOnly(['requestId','workspaceId','unitId','unitName','requestedBedCount','requestedBy','requestedByName','requestedAtMs','status','schemaVersion'])
@@ -1384,7 +1405,8 @@ service cloud.firestore {
         // closed. Listing remains owner-only.
         allow get: if adminOf(workspaceId) || memberHasUnit(workspaceId, unitId);
         allow list: if adminOf(workspaceId);
-        allow create: if validOwnerInitialUnitLicense(workspaceId,unitId)
+         allow create: if validOwnerInitialUnitLicense(workspaceId,unitId)
+           || validOwnerUnitLicenseReset(workspaceId,unitId)
           || (licenseWriteUsesRedeemedCode(workspaceId,unitId)
           && request.resource.data.keys().hasOnly(['workspaceId','unitId','issuedAtMs','expiresAtMs','updatedBy','schemaVersion','activationCodeHash'])
           && request.resource.data.keys().hasAll(['workspaceId','unitId','issuedAtMs','expiresAtMs','updatedBy','schemaVersion','activationCodeHash'])
@@ -1394,7 +1416,8 @@ service cloud.firestore {
           && request.resource.data.expiresAtMs is int
           && request.resource.data.updatedBy == request.auth.uid
           && request.resource.data.schemaVersion == 1);
-        allow update: if licenseWriteUsesRedeemedCode(workspaceId,unitId)
+         allow update: if validOwnerUnitLicenseReset(workspaceId,unitId)
+           || (licenseWriteUsesRedeemedCode(workspaceId,unitId)
           && request.resource.data.keys().hasOnly(['workspaceId','unitId','issuedAtMs','expiresAtMs','updatedBy','schemaVersion','activationCodeHash'])
           && request.resource.data.keys().hasAll(['workspaceId','unitId','issuedAtMs','expiresAtMs','updatedBy','schemaVersion','activationCodeHash'])
           && request.resource.data.workspaceId == workspaceId
@@ -1403,7 +1426,7 @@ service cloud.firestore {
           && request.resource.data.expiresAtMs is int
           && request.resource.data.expiresAtMs > resource.data.expiresAtMs
           && request.resource.data.updatedBy == request.auth.uid
-          && request.resource.data.schemaVersion == 1;
+           && request.resource.data.schemaVersion == 1);
         allow delete: if false;
       }
 

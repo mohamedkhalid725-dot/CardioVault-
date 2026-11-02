@@ -15,6 +15,7 @@ import {
   query,
   setDoc,
   updateDoc,
+  writeBatch,
   where,
 } from "firebase/firestore";
 import fs from "node:fs";
@@ -1564,10 +1565,53 @@ test("36. only the platform owner can renew a unit license and renewal restores 
   await testEnv.withSecurityRulesDisabled(async context => updateDoc(doc(context.firestore(), unitLicensePath(UNIT_A)), { expiresAtMs: now - 1000 }));
   await assertFails(setDoc(doc(member, unitLicenseCodePath(hash)), { workspaceId: WORKSPACE, unitId: UNIT_A, codeHash: hash }));
   await assertSucceeds(setDoc(codeRef, { workspaceId: WORKSPACE, unitId: UNIT_A, codeHash: hash, issuedBy: "admin_root", issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: "active", schemaVersion: 1 }));
-  await assertSucceeds(updateDoc(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000 }));
-  await assertSucceeds(updateDoc(doc(member, unitLicensePath(UNIT_A)), { workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: now, expiresAtMs: now + 30 * 86400000, updatedBy: "userA", schemaVersion: 1, activationCodeHash: hash }));
+  await assertFails(updateDoc(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000, activationCodeHash: hash }));
+  const redemption = writeBatch(member);
+  redemption.update(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000 });
+  redemption.set(doc(member, unitLicensePath(UNIT_A)), { workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: now, expiresAtMs: now + 30 * 86400000, updatedBy: "userA", schemaVersion: 1, activationCodeHash: hash });
+  await assertSucceeds(redemption.commit());
   await assertSucceeds(getDoc(doc(dbFor("userA"), patientPath(PATIENT_A))));
   await assertFails(updateDoc(doc(owner, unitLicensePath(UNIT_A)), { expiresAtMs: now + 90 * 86400000 }));
+});
+
+test("owner license reset is limited to declared live units and leaves membership and pending status unchanged", async () => {
+  const owner = dbFor("admin_root");
+  const member = dbFor("userA");
+  const now = Date.now();
+  const oldHash = "d".repeat(64);
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), unitPath(UNIT_A)), { activationStatus: "pending" });
+    await setDoc(doc(context.firestore(), unitPath(UNIT_C)), {
+      unitId: UNIT_C, name: "Unit C", type: "cardiology", totalBeds: 1, createdBy: "admin_root",
+    });
+  });
+  await assertSucceeds(setDoc(doc(owner, unitLicenseCodePath(oldHash)), {
+    workspaceId: WORKSPACE, unitId: UNIT_A, codeHash: oldHash, issuedBy: "admin_root",
+    issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: "active", schemaVersion: 1,
+  }));
+  const resetData = {
+    workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: now,
+    expiresAtMs: now + 30 * 86400000, updatedBy: "admin_root", schemaVersion: 1,
+  };
+  await assertFails(setDoc(doc(member, unitLicensePath(UNIT_A)), resetData));
+  const batch = writeBatch(owner);
+  batch.set(doc(owner, unitLicensePath(UNIT_A)), resetData);
+  batch.delete(doc(owner, unitLicenseCodePath(oldHash)));
+  await assertSucceeds(batch.commit());
+  const createdLicense = { ...resetData, unitId: UNIT_C };
+  await assertSucceeds(setDoc(doc(owner, unitLicensePath(UNIT_C)), createdLicense));
+  const [unit, membership, license, code, newLicense] = await Promise.all([
+    getDoc(doc(owner, unitPath(UNIT_A))),
+    getDoc(doc(owner, path("members", "userA"))),
+    getDoc(doc(owner, unitLicensePath(UNIT_A))),
+    getDoc(doc(owner, unitLicenseCodePath(oldHash))),
+    getDoc(doc(owner, unitLicensePath(UNIT_C))),
+  ]);
+  assert.equal(unit.data().activationStatus, "pending");
+  assert.ok(membership.exists());
+  assert.equal(license.data().expiresAtMs, resetData.expiresAtMs);
+  assert.equal(code.exists(), false);
+  assert.equal(newLicense.data().expiresAtMs, createdLicense.expiresAtMs);
 });
 
 test("37. a unit without a license is locked while another licensed unit stays active", async () => {
