@@ -1297,7 +1297,8 @@ service cloud.firestore {
           && request.resource.data.workspaceId == workspaceId
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.get('contextIds', []).size() > 0
-          && request.resource.data.get('contextIds', []).hasOnly(memberUnits(workspaceId));
+          && (adminOf(workspaceId)
+              || request.resource.data.get('contextIds', []).hasOnly(memberUnits(workspaceId)));
         allow update: if canWrite(workspaceId)
           && ( adminOf(workspaceId)
                || unitMemberAny(workspaceId, resource.data.get('contextIds', [])) )
