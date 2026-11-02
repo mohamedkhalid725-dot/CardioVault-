@@ -219,25 +219,8 @@ jobs:
           echo 'APK content check: assets/public/index.html present.'
           echo 'Production release verification: OK'
 
-      - name: Upload Production APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioVault-2.1.0-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload Google Play AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioVault-2.1.0-release-aab
-          path: android/app/build/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
-          retention-days: 30
-
-      # Release assets live in their own quota, so the APK is still reachable
-      # when the Actions artifact storage is full. This is the file that goes
-      # to APKPure: same package, same keystore, versionCode 21.
+      # Publish directly to GitHub Releases. Actions artifact storage is full,
+      # so do not depend on upload-artifact for production deliverables.
       - name: Publish the production APK as a release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -248,7 +231,7 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk "release-out/CardioVault-2.1.0-release.apk"
           cp android/app/build/outputs/bundle/release/app-release.aab "release-out/CardioVault-2.1.0-release.aab"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "CardioVault 2.1.0 (production release)" --notes "Signed production build: versionCode 21, versionName 2.1.0, package com.cardiovault.app. This is the file published to APKPure." --target "$GITHUB_SHA"
+            gh release create "$TAG" --title "CardioVault 2.1.0 (production release)" --notes "Signed production build: versionCode 21, versionName 2.1.0, package com.cardiovault.app. Built from commit $GITHUB_SHA on ref $GITHUB_REF_NAME. This is the file prepared for APKPure." --target "$GITHUB_SHA"
           fi
           gh release upload "$TAG" release-out/* --clobber
-          echo "Production APK and AAB published to the release $TAG."
+          echo "Production APK and AAB from commit $GITHUB_SHA published to release $TAG."
