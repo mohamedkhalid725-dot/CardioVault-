@@ -10,6 +10,7 @@ import { useApp } from '../../../context/AppContext';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { installArabicTextSupport } from '../../../services/pdfArabicSupport';
+import { aggregateLabResults, buildPdfTimeline } from './labExportData';
 
 // CCU case-presentation template: toggle groups mapped to the 25 numbered sections.
 const sections = [
@@ -632,67 +633,27 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
 
       // ============ §15–16 Labs ============
       if (has('labs')) {
-        sectionTitle(15, 'Laboratory Investigations (Latest)');
-        {
-          const lab: any = (p.labs || [])[0] || {};
-          const labResults: any[] = p.labResults || [];
-          const cell = (k: string) => (lab[k] === undefined || lab[k] === null || lab[k] === '' ? NP : String(lab[k]));
-          const f = (k: string, lo: number, hi: number, cL?: number, cH?: number, pos?: boolean) =>
-            flagNum(lab[k], lo, hi, cL, cH, pos);
-          const rows: string[][] = [];
-          const tints: number[][] = [];
-          const push = (test: string, value: string, fl: Flag | null) => {
-            // Recorded labs only — unrecorded tests never reach the PDF.
-            if (isBlankRendered(value)) return;
-            rows.push([test, value, fl ? fl.t : '—']);
-            tints.push(fl?.critical ? rowRose : white);
-          };
-          push('Hb', cell('hb'), f('hb', 12, 16, 7, undefined));
-          push('WBC', cell('wbc'), f('wbc', 4, 11, 2, 20));
-          push('Platelets', cell('platelets'), f('platelets', 150, 400, 50, undefined));
-          push('HCT', cell('hct'), f('hct', 36, 46));
-          push('Urea', cell('urea'), f('urea', 15, 45));
-          push('Creatinine', cell('creatinine'), f('creatinine', 0.6, 1.2, undefined, 3));
-          push('eGFR', cell('egfr'), f('egfr', 90, 200, 30, undefined));
-          push('Na', cell('na'), f('na', 135, 145, 125, 155));
-          push('K', cell('k'), f('k', 3.5, 5.0, 3.0, 5.5));
-          push('Cl', cell('cl'), f('cl', 98, 107));
-          push('Ca', cell('ca'), f('ca', 8.5, 10.5));
-          push('Mg', cell('mg'), f('mg', 1.7, 2.2));
-          push('AST / ALT', `${cell('ast')} / ${cell('alt')}`, f('ast', 10, 40, undefined, 400) || f('alt', 10, 40, undefined, 400));
-          push('Bilirubin', cell('bilirubin'), f('bilirubin', 0.3, 1.2));
-          push('Albumin', cell('albumin'), f('albumin', 3.5, 5.5));
-          push('PT / INR', `${cell('pt')} / ${cell('inr')}`, f('inr', 0.9, 1.2, undefined, 2.5));
-          push('Troponin', cell('troponin'), f('troponin', 0, 0.04, undefined, undefined, true));
-          push('CK-MB', cell('ckmb'), f('ckmb', 0, 25));
-          push('BNP / NT-proBNP', `${cell('bnp')} / ${cell('ntProBnp')}`, null);
-          push('CRP', cell('crp'), f('crp', 0, 10, undefined, 100));
-          push('Lactate', cell('lactate'), f('lactate', 0.5, 2.0, undefined, 4));
-          push('Glucose', cell('glucose'), f('glucose', 70, 140, 50, 300));
-          push('D-Dimer', cell('dDimer'), f('dDimer', 0, 0.5));
-          const custom: any[] = lab.customLabs || [];
-          custom.forEach(c => push(val(c.name), `${val(c.value)} ${val(c.unit)}`.trim(), null));
-          labResults.forEach(r => push(val(r.name || r.testName), `${val(r.value)} ${val(r.unit)}`.trim(), null));
-          cleanTable(['Test', 'Result', 'Flag'], [70, 70, 54], rows, 'lab results', 'Laboratory', tints);
-          if (lab.date) para('Sample Date', lab.date);
-        }
-        sectionTitle(16, 'Serial Laboratory Trends');
-        {
-          const serial: any[] = (p.labs || []).slice(0, 4);
-          if (serial.length > 1) {
-            const keys = ['hb', 'wbc', 'platelets', 'creatinine', 'urea', 'na', 'k', 'troponin', 'crp', 'glucose', 'inr', 'lactate'];
-            const labels: Record<string, string> = {
-              hb: 'Hb', wbc: 'WBC', platelets: 'Platelets', creatinine: 'Creatinine', urea: 'Urea',
-              na: 'Na', k: 'K', troponin: 'Troponin', crp: 'CRP', glucose: 'Glucose', inr: 'INR', lactate: 'Lactate',
-            };
-            const dateW = Math.min(34, (CONTENT_W - 40) / serial.length);
-            const widths = [40, ...serial.map(() => (CONTENT_W - 40) / serial.length)];
-            void dateW;
-            const rows = keys
-              .filter(k => serial.some(s => nonEmpty(s[k])))
-              .map(k => [labels[k], ...serial.map(s => (nonEmpty(s[k]) ? String(s[k]) : '—'))]);
-            cleanTable(['Test', ...serial.map(s => val(s.date, 'Latest'))], widths, rows, 'serial results', 'Serial Labs');
-            // Single panel: no trend to display, so §16 stays out of the PDF.
+        sectionTitle(15, 'Laboratory Results — Chronological Trends');
+        const groups = aggregateLabResults(p);
+        if (!groups.length) para('Laboratory Results', NP);
+        for (const group of groups) {
+          para('Panel', group.panel);
+          for (const analyte of group.analytes) {
+            para('Analyte', analyte.name);
+            const rows = analyte.results.map(r => [r.timestamp && Number.isFinite(Date.parse(r.timestamp)) ? r.timestamp : 'Undated', String(r.value ?? '—'), String(r.unit || '—'), String(r.referenceRange || '—'), String(r.flag || r.status || '—')]);
+            const numeric = analyte.results.flatMap(r => { const n=Number(r.value), t=r.timestamp?Date.parse(r.timestamp):NaN; return Number.isFinite(n)&&Number.isFinite(t)?[{n,t,unit:String(r.unit||'')}]:[]; });
+            const units=[...new Set(numeric.map(pt=>pt.unit))];
+            if(numeric.length&&units.length===1){
+              const pts=numeric.sort((a,b)=>a.t-b.t), min=Math.min(...pts.map(x=>x.n)),max=Math.max(...pts.map(x=>x.n));
+              const span=max-min||Math.max(Math.abs(max)*.1,1),low=min-span*.1,high=max+span*.1,x0=pts[0].t,x1=pts[pts.length-1].t||x0+1;
+              ensureSpace(34,'Laboratory');doc.setFont('helvetica','bold');doc.setFontSize(7.5);text(navy);doc.text(`${analyte.name} trend (${units[0]||'unit not recorded'})`,MARGIN+3,y+4);
+              const xAt=(t:number)=>MARGIN+12+(t-x0)/(x1-x0)*(CONTENT_W-24),yAt=(n:number)=>y+24-(n-low)/(high-low)*16;
+              draw(line);doc.line(MARGIN+10,y+25,MARGIN+CONTENT_W-6,y+25);draw(blueBar);doc.setLineWidth(.7);
+              pts.forEach((pt,i)=>{const xx=xAt(pt.t),yy=yAt(pt.n);doc.circle(xx,yy,1,'F');if(i)doc.line(xAt(pts[i-1].t),yAt(pts[i-1].n),xx,yy);});
+              doc.setFont('helvetica','normal');doc.setFontSize(6.5);text(muted);doc.text(String(low.toPrecision(4)),MARGIN+2,y+24);doc.text(String(high.toPrecision(4)),MARGIN+2,y+10);y+=31;
+            }else if(numeric.length&&units.length>1)para('Trend chart','Not plotted because recorded values use different units; all values are retained in the table.');
+            if(analyte.results.some(r=>!r.timestamp||!Number.isFinite(Date.parse(r.timestamp))))para('Undated results','These results have no valid recorded date; they are not assigned a date or plotted.');
+            cleanTable(['Date','Value','Unit','Reference','Flag'],[38,35,32,52,37],rows,'laboratory results','Laboratory');
           }
         }
       }
@@ -939,6 +900,13 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         }
       }
 
+      const selectedTimeline = buildPdfTimeline(p, selected);
+      if (selectedTimeline.length) {
+        sectionTitle(24, 'Chronological Timeline — Selected Sections');
+        cleanTable(['Date / Time', 'Type', 'Event', 'Details'], [37, 35, 48, 74],
+          selectedTimeline.map(e => [e.timestamp && Number.isFinite(Date.parse(e.timestamp)) ? e.timestamp : 'Undated', e.type, compact(e.title, 40), compact(e.details, 70)]),
+          'chronological timeline', 'Hospital Course');
+      }
       footer();
 
       // Page numbers with real total (two-pass over finished pages).
