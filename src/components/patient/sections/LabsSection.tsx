@@ -6,6 +6,7 @@ import {getSharedLabLibrary,saveSharedLabTemplate} from '../../../services/depar
 import type { ExtractedLabResult } from '../../../services/aiLogic';
 import {recognizeLabImage} from '../../../services/labOcrService';
 import {parseLabOcrText,panelForTest} from '../../../services/labResultParser';
+import {legacyLabResults} from './labExportData';
 interface Props{patient:Patient} type TestDef={name:string;unit:string;min?:number;max?:number;referenceRange?:string};type PatientLabs=Patient&{customLabTests?:string[];customLabTestDefinitions?:TestDef[]};
 const defs=(a:Array<[string,string,number?,number?]>):TestDef[]=>a.map(([name,unit,min,max])=>({name,unit,min,max}));
 const TESTS:Record<string,TestDef[]>={
@@ -29,39 +30,8 @@ const hasDocumentedValue=(value:unknown)=>value!==null&&value!==undefined&&!(typ
 const flagFor=(value:string,ref:string|undefined):'Normal'|'Low'|'High'|'Not specified'=>{const n=numericValue(value);if(n===null||!ref)return'Not specified';const m=ref.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(-?\d+(?:\.\d+)?)/);if(!m)return'Not specified';const lo=Number(m[1]),hi=Number(m[2]);return n<lo?'Low':n>hi?'High':'Normal';};
 const badge=(f:string)=>{const flag=f.toLowerCase();return ['high','critical','abnormal'].includes(flag)?'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300':flag==='low'?'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300':flag==='normal'?'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300':'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';};
 
-const LEGACY_LAB_FIELDS:Array<{field:keyof Omit<LabPanel,'date'|'customLabs'>;name:string;unit:string}>=[
-  {field:'hb',name:'Hemoglobin',unit:'g/dL'},{field:'wbc',name:'WBC',unit:'10^3/µL'},{field:'platelets',name:'Platelets',unit:'10^3/µL'},
-  {field:'hct',name:'Hematocrit',unit:'%'},{field:'rbc',name:'RBC',unit:'10^6/µL'},{field:'mcv',name:'MCV',unit:'fL'},
-  {field:'mch',name:'MCH',unit:'pg'},{field:'mchc',name:'MCHC',unit:'g/dL'},{field:'urea',name:'Urea / BUN',unit:'mg/dL'},
-  {field:'creatinine',name:'Creatinine',unit:'mg/dL'},{field:'egfr',name:'eGFR',unit:'mL/min/1.73 m²'},{field:'uricAcid',name:'Uric Acid',unit:'mg/dL'},
-  {field:'na',name:'Sodium',unit:'mmol/L'},{field:'k',name:'Potassium',unit:'mmol/L'},{field:'cl',name:'Chloride',unit:'mmol/L'},
-  {field:'ca',name:'Calcium',unit:'mg/dL'},{field:'mg',name:'Magnesium',unit:'mg/dL'},{field:'phosphate',name:'Phosphate',unit:'mg/dL'},
-  {field:'ast',name:'AST',unit:'U/L'},{field:'alt',name:'ALT',unit:'U/L'},{field:'alp',name:'ALP',unit:'U/L'},
-  {field:'bilirubin',name:'Total Bilirubin',unit:'mg/dL'},{field:'albumin',name:'Albumin',unit:'g/dL'},{field:'totalProtein',name:'Total Protein',unit:'g/dL'},
-  {field:'pt',name:'PT',unit:'sec'},{field:'inr',name:'INR',unit:'ratio'},{field:'aptt',name:'aPTT',unit:'sec'},
-  {field:'fibrinogen',name:'Fibrinogen',unit:'mg/dL'},{field:'troponin',name:'Troponin',unit:'ng/L'},{field:'ckmb',name:'CK-MB',unit:'ng/mL'},
-  {field:'bnp',name:'BNP',unit:'pg/mL'},{field:'ntProBnp',name:'NT-proBNP',unit:'pg/mL'},{field:'crp',name:'CRP',unit:'mg/L'},
-  {field:'esr',name:'ESR',unit:'mm/hr'},{field:'procalcitonin',name:'Procalcitonin',unit:'ng/mL'},{field:'glucose',name:'Glucose',unit:'mg/dL'},
-  {field:'hba1c',name:'HbA1c',unit:'%'},{field:'cholesterol',name:'Total Cholesterol',unit:'mg/dL'},{field:'triglycerides',name:'Triglycerides',unit:'mg/dL'},
-  {field:'ldl',name:'LDL-C',unit:'mg/dL'},{field:'hdl',name:'HDL-C',unit:'mg/dL'},{field:'lactate',name:'Lactate',unit:'mmol/L'},
-  {field:'dDimer',name:'D-Dimer',unit:'mg/L FEU'},{field:'tsh',name:'TSH',unit:'mIU/L'},
-];
 type DisplayLabResult=LabResult&{displayKey:string;legacy?:boolean};
-const legacyLabResults=(panels:LabPanel[]):DisplayLabResult[]=>panels.flatMap((panel,panelIndex)=>{
-  const date=typeof panel.date==='string'?panel.date:'';
-  const fields=LEGACY_LAB_FIELDS.flatMap(({field,name,unit})=>{
-    const value=panel[field] as unknown;
-    if(value===null||value===undefined||(typeof value==='string'&&!value.trim()))return[];
-    return[{displayKey:`legacy:${panelIndex}:${String(field)}`,testName:name,value:value as string|number,unit,timestamp:date,panel:'Legacy',legacy:true}];
-  });
-  const custom=Array.isArray(panel.customLabs)?panel.customLabs.flatMap((result,index)=>{
-    if(result?.value===null||result?.value===undefined)return[];
-    const name=String(result.name||'').trim();
-    if(!name)return[];
-    return[{displayKey:`legacy:${panelIndex}:custom:${index}`,testName:name,value:result.value,unit:result.unit||'',referenceRange:result.referenceRange||'',timestamp:date,panel:'Legacy custom',legacy:true}];
-  }):[];
-  return[...fields,...custom];
-});
+const legacyDisplayResults=(panels:LabPanel[]):DisplayLabResult[]=>legacyLabResults(panels).map((r,index)=>({...r,displayKey:`legacy:${index}`}));
 
 const LabTrendChart:React.FC<{title:string;unit:string;items:{timestamp:string;value:number}[]}>=({title,unit,items})=>{
   const pts=items.flatMap(item=>{const time=timestampValue(item.timestamp);return time!==null&&Number.isFinite(item.value)?[{...item,time}]:[];}).sort((a,b)=>a.time-b.time);
@@ -82,7 +52,7 @@ export const LabsSection:React.FC<Props>=({patient})=>{
  const{updatePatient,showToast}=useApp();const isPreviousViewer=useIsPreviousViewer();
  const p=patient as PatientLabs;
   const labs=Array.isArray(patient.labResults)?patient.labResults:[];
-  const legacyResults=useMemo(()=>legacyLabResults(Array.isArray(patient.labs)?patient.labs:[]),[patient.labs]);
+   const legacyResults=useMemo(()=>legacyDisplayResults(Array.isArray(patient.labs)?patient.labs:[]),[patient.labs]);
   const displayResults=useMemo<DisplayLabResult[]>(()=>[
     ...(Array.isArray(patient.labResults)?patient.labResults:[]).map((result,index)=>({...result,displayKey:`result:${result.id||'missing'}:${index}`,legacy:false})),
     ...legacyResults,

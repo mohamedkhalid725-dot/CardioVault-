@@ -10,8 +10,10 @@ import { useApp } from '../../../context/AppContext';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { installArabicTextSupport } from '../../../services/pdfArabicSupport';
+import { aggregateLabResults, buildPdfTimeline, pdfChartX } from './labExportData';
+import { getPdfSafetyWarnings } from './pdfSafetyWarnings';
 
-// CCU case-presentation template: toggle groups mapped to the 25 numbered sections.
+// CCU case-presentation template: selected groups feed a single chronological report timeline.
 const sections = [
   ['identification', 'Identification & Admission (§1–2)'],
   ['history', 'History (§3–11)'],
@@ -187,47 +189,7 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
       // CardioVault header brand mark (app icon). Loaded once per export.
       const logoPng = await loadLogoDataUrl();
 
-      // ---- cross-source discrepancy scan (existing data only, never invented) ----
-      const discrepancies: Badge[] = [];
-      {
-        // Age mentions inside free text vs the recorded age.
-        const freeText = [
-          p.clinicalSummary?.chiefComplaint, p.clinicalSummary?.hpi, p.clinicalSummary?.summary,
-          ...((p.progressNotes || []).map((n: any) => `${n.assessment || ''} ${n.subjective || ''} ${n.objective || ''}`)),
-        ].filter(Boolean).join('\n');
-        const mentions = new Set<number>();
-        const re = /(?:age\s*[:=]?\s*(\d{1,3})|(\d{1,3})\s*(?:-?years?-old|years?\s*old|y\.?o\.?|yo\b))|(?:\u0627\u0644\u0639\u0645\u0631\s*[:=]?\s*(\d{1,3})|(\d{1,3})\s*(?:\u0633\u0646\u0629|\u0633\u0646\u0647|\u0639\u0627\u0645))/gi;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(freeText)) !== null) {
-          const n = Number(m[1] || m[2] || m[3] || m[4]);
-          if (n >= 0 && n <= 120) mentions.add(n);
-        }
-        mentions.forEach(a => {
-          if (typeof patient.age === 'number' && Math.abs(a - patient.age) > 1) {
-            discrepancies.push({ t: `Age discrepancy: file ${patient.age} vs note ${a}`, kind: 'amber' });
-          }
-        });
-        // Heart-rate cross-check: latest vitals vs latest ECG vs cardiology spot value.
-        const hrs: Array<[string, number]> = [];
-        const lv = p.vitalsHistory?.[0];
-        if (lv?.hr) hrs.push(['vitals', Number(lv.hr)]);
-        if (p.ecgRecords?.[0]?.heartRate) hrs.push(['ECG', Number(p.ecgRecords[0].heartRate)]);
-        if (p.cardiology?.heartRate) hrs.push(['cardiology', Number(p.cardiology.heartRate)]);
-        for (let i = 0; i < hrs.length; i += 1) {
-          for (let j = i + 1; j < hrs.length; j += 1) {
-            if (Math.abs(hrs[i][1] - hrs[j][1]) > 10) {
-              discrepancies.push({ t: `HR discrepancy: ${hrs[i][0]} ${hrs[i][1]} vs ${hrs[j][0]} ${hrs[j][1]}`, kind: 'amber' });
-            }
-          }
-        }
-        // GCS components vs recorded total.
-        if (lv && lv.gcsEye != null && lv.gcsVerbal != null && lv.gcsMotor != null && lv.gcsTotal != null) {
-          const sum = Number(lv.gcsEye) + Number(lv.gcsVerbal) + Number(lv.gcsMotor);
-          if (sum !== Number(lv.gcsTotal)) {
-            discrepancies.push({ t: `GCS discrepancy: components E${lv.gcsEye}V${lv.gcsVerbal}M${lv.gcsMotor} (=${sum}) vs total ${lv.gcsTotal}`, kind: 'amber' });
-          }
-        }
-      }
+      const discrepancies: Badge[] = getPdfSafetyWarnings(patient, p);
 
       let y = 0;
 
@@ -478,467 +440,67 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
         return null;
       };
 
-      // ---- document ----
+      // ---- report body: fixed identity followed by one global clinical timeline ----
       header();
       y = 37;
-
-      // ============ §1–2 Identification & Admission ============
-      if (has('identification')) {
-        sectionTitle(1, 'Patient Identification');
-        kvGrid([
-          ['Full Name', patient.fullName || patient.name],
-          ['MRN', patient.mrn],
-          ['Age / Sex', `${val(patient.age)} / ${val(patient.sex)}`, discrepancies.filter(d => d.t.startsWith('Age'))],
-          ['Weight / Height', (() => { const w = posNum(patient.weight); const h = posNum(patient.height); return !w && !h ? NP : `${w ? `${w} kg` : NP} / ${h ? `${h} cm` : NP}`; })()],
-          ['Unit / Bed', `${val(unit?.name)} / ${val(bed?.bedNumber)}`],
-          ['Status / Code Status', `${val(patient.status, 'Active')} / ${val(patient.codeStatus)}`],
-        ]);
-        sectionTitle(2, 'Admission & Administrative Data');
-        kvGrid([
-          ['Admission Date / Time', `${val(patient.admissionDate)} ${val(patient.admissionTime)}`],
-          ['Primary Diagnosis', patient.primaryDiagnosis || patient.diagnosis],
-          ['Secondary Diagnoses', (patient.secondaryDiagnoses || []).join(', ')],
-          ['Additional Conditions', (patient.additionalConditions || []).join(', ')],
-          ['Attended Clinician / Nurse', `${val(p.attendedClinician)} / ${val(p.attendedNurse)}`],
-          ['Past Admissions', (patient.pastAdmissions || []).map((a: any) => `${val(a.admissionDate)} ${val(a.unitName)} (${val(a.dischargeReason)})`).join(' • ')],
-        ]);
-        if (discrepancies.filter(d => !d.t.startsWith('Age')).length) {
-          para('Data Discrepancies', discrepancies.filter(d => !d.t.startsWith('Age')).map(d => d.t).join(' • '),
-            discrepancies.filter(d => !d.t.startsWith('Age')));
-        }
+      const titleBlock = (label: string) => { sectionTitle(0, label); flushTitle(); };
+      titleBlock('Patient Identification & Current Status');
+      kvGrid([
+        ['Full Name', patient.fullName || patient.name], ['MRN', patient.mrn],
+        ['Age / Sex', `${val(patient.age)} / ${val(patient.sex)}`],
+        ['Weight', patient.weight], ['Height', patient.height],
+        ['Attended Clinician', patient.attendedClinician],
+        ['Attended Nurse', patient.attendedNurse],
+        ['Current Diagnosis', patient.primaryDiagnosis || patient.diagnosis],
+        ['Allergies', [...(p.clinicalSummary?.allergies || []), ...(patient.allergies || [])].filter(Boolean).join(', ')],
+        ['Current Status / Code Status', `${val(patient.status)} / ${val(patient.codeStatus)}`],
+        ['Unit / Bed', `${val(unit?.name)} / ${val(bed?.bedNumber)}`],
+      ]);
+      // These are derived safety checks, not dated clinical events. Keep their
+      // provenance explicit and never assign a fabricated event date.
+      if (discrepancies.length) {
+        titleBlock('Clinical Safety Warnings — Derived from Recorded Data (Undated)');
+        discrepancies.forEach(warning => para('Warning', warning.t, [warning]));
       }
-
-      // ============ §3–11 History ============
-      if (has('history')) {
-        const s: any = p.clinicalSummary || {};
-        const cv: any = p.cardiovascularHistory || {};
-        sectionTitle(3, 'Chief Complaint');
-        para('Complaint', s.chiefComplaint);
-        sectionTitle(4, 'History of Present Illness');
-        para('HPI', s.hpi || s.summary);
-        sectionTitle(5, 'Past Medical History');
-        const pmhList = [...(s.pmh || [])];
-        para('PMH', pmhList.length ? pmhList.join(', ') : NP);
-        sectionTitle(6, 'Cardiovascular History');
-        {
-          const labels: Record<string, string> = {
-            hypertension: 'Hypertension', diabetes: 'Diabetes', dyslipidemia: 'Dyslipidemia', cad: 'CAD',
-            previousMI: 'Previous MI', heartFailure: 'Heart Failure', arrhythmias: 'Arrhythmias',
-            valvularDisease: 'Valvular Disease', previousPCI: 'Previous PCI', previousCABG: 'Previous CABG',
-            previousStroke: 'Previous Stroke', pvd: 'PVD', smoking: 'Smoking', alcohol: 'Alcohol',
-          };
-          const positives = Object.keys(labels).filter(k => cv[k] === true).map(k => labels[k]);
-          para('Cardiac Risk & History', positives.length ? positives.join(', ') : NP,
-            positives.length ? [{ t: `${positives.length} risk factor${positives.length > 1 ? 's' : ''}`, kind: 'navy' }] : []);
-          kvGrid([
-            ['Previous Admissions', cv.previousAdmissions],
-            ['Previous ICU', cv.previousICU],
-            ['Other Cardiac Notes', cv.other],
-          ]);
-        }
-        sectionTitle(7, 'Past Surgical History');
-        para('PSH', (s.psh || []).length ? (s.psh || []).join(', ') : NP);
-        sectionTitle(8, 'Home Medications & Drug History');
-        para('Drug History (Home Meds)', s.drugHistory);
-        sectionTitle(9, 'Allergies');
-        {
-          const allergies = [...(s.allergies || []), ...(patient.allergies || [])].filter(Boolean);
-          para('Allergies', allergies.length ? allergies.join(', ') : NP,
-            allergies.length ? [{ t: 'ALLERGY', kind: 'rose' }] : []);
-        }
-        sectionTitle(10, 'Social History');
-        para('Social', s.socialHistory);
-        sectionTitle(11, 'Family History');
-        para('Family', s.familyHistory);
-      }
-
-      // ============ §12–13 Vitals & Examination ============
-      if (has('vitals-exam')) {
-        sectionTitle(12, 'Vital Signs (Latest)');
-        {
-          const v: any = p.vitalsHistory?.[0] || {};
-          const fever = num(v.temp) !== null && (num(v.temp) as number) >= 38;
-          const lowSpo2 = num(v.spo2) !== null && (num(v.spo2) as number) < 90;
-          const bpSys = num(v.sbp);
-          const bpBad = bpSys !== null && ((bpSys as number) >= 180 || (bpSys as number) < 90);
-          const hrBad = num(v.hr) !== null && (((num(v.hr) as number) >= 120) || ((num(v.hr) as number) < 50));
-          const gcsBad = num(v.gcsTotal) !== null && (num(v.gcsTotal) as number) <= 8;
-          kvGrid([
-            ['Blood Pressure', v.sbp ? `${v.sbp}/${val(v.dbp)} mmHg` : NP, bpBad ? [{ t: 'CRITICAL', kind: 'rose' }] : []],
-            ['Heart Rate', v.hr ? `${v.hr} bpm` : NP, hrBad ? [{ t: 'CRITICAL', kind: 'rose' }] : discrepancies.filter(d => d.t.startsWith('HR'))],
-            ['Respiratory Rate', v.rr ? `${v.rr}/min` : NP],
-            ['SpO₂', v.spo2 ? `${v.spo2}%` : NP, lowSpo2 ? [{ t: 'CRITICAL', kind: 'rose' }] : []],
-            ['Temperature', v.temp ? `${v.temp} °C` : NP, fever ? [{ t: 'FEVER', kind: 'amber' }] : []],
-            ['GCS', v.gcsTotal ? `${v.gcsTotal}/15 (E${val(v.gcsEye)} V${val(v.gcsVerbal)} M${val(v.gcsMotor)})` : NP, gcsBad ? [{ t: 'CRITICAL', kind: 'rose' }] : []],
-            ['Pain Score', v.pain ?? NP],
-            ['RASS', v.rass ?? NP],
-            ['CVP', v.cvp ?? NP],
-            ['Glucose (bedside)', v.glucose ?? NP],
-            ['Lactate (bedside)', v.lactate ?? NP],
-            ['Recorded At', v.timestamp || NP],
-          ]);
-        }
-        sectionTitle(13, 'Systemic Examination');
-        {
-          const ex: any = p.examination || {};
-          const g = ex.general || {}, c = ex.cardiovascular || {}, r = ex.respiratory || {},
-            a = ex.abdomen || {}, n = ex.neurological || {}, e = ex.extremities || {};
-          kvGrid([
-            ['General', [g.appearance, g.consciousness, g.distress, g.hydration].filter(Boolean).join(' • ')],
-            ['Skin / Pallor / Cyanosis / Jaundice',
-              [g.skin, g.pallor ? 'Pallor' : '', g.cyanosis ? 'Cyanosis' : '', g.jaundice ? 'Jaundice' : '', g.edema, g.neck].filter(Boolean).join(' • ')],
-            ['Cardiovascular', [c.jvp && `JVP ${c.jvp}`, c.heartSounds, c.murmurs, c.peripheralPulses, c.edema, c.perfusion, c.apexBeat, c.thrill, c.radiofemoralDelay].filter(Boolean).join(' • ')],
-            ['Respiratory', [r.chestExam, r.airEntry, r.addedSounds, r.workOfBreathing, r.fremitus].filter(Boolean).join(' • ')],
-            ['Abdomen', [a.inspection, a.palpation, a.tenderness, a.organomegaly, a.ascites, a.bowelSounds, a.hernia].filter(Boolean).join(' • ')],
-            ['Neurological', [n.consciousness, n.gcs, n.pupils, n.motor, n.sensory, n.reflexes, n.cranialNerves, n.motorPower, n.plantarResponse, n.speech].filter(Boolean).join(' • ')],
-            ['Extremities', [e.pulses, e.edema, e.temp, e.perfusion, e.calves, e.pressureAreas].filter(Boolean).join(' • ')],
-            ['Custom Fields', (ex.customFields || []).map((f: any) => `${f.label}: ${f.value}`).join(' • ')],
-          ]);
-        }
-      }
-
-      // ============ §14 ECG ============
-      if (has('ecg')) {
-        sectionTitle(14, 'ECG');
-        const ecgs: any[] = p.ecgRecords || [];
-        const latest = ecgs[0];
-        if (latest) {
-          const acute = /stemi|acute|st elevation|new lbbb/i.test(
-            `${(latest.interpretation || []).join(' ')} ${latest.finalImpression || ''} ${latest.stSegment || ''}`
-          );
-          kvGrid([
-            ['Date / Time', `${val(latest.date)} ${val(latest.time)}`],
-            ['Rate / Rhythm / Regularity', `${val(latest.heartRate)} bpm / ${val(latest.rhythm)} / ${val(latest.regularity)}`,
-              acute ? [{ t: 'ACUTE', kind: 'rose' }] : discrepancies.filter(d => d.t.startsWith('HR'))],
-            ['Axis / P Wave / PR', `${val(latest.axis)} / ${val(latest.pWave)} / ${val(latest.pr)} ms`],
-            ['QRS / QT / QTc', `${val(latest.qrsFindings)} (${val(latest.qrs)} ms) / ${val(latest.qt)} / ${val(latest.qtc)} ms`],
-            ['ST Segment / T Wave', `${val(latest.stSegment)} / ${val(latest.tWave)}`],
-            ['Other Findings', latest.otherFindings],
-          ]);
-          para('Final Impression', latest.finalImpression, acute ? [{ t: 'ACUTE', kind: 'rose' }] : []);
-        } else {
-          para('ECG', NP);
-        }
-        if (ecgs.length > 1) {
-          cleanTable(['Date', 'Rhythm', 'Rate', 'Impression'],
-            [30, 50, 26, 88],
-            ecgs.slice(1, 11).map(e => [
-              `${val(e.date)} ${val(e.time)}`, val(e.rhythm),
-              e.heartRate ? `${e.heartRate}` : NP, compact(e.finalImpression || (e.interpretation || []).join(', '), 60),
-            ]),
-            'ECG records', 'ECG');
-        }
-      }
-
-      // ============ §15–16 Labs ============
+      newPage();
+      const timeline = buildPdfTimeline(p, selected);
+      const datedEvents = timeline.filter(event => event.timestamp);
+      const undatedEvents = timeline.filter(event => !event.timestamp);
+      titleBlock('Global Clinical Timeline — Oldest to Newest');
+      if (!datedEvents.length) para('Timeline', 'No selected clinical events have a reliable recorded date.');
+      datedEvents.forEach(event => para(`${event.timestamp}  •  ${event.type}  •  ${event.title}`, event.details));
+      titleBlock('Undated — No Reliable Date Recorded');
+      if (undatedEvents.length) undatedEvents.forEach(event => para(`${event.type}  •  ${event.title}`, event.details));
+      else para('Undated events', 'None.');
+      // Lab observations are events above; analyte charts and numeric tables exist only here.
       if (has('labs')) {
-        sectionTitle(15, 'Laboratory Investigations (Latest)');
-        {
-          const lab: any = (p.labs || [])[0] || {};
-          const labResults: any[] = p.labResults || [];
-          const cell = (k: string) => (lab[k] === undefined || lab[k] === null || lab[k] === '' ? NP : String(lab[k]));
-          const f = (k: string, lo: number, hi: number, cL?: number, cH?: number, pos?: boolean) =>
-            flagNum(lab[k], lo, hi, cL, cH, pos);
-          const rows: string[][] = [];
-          const tints: number[][] = [];
-          const push = (test: string, value: string, fl: Flag | null) => {
-            // Recorded labs only — unrecorded tests never reach the PDF.
-            if (isBlankRendered(value)) return;
-            rows.push([test, value, fl ? fl.t : '—']);
-            tints.push(fl?.critical ? rowRose : white);
-          };
-          push('Hb', cell('hb'), f('hb', 12, 16, 7, undefined));
-          push('WBC', cell('wbc'), f('wbc', 4, 11, 2, 20));
-          push('Platelets', cell('platelets'), f('platelets', 150, 400, 50, undefined));
-          push('HCT', cell('hct'), f('hct', 36, 46));
-          push('Urea', cell('urea'), f('urea', 15, 45));
-          push('Creatinine', cell('creatinine'), f('creatinine', 0.6, 1.2, undefined, 3));
-          push('eGFR', cell('egfr'), f('egfr', 90, 200, 30, undefined));
-          push('Na', cell('na'), f('na', 135, 145, 125, 155));
-          push('K', cell('k'), f('k', 3.5, 5.0, 3.0, 5.5));
-          push('Cl', cell('cl'), f('cl', 98, 107));
-          push('Ca', cell('ca'), f('ca', 8.5, 10.5));
-          push('Mg', cell('mg'), f('mg', 1.7, 2.2));
-          push('AST / ALT', `${cell('ast')} / ${cell('alt')}`, f('ast', 10, 40, undefined, 400) || f('alt', 10, 40, undefined, 400));
-          push('Bilirubin', cell('bilirubin'), f('bilirubin', 0.3, 1.2));
-          push('Albumin', cell('albumin'), f('albumin', 3.5, 5.5));
-          push('PT / INR', `${cell('pt')} / ${cell('inr')}`, f('inr', 0.9, 1.2, undefined, 2.5));
-          push('Troponin', cell('troponin'), f('troponin', 0, 0.04, undefined, undefined, true));
-          push('CK-MB', cell('ckmb'), f('ckmb', 0, 25));
-          push('BNP / NT-proBNP', `${cell('bnp')} / ${cell('ntProBnp')}`, null);
-          push('CRP', cell('crp'), f('crp', 0, 10, undefined, 100));
-          push('Lactate', cell('lactate'), f('lactate', 0.5, 2.0, undefined, 4));
-          push('Glucose', cell('glucose'), f('glucose', 70, 140, 50, 300));
-          push('D-Dimer', cell('dDimer'), f('dDimer', 0, 0.5));
-          const custom: any[] = lab.customLabs || [];
-          custom.forEach(c => push(val(c.name), `${val(c.value)} ${val(c.unit)}`.trim(), null));
-          labResults.forEach(r => push(val(r.name || r.testName), `${val(r.value)} ${val(r.unit)}`.trim(), null));
-          cleanTable(['Test', 'Result', 'Flag'], [70, 70, 54], rows, 'lab results', 'Laboratory', tints);
-          if (lab.date) para('Sample Date', lab.date);
-        }
-        sectionTitle(16, 'Serial Laboratory Trends');
-        {
-          const serial: any[] = (p.labs || []).slice(0, 4);
-          if (serial.length > 1) {
-            const keys = ['hb', 'wbc', 'platelets', 'creatinine', 'urea', 'na', 'k', 'troponin', 'crp', 'glucose', 'inr', 'lactate'];
-            const labels: Record<string, string> = {
-              hb: 'Hb', wbc: 'WBC', platelets: 'Platelets', creatinine: 'Creatinine', urea: 'Urea',
-              na: 'Na', k: 'K', troponin: 'Troponin', crp: 'CRP', glucose: 'Glucose', inr: 'INR', lactate: 'Lactate',
-            };
-            const dateW = Math.min(34, (CONTENT_W - 40) / serial.length);
-            const widths = [40, ...serial.map(() => (CONTENT_W - 40) / serial.length)];
-            void dateW;
-            const rows = keys
-              .filter(k => serial.some(s => nonEmpty(s[k])))
-              .map(k => [labels[k], ...serial.map(s => (nonEmpty(s[k]) ? String(s[k]) : '—'))]);
-            cleanTable(['Test', ...serial.map(s => val(s.date, 'Latest'))], widths, rows, 'serial results', 'Serial Labs');
-            // Single panel: no trend to display, so §16 stays out of the PDF.
+        titleBlock('Appendix — Laboratory Trends & Results');
+        let previousLabPanel = '';
+        for (const analyte of aggregateLabResults(p)) {
+          if (analyte.panel !== previousLabPanel) {
+            previousLabPanel = analyte.panel;
+            titleBlock(analyte.panel);
           }
+          const numeric = analyte.results.flatMap(r => {
+            const n=Number(r.value), t=r.timestamp?Date.parse(r.timestamp):NaN;
+            return Number.isFinite(n)&&Number.isFinite(t)?[{n,t,unit:String(r.unit||'')}]:[];
+          });
+          const units=[...new Set(numeric.map(point=>point.unit))];
+          para(analyte.name, '');
+          if(numeric.length&&units.length===1){
+            const points=numeric.sort((a,b)=>a.t-b.t),min=Math.min(...points.map(point=>point.n)),max=Math.max(...points.map(point=>point.n));
+            const span=max-min||Math.max(Math.abs(max)*.1,1),low=min-span*.1,high=max+span*.1,x0=points[0].t,x1=points[points.length-1].t;
+            ensureSpace(34,'Laboratory Appendix');doc.setFont('helvetica','bold');doc.setFontSize(7.5);text(navy);doc.text(`${analyte.name} trend (${units[0]||'unit not recorded'})`,MARGIN+3,y+4);
+            const xAt=(t:number)=>pdfChartX(t,x0,x1,MARGIN+12,CONTENT_W-24),yAt=(n:number)=>y+24-(n-low)/(high-low)*16;
+            draw(line);doc.line(MARGIN+10,y+25,MARGIN+CONTENT_W-6,y+25);draw(blueBar);doc.setLineWidth(.7);
+            points.forEach((point,index)=>{const xx=xAt(point.t),yy=yAt(point.n);doc.circle(xx,yy,1,'F');if(index)doc.line(xAt(points[index-1].t),yAt(points[index-1].n),xx,yy);});
+            doc.setFont('helvetica','normal');doc.setFontSize(6.5);text(muted);doc.text(String(low.toPrecision(4)),MARGIN+2,y+24);doc.text(String(high.toPrecision(4)),MARGIN+2,y+10);y+=31;
+          } else if(numeric.length&&units.length>1) para('Trend chart','Not plotted: recorded values use different units.');
+          cleanTable(['Date','Value','Unit','Reference','Flag'],[38,35,32,52,37],analyte.results.map(r=>[
+            r.timestamp&&Number.isFinite(Date.parse(r.timestamp))?r.timestamp:'Undated',String(r.value??''),String(r.unit||''),String(r.referenceRange||''),String(r.flag||r.status||''),
+          ]),'laboratory results','Laboratory Appendix');
         }
       }
-
-      // ============ §17–19 Imaging & Cardiology ============
-      if (has('imaging-cardiology')) {
-        sectionTitle(17, 'Radiology & Imaging');
-        {
-          const studies: any[] = p.imaging || [];
-          cleanTable(['Date', 'Modality', 'Region', 'Impression'],
-            [28, 36, 45, 85],
-            studies.map(s => [
-              val(s.date), val(s.modality || s.type), val(s.bodyRegion || s.region),
-              compact(s.impression || s.findings, 80),
-            ]),
-            'imaging studies', 'Radiology');
-        }
-        sectionTitle(18, 'Echocardiography');
-        {
-          const c: any = p.cardiology || {};
-          const e: any = c.echo || {};
-          if (c.echoBriefSummary) para('Echo Summary', c.echoBriefSummary);
-          const echoRows: string[][] = [
-            ['EF', e.ef !== undefined && e.ef !== null && e.ef !== '' ? `${e.ef}%` : NP],
-            ['LV Dimensions', val(e.lvDimensions)],
-            ['LV Function', val(e.lvFunction)],
-            ['RWMA', val(e.rwma)],
-            ['RV Function', val(e.rvFunction)],
-            ['LA / RA', `${val(e.la)} / ${val(e.ra)}`],
-            ['MR / AR', `${val(e.mr)} / ${val(e.ar)}`],
-            ['AS / MS', `${val(e.as)} / ${val(e.ms)}`],
-            ['TR / PR', `${val(e.tr)} / ${val(e.pr)}`],
-            ['PASP', e.pasp ? `${e.pasp} mmHg` : NP],
-            ['IVC', val(e.ivc)],
-            ['Pericardium', val(e.pericardium)],
-            ['Other Findings', val(e.otherFindings)],
-          ];
-          const efBad = num(e.ef) !== null && (num(e.ef) as number) < 40;
-          // Recorded echo parameters only — unrecorded rows never reach the PDF.
-          const echoRowsShown = echoRows.filter(r => !isBlankRendered(val(r[1])));
-          cleanTable(['Parameter', 'Finding'], [62, 132], echoRowsShown.map(r => r),
-            'echo findings', 'Echocardiography',
-            echoRowsShown.map(r => (r[0] === 'EF' && efBad ? rowRose : white)));
-          kvGrid([
-            ['Rhythm / HR / BP', `${val(c.rhythm)} / ${c.heartRate ? `${c.heartRate} bpm` : NP} / ${val(c.bp)}`, discrepancies.filter(d => d.t.startsWith('HR'))],
-            ['HF Status / NYHA / Killip', `${val(c.heartFailureStatus)} / ${val(c.nyha || c.nyhaClass)} / ${val(c.killip || c.killipClass)}`],
-            ['Congestion / Perfusion', `${val(c.congestion)} / ${val(c.perfusion)}`],
-            ['Devices / Support', [val((c.devicesList || []).map((d: any) => `${val(d.type)} (${val(d.status)})`).join(', ')), val(c.pacemaker), val(c.mechanicalSupport)].filter(x => x !== NP).join(' • ') || NP],
-          ]);
-          if ((c.biomarkerRecords || []).length) {
-            cleanTable(['Date', 'Marker', 'Value', 'Ref Range'],
-              [30, 50, 50, 64],
-              (c.biomarkerRecords || []).map((b: any) => [val(b.date), val(b.name), `${val(b.value)} ${val(b.unit)}`.trim(), val(b.referenceRange)]),
-              'biomarkers', 'Echocardiography');
-          }
-        }
-        sectionTitle(19, 'Catheterization & Coronary Interventions');
-        {
-          const c: any = p.cardiology || {};
-          const cor: any = c.coronary || {};
-          const caths: any[] = c.cathRecords || [];
-          kvGrid([
-            ['Cath', cor.cath],
-            ['Coronary Findings', cor.coronaryFindings],
-            ['PCI', cor.pci, /stent|pci|angioplasty/i.test(val(cor.pci, '')) ? [{ t: 'PCI', kind: 'navy' }] : []],
-            ['Stent', cor.stent],
-            ['CABG', cor.cabg],
-            ['Antithrombotic', [
-              c.antithrombotic?.antiplatelet && `Antiplatelet: ${c.antithrombotic.antiplatelet}`,
-              c.antithrombotic?.anticoagulation && `Anticoagulation: ${c.antithrombotic.anticoagulation}`,
-              c.antithrombotic?.thrombolysis && `Thrombolysis: ${c.antithrombotic.thrombolysis}`,
-            ].filter(Boolean).join(' • ') || NP],
-          ]);
-          if (caths.length) {
-            cleanTable(['Date', 'Indication', 'Access', 'Intervention', 'Result'],
-              [24, 44, 28, 50, 48],
-              caths.map(k => [
-                val(k.date), compact(k.indication, 40), val(k.accessSite),
-                compact(k.intervention || (k.stentsPlaced ? `Stents: ${k.stentsPlaced}` : ''), 44),
-                compact(k.finalResult || k.complications, 44),
-              ]),
-              'cath records', 'Catheterization');
-          }
-        }
-      }
-
-      // ============ §8/§20 Medications ============
-      if (has('medications')) {
-        sectionTitle(20, 'In-Hospital Medications & Infusions');
-        {
-          const meds: any[] = (p.medications || []).filter((m: any) => m.status !== 'Discontinued');
-          const stopped: any[] = (p.medications || []).filter((m: any) => m.status === 'Discontinued');
-          cleanTable(['Drug', 'Dose', 'Route', 'Frequency', 'Status'],
-            [58, 38, 32, 38, 28],
-            meds.map(m => [val(m.name || m.drug), val(m.dose), val(m.route), val(m.frequency), val(m.status, 'Active')]),
-            'medications', 'Medications');
-          if (stopped.length) para('Discontinued', stopped.map(m => val(m.name || m.drug)).join(', '));
-          const infusions: any[] = p.infusions || [];
-          if (infusions.length) {
-            cleanTable(['Drug', 'Dose', 'Rate', 'Details'],
-              [52, 40, 40, 62],
-              infusions.map(i => [
-                val(i.drugName), `${val(i.dose)} ${val(i.unit)}`.trim(),
-                i.rateMlHr ? `${i.rateMlHr} mL/hr` : NP,
-                compact(i.carrierFluid || i.concentration || i.lineSite, 50),
-              ]),
-              'infusions', 'Medications');
-          }
-          const admin: any[] = (p.medicationAdministrations || []).slice(0, 10);
-          if (admin.length) {
-            cleanTable(['Time', 'Drug', 'Status', 'Given By'],
-              [44, 62, 32, 56],
-              admin.map(a => [val(a.time), val(a.medicationName), val(a.status), compact(a.user, 26)]),
-              'administrations', 'Medications');
-          }
-        }
-      }
-
-      // ============ §21–22 ICU & Procedures ============
-      if (has('icu-procedures')) {
-        sectionTitle(21, 'ICU Care — Ventilatory, Hemodynamic & Fluid Support');
-        {
-          const v: any = p.ventilator || {};
-          const support: string = val(v.supportType, v.mode ? 'Mechanical Ventilation' : 'Room Air');
-          kvGrid([
-            ['Support Type', support],
-            ['Oxygen Device / Flow', v.oxygenDevice ? `${v.oxygenDevice}${v.oxygenFlow ? ` ${v.oxygenFlow} L/min` : ''}` : NP],
-            ['Mode / FiO₂ / PEEP', (nonEmpty(v.mode) || v.fio2 != null || v.peep != null) ? `${val(v.mode)} / ${v.fio2 ?? NP}% / ${v.peep ?? NP} cmH₂O` : NP],
-            ['Tidal Volume / RR', (v.tidalVolume != null || v.respiratoryRate != null || v.rr != null) ? `${v.tidalVolume ?? NP} mL / ${v.respiratoryRate ?? v.rr ?? NP}/min` : NP],
-            ['Pressures (Peak/Plat/MAP)', (v.peakPressure != null || v.plateauPressure != null || v.meanAirwayPressure != null) ? `${v.peakPressure ?? NP} / ${v.plateauPressure ?? NP} / ${v.meanAirwayPressure ?? NP} cmH₂O` : NP],
-            ['SpO₂ / EtCO₂', (v.spo2 != null || v.etco2 != null) ? `${v.spo2 ?? NP}% / ${v.etco2 ?? NP} mmHg` : NP],
-          ]);
-          const abgs: any[] = (v.abgHistory || []).slice(0, 6);
-          if (abgs.length) {
-            cleanTable(['Time', 'pH', 'PaCO₂', 'PaO₂', 'HCO₃', 'Lactate', 'Interpretation'],
-              [34, 22, 26, 26, 26, 26, 34],
-              abgs.map(a => [
-                val(a.timestamp), val(a.ph), val(a.paco2), val(a.pao2), val(a.hco3), val(a.lactate),
-                compact(a.interpretation, 30),
-              ]),
-              'ABGs', 'ICU Care');
-          }
-          const hemo: any[] = (p.hemodynamicHistory || []).slice(0, 8);
-          if (hemo.length) {
-            cleanTable(['Date / Time', 'Parameter', 'Value', 'Notes'],
-              [40, 54, 44, 56],
-              hemo.map(h => [`${val(h.date)} ${val(h.time)}`, val(h.parameter), `${val(h.value)} ${val(h.unit)}`.trim(), compact(h.notes, 40)]),
-              'hemodynamics', 'ICU Care');
-          }
-          const fluids: any[] = (p.fluidRecords || []).slice(0, 5);
-          if (fluids.length) {
-            cleanTable(['Date', 'Intake', 'Output', 'Net Balance'],
-              [40, 52, 52, 50],
-              fluids.map(f => [
-                val(f.date || f.timestamp),
-                f.totalIntake != null ? `${f.totalIntake} mL` : NP,
-                f.totalOutput != null ? `${f.totalOutput} mL` : NP,
-                f.netBalance != null ? `${f.netBalance} mL` : NP,
-              ]),
-              'fluid records', 'ICU Care');
-          }
-          if (!abgs.length && !hemo.length && !fluids.length && !v.mode && !v.supportType) {
-            para('ICU Support', NP);
-          }
-        }
-        sectionTitle(22, 'Procedures & Interventions');
-        {
-          const procs: any[] = p.procedures || [];
-          cleanTable(['Date / Time', 'Procedure', 'Operator', 'Outcome / Plan'],
-            [32, 56, 36, 70],
-            procs.map(pr => [
-              `${val(pr.date)} ${val(pr.time)}`, val(pr.procedure || pr.name || pr.surgeryName),
-              val(pr.operator), compact(pr.outcome || pr.findings || pr.postProcedurePlan || pr.indication, 70),
-            ]),
-            'procedures', 'Procedures');
-        }
-      }
-
-      // ============ §23–25 Orders, Course, Timeline, Problems & Plan ============
-      if (has('course-plan')) {
-        sectionTitle(23, 'Orders & Consultations');
-        {
-          const inv: any[] = p.investigations || [];
-          cleanTable(['Investigation', 'Status', 'Flag', 'Results'],
-            [52, 42, 30, 70],
-            inv.map(x => [
-              val(x.title || x.type), val(x.status),
-              x.flag && x.flag !== 'normal' ? String(x.flag).toUpperCase() : '—',
-              compact(x.resultsSummary || x.notes, 60),
-            ]),
-            'investigations', 'Orders');
-          const cons: any[] = p.consultations || [];
-          cleanTable(['Specialty', 'Question', 'Status', 'Response'],
-            [40, 64, 36, 54],
-            cons.map(c => [
-              val(c.specialty), compact(c.clinicalQuestion, 56), val(c.status), compact(c.responseNotes, 48),
-            ]),
-            'consultations', 'Orders');
-          const tasks: any[] = (p.tasks || []).filter((t: any) => !t.patientId || t.patientId === patient.id).slice(0, 10);
-          if (tasks.length) {
-            cleanTable(['Task', 'Priority', 'Status'],
-              [96, 40, 58],
-              tasks.map(t => [compact(t.title, 80), val(t.priority), val(t.status)]),
-              'tasks', 'Orders');
-          }
-        }
-        sectionTitle(24, 'Hospital Course & Events Timeline');
-        {
-          const notes: any[] = [...(p.progressNotes || [])].reverse().slice(0, 15);
-          if (notes.length) {
-            notes.forEach(n => {
-              para(`${val(n.date)} ${val(n.time)} — ${val(n.author)}${n.type ? ` (${n.type})` : ''}`,
-                [n.subjective && `S: ${n.subjective}`, n.objective && `O: ${n.objective}`,
-                  n.assessment && `A: ${n.assessment}`, n.events && `Events: ${n.events}`,
-                  n.investigations && `Ix: ${n.investigations}`, n.treatment && `Rx: ${n.treatment}`,
-                  n.response && `Response: ${n.response}`, n.plan && `P: ${n.plan}`,
-                ].filter(Boolean).join('\n') || n.plan || NP);
-            });
-          } else {
-            para('Hospital Course', NP);
-          }
-          const events: any[] = [...(p.timelineEvents || [])]
-            .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
-            .slice(-25);
-          if (events.length) {
-            cleanTable(['Timestamp', 'Event', 'Details'],
-              [44, 56, 94],
-              events.map(e => [val(e.timestamp), compact(e.title || e.eventType, 44), compact(e.summary, 80)]),
-              'timeline events', 'Hospital Course');
-          }
-        }
-        sectionTitle(25, 'Active Problem List, Plan & Summary');
-        {
-          const probs: any[] = p.problems || [];
-          const probRows = [
-            ...probs.map(x => [val(x.problem), val(x.status), val(x.priority), val(x.dateIdentified)] as string[]),
-            ...(patient.secondaryDiagnoses || []).map(d => [val(d), 'active', 'routine', NP] as string[]),
-          ];
-          cleanTable(['Problem', 'Status', 'Priority', 'Identified'],
-            [82, 40, 34, 38], probRows, 'problems', 'Problem List');
-          const latestNote: any = (p.progressNotes || [])[0];
-          para('Current Plan', latestNote?.plan || NP);
-          if (p.dischargeSummary) para('Discharge Summary', p.dischargeSummary);
-        }
-      }
-
       footer();
 
       // Page numbers with real total (two-pass over finished pages).
