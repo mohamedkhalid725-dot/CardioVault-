@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateLabResults, buildPdfTimeline, orderLabResults } from '../src/components/patient/sections/labExportData.ts';
+import { aggregateLabResults, buildPdfTimeline, dateOf, orderLabResults } from '../src/components/patient/sections/labExportData.ts';
 
 test('aggregates each analyte once and retains every modern value in ascending time order', () => {
   const result = aggregateLabResults({labs:[],labResults:[
@@ -34,6 +34,15 @@ test('keeps undated results explicitly undated and after dated results without i
   assert.match(timeline[0].details,/4 u/);
 });
 
+test('preserves a zero-valued legacy lab as a recorded result', () => {
+  const results=aggregateLabResults({labResults:[],labs:[{date:'2025-01-01',troponin:0,customLabs:[]} as any]})
+    .find(analyte=>analyte.name==='Troponin')?.results;
+  assert.equal(results?.length,1);
+  assert.equal(results?.[0].value,0);
+  const events=buildPdfTimeline({labResults:[],labs:[{date:'2025-01-01',troponin:0,customLabs:[]} as any]},['labs']);
+  assert.equal(events[0].details,'0 ng/L');
+});
+
 test('one global timeline includes selected section records and sorts dated content oldest first', () => {
   const events=buildPdfTimeline({
     vitalsHistory:[{timestamp:'2025-03-02',sbp:120,dbp:80,hr:70}],
@@ -55,16 +64,29 @@ test('every selected clinical section contributes its recorded content to the ev
     imaging:[{date:'2025-01-04',impression:'Index image'}],cardiology:{echoBriefSummary:'Index echo'},
     medications:[{name:'Index medication'}],infusions:[{drugName:'Index infusion'}],
     ventilator:{supportType:'Index support',abgHistory:[{timestamp:'2025-01-05',interpretation:'Index ABG'}]},
-    procedures:[{date:'2025-01-06',procedure:'Index procedure'}],
+    procedures:[{date:'2025-01-06',procedure:'Index procedure'}],fluidIntakeHistory:[{date:'2025-01-06',time:'10:00',amount:500,type:'IV',unit:'mL'}],
+    urineOutputHistory:[{date:'2025-01-06',time:'11:00',amount:250,type:'Urine',unit:'mL'}],
     investigations:[{title:'Index investigation'}],consultations:[{specialty:'Index consult'}],
     tasks:[{title:'Index task'}],progressNotes:[{date:'2025-01-07',assessment:'Index assessment'}],
-    timelineEvents:[{timestamp:'2025-01-08',title:'Index event'}],problems:[{problem:'Index problem'}],
+    timelineEvents:[{timestamp:'2025-01-08',title:'Index event'}],problems:[{problem:'Index problem'}],shiftHandovers:[{timestamp:'2025-01-09',importantEvents:'Index shift handover'}],
   };
   const output=buildPdfTimeline(patient,['identification','history','vitals-exam','ecg','labs','imaging-cardiology','medications','icu-procedures','course-plan'])
     .map(event=>`${event.title} ${event.details}`).join('\n');
   ['Index diagnosis','Index complaint','Index HPI','Index PMH','Index cardiac history','Index vital note','Index exam','Index rhythm',
     'Index image','Index echo','Index medication','Index infusion','Index support','Index ABG','Index procedure','Index investigation',
-    'Index consult','Index task','Index assessment','Index event','Index problem','Penicillin'].forEach(content=>assert.ok(output.includes(content),`missing selected content: ${content}`));
+    'Index consult','Index task','Index assessment','Index event','Index problem','Index shift handover','Penicillin','500','250'].forEach(content=>assert.ok(output.includes(content),`missing selected content: ${content}`));
+});
+
+test('clinical date fields and numeric epoch timestamps are parsed; unreliable values stay undated', () => {
+  assert.equal(dateOf({orderedAt:'2025-01-02T09:30:00Z'}),'2025-01-02T09:30:00Z');
+  assert.equal(dateOf({requestedAt:'2025-01-03'}),'2025-01-03');
+  assert.equal(dateOf({dueDateTime:'2025-01-04T12:00:00Z'}),'2025-01-04T12:00:00Z');
+  assert.equal(dateOf({dateIdentified:'2025-01-05'}),'2025-01-05');
+  assert.equal(dateOf({startDate:'2025-01-06'}),'2025-01-06');
+  assert.equal(dateOf({timestamp:Date.parse('2025-01-07T00:00:00Z')}),'2025-01-07T00:00:00.000Z');
+  assert.equal(dateOf({timestamp:'not a date',orderedAt:'also invalid'}),undefined);
+  const events=buildPdfTimeline({investigations:[{orderedAt:'2025-02-02',title:'Ordered'}, {orderedAt:'unknown',title:'No date'}]},['course-plan']);
+  assert.deepEqual(events.map(event=>event.timestamp),['2025-02-02',undefined]);
 });
 
 test('undated selected clinical records stay in the undated group and receive no fabricated date', () => {

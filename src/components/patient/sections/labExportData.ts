@@ -20,7 +20,17 @@ export const legacyLabResults = (panels: LabPanel[] = []): ExportLabResult[] => 
   return [...fields,...custom].map(result=>({...result,legacy:true}));
 });
 
-const validTime = (value?: string) => { if (!value?.trim()) return null; const n=Date.parse(value); return Number.isFinite(n)?n:null; };
+const parseClinicalDate = (value: unknown): { timestamp: string; time: number } | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const milliseconds = Math.abs(value) < 1e12 ? value * 1000 : value;
+    const time = new Date(milliseconds).getTime();
+    return Number.isFinite(time) ? { timestamp: new Date(time).toISOString(), time } : null;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? { timestamp: value, time } : null;
+};
+const validTime = (value?: unknown) => parseClinicalDate(value)?.time ?? null;
 export const orderLabResults = <T extends {timestamp?: string}>(results:T[]):T[] => [...results].sort((a,b)=>{
   const ta=validTime(a.timestamp),tb=validTime(b.timestamp);
   return ta===null?(tb===null?0:1):tb===null?-1:ta-tb;
@@ -40,12 +50,12 @@ export type PdfTimelineEvent = {timestamp?:string;type:string;title:string;detai
 const SECTION_SOURCES: Record<string, Array<[string,string]>> = {
   identification:[['Admission','admission'],['Diagnosis','diagnosis'],['Past admissions','pastAdmissions']],
   history:[['Clinical history','clinicalSummary'],['Cardiovascular history','cardiovascularHistory']],
-  'vitals-exam':[['Vital signs','vitalsHistory'],['Examination','examination'],['Fluid balance','fluidRecords'],['Hemodynamics','hemodynamicHistory']],
+  'vitals-exam':[['Vital signs','vitalsHistory'],['Examination','examination'],['Fluid balance','fluidRecords'],['Fluid intake','fluidIntakeHistory'],['Urine output','urineOutputHistory'],['Hemodynamics','hemodynamicHistory']],
   ecg:[['ECG','ecgRecords']], labs:[],
   'imaging-cardiology':[['Imaging','imaging'],['Cardiology','cardiology']],
   medications:[['Medication orders','medications'],['Infusions','infusions'],['Administration','medicationAdministrations']],
   'icu-procedures':[['Ventilator and ABG','ventilator'],['Hemodynamic history','hemodynamicHistory'],['Fluid records','fluidRecords'],['Procedures','procedures']],
-  'course-plan':[['Investigations','investigations'],['Consultations','consultations'],['Tasks','tasks'],['Progress note','progressNotes'],['Clinical timeline','timelineEvents'],['Problems','problems'],['Handover','handover'],['Discharge summary','dischargeSummary']],
+  'course-plan':[['Investigations','investigations'],['Consultations','consultations'],['Tasks','tasks'],['Progress note','progressNotes'],['Clinical timeline','timelineEvents'],['Problems','problems'],['Handover','handover'],['Shift handover','shiftHandovers'],['Discharge summary','dischargeSummary']],
 };
 const OMIT_KEYS = new Set(['id','patientId','unitId','departmentId','imageUrls','imageStoragePaths','audioUrl','audioStoragePath','photoUrl']);
 const stringifyClinical = (value: unknown): string => {
@@ -57,9 +67,17 @@ const stringifyClinical = (value: unknown): string => {
   }).filter(Boolean).join(' | ');
   return '';
 };
-const dateOf = (record: any): string | undefined => {
-  const candidate=record?.timestamp || (record?.date ? `${record.date}${record.time?` ${record.time}`:''}` : record?.admissionDate);
-  return typeof candidate==='string'&&validTime(candidate)!==null?candidate:undefined;
+const DATE_KEYS = ['timestamp','date','admissionDate','orderedAt','requestedAt','dueDateTime','dateIdentified','startDate','createdAt','completedAt','availableAt','reviewedAt','acknowledgedAt','updatedAt','resolvedDate','orderDate','collectionUpdatedAt'] as const;
+export const dateOf = (record: any): string | undefined => {
+  if (!record || typeof record !== 'object') return undefined;
+  for (const key of DATE_KEYS) {
+    const raw = record[key];
+    const candidate = key === 'date' && typeof raw === 'string' && record.time
+      ? `${raw} ${record.time}` : raw;
+    const parsed = parseClinicalDate(candidate);
+    if (parsed) return parsed.timestamp;
+  }
+  return undefined;
 };
 const records = (value: any): any[] => Array.isArray(value)?value:[value];
 
@@ -74,7 +92,7 @@ export const buildPdfTimeline = (p: any, selected: string[]): PdfTimelineEvent[]
     if(section==='labs'){
       aggregateLabResults(p).forEach(analyte=>analyte.results.forEach(result=>{
         const flag=result.flag||result.status||'';
-        add(result.timestamp,'Laboratory',analyte.name,[result.value,result.unit,flag&&`Flag: ${flag}`].filter(Boolean).join(' '),'labs');
+        add(result.timestamp,'Laboratory',analyte.name,[result.value,result.unit,flag&&`Flag: ${flag}`].filter(value=>value!==undefined&&value!==null&&value!=='').join(' '),'labs');
       }));
       continue;
     }
