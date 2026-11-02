@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
-import { collection, getDocFromServer, getDocsFromServer, query, setDoc, where } from 'firebase/firestore';
+import { collection, getDocFromServer, getDocsFromServer, setDoc, writeBatch } from 'firebase/firestore';
 import type { MasterPatientFile, MasterTimelineEvent } from '../types/clinicArea';
 import { webCollection, webDoc } from './webFirebase';
 import type { MasterPatientFilePersistenceIO } from './masterPatientFileCloud';
@@ -8,6 +8,35 @@ import type { MasterPatientFilePersistenceIO } from './masterPatientFileCloud';
 const filesPath = (workspaceId: string) => `workspaces/${workspaceId}/masterFiles`;
 const filePath = (workspaceId: string, fileId: string) => `${filesPath(workspaceId)}/${fileId}`;
 const eventsPath = (workspaceId: string, fileId: string) => `${filePath(workspaceId, fileId)}/events`;
+const unitIndexPath = (workspaceId: string, unitId: string) => `workspaces/${workspaceId}/units/${unitId}/masterIndex`;
+
+function masterIndexRecord(workspaceId: string, unitId: string, masterFileId: string) {
+  return { workspaceId, unitId, masterFileId };
+}
+
+async function writeMasterFileAndIndexes(
+  workspaceId: string,
+  file: MasterPatientFile,
+  fileData: Record<string, unknown>,
+  merge: boolean,
+  indexUnitIds: string[],
+): Promise<void> {
+  const indexOperations = [...new Set(indexUnitIds.filter(Boolean))].map(unitId => ({
+    reference: `${unitIndexPath(workspaceId, unitId)}/${file.id}`,
+    data: masterIndexRecord(workspaceId, unitId, file.id),
+  }));
+  if (Capacitor.isNativePlatform()) {
+    await FirebaseFirestore.writeBatch({ operations: [
+      { type: 'set', reference: filePath(workspaceId, file.id), data: fileData, options: { merge } },
+      ...indexOperations.map(operation => ({ type: 'set' as const, ...operation, options: { merge: false } })),
+    ] });
+    return;
+  }
+  const batch = writeBatch(webDoc(filePath(workspaceId, file.id)).firestore);
+  batch.set(webDoc(filePath(workspaceId, file.id)), fileData, { merge });
+  for (const operation of indexOperations) batch.set(webDoc(operation.reference), operation.data);
+  await batch.commit();
+}
 
 function nativeData(snapshot: any): any {
   try {
@@ -43,42 +72,47 @@ export const firestoreMasterPatientFilePersistence: MasterPatientFilePersistence
 
   async listFilesForUnit(workspaceId, unitId) {
     if (!unitId) return [];
-    const path = filesPath(workspaceId);
+    const indexPath = unitIndexPath(workspaceId, unitId);
+    let fileIds: string[];
     if (Capacitor.isNativePlatform()) {
       await FirebaseFirestore.enableNetwork();
-      const result: any = await FirebaseFirestore.getCollection({
-        reference: path,
-        compositeFilter: { type: 'and', queryConstraints: [{ type: 'where', fieldPath: 'contextIds', opStr: 'array-contains', value: unitId }] },
-      });
+      const result: any = await FirebaseFirestore.getCollection({ reference: indexPath });
       const snapshots = Array.isArray(result?.snapshots) ? result.snapshots : [];
-      snapshots.forEach((snapshot: any) => requireServerSnapshot(snapshot, 'master patient file'));
-      return snapshots.flatMap((snapshot: any) => {
+      snapshots.forEach((snapshot: any) => requireServerSnapshot(snapshot, 'unit master-file index'));
+      fileIds = snapshots.flatMap((snapshot: any) => {
         const data = nativeData(snapshot);
-        const id = nativeId(snapshot, data);
-        return data && id ? [{ ...data, id } as MasterPatientFile] : [];
+        const id = String(data?.masterFileId || nativeId(snapshot, data));
+        return data && id ? [id] : [];
       });
+    } else {
+      const snapshot = await getDocsFromServer(webCollection(indexPath));
+      fileIds = snapshot.docs.map(item => String(item.data().masterFileId || item.id)).filter(Boolean);
     }
-    const ref = webCollection(path);
-    const snapshot = await getDocsFromServer(query(ref, where('contextIds', 'array-contains', unitId)));
-    return snapshot.docs.map(item => ({ ...item.data(), id: item.id } as MasterPatientFile));
+    const files = await Promise.all([...new Set(fileIds)].map(fileId => this.getFile(workspaceId, fileId)));
+    return files.filter((file): file is MasterPatientFile => !!file);
   },
 
   async createFile(workspaceId, file) {
-    const path = filePath(workspaceId, file.id);
-    if (Capacitor.isNativePlatform()) {
-      await FirebaseFirestore.setDocument({ reference: path, data: file, merge: false });
-      return;
-    }
-    await setDoc(webDoc(path), file);
+    await writeMasterFileAndIndexes(workspaceId, file, file as unknown as Record<string, unknown>, false, file.contextIds);
   },
 
   async updateFile(workspaceId, file) {
-    const path = filePath(workspaceId, file.id);
+    const current = await this.getFile(workspaceId, file.id);
+    if (!current) throw new Error('The master patient file is unavailable for unit sharing.');
+    const addedUnitIds = file.contextIds.filter(unitId => !current.contextIds.includes(unitId));
+    await writeMasterFileAndIndexes(workspaceId, file, { contextIds: file.contextIds, updatedAtMs: file.updatedAtMs }, true, addedUnitIds);
+  },
+
+  async ensureUnitIndex(workspaceId, fileId, unitId) {
+    const file = await this.getFile(workspaceId, fileId);
+    if (!file || !file.contextIds.includes(unitId)) throw new Error('The master patient file is not authorized for this unit.');
+    const reference = `${unitIndexPath(workspaceId, unitId)}/${fileId}`;
+    const data = masterIndexRecord(workspaceId, unitId, fileId);
     if (Capacitor.isNativePlatform()) {
-      await FirebaseFirestore.setDocument({ reference: path, data: { contextIds: file.contextIds, updatedAtMs: file.updatedAtMs }, merge: true });
+      await FirebaseFirestore.setDocument({ reference, data, merge: false });
       return;
     }
-    await setDoc(webDoc(path), { contextIds: file.contextIds, updatedAtMs: file.updatedAtMs }, { merge: true });
+    await setDoc(webDoc(reference), data);
   },
 
   async getEvent(workspaceId, fileId, eventId) {

@@ -29,6 +29,7 @@ const path = {
   unit: (ws, unitId) => `workspaces/${ws}/units/${unitId}`,
   request: (ws, id) => `workspaces/${ws}/subscriptionRequests/${id}`,
   master: (ws, id) => `workspaces/${ws}/masterFiles/${id}`,
+  masterIndex: (ws, unitId, id) => `workspaces/${ws}/units/${unitId}/masterIndex/${id}`,
   masterEvent: (ws, fileId, eventId) => `workspaces/${ws}/masterFiles/${fileId}/events/${eventId}`,
   waiting: (ws, unitId, id) => `workspaces/${ws}/units/${unitId}/waiting/${id}`,
   patient: (ws, id) => `workspaces/${ws}/patients/${id}`,
@@ -435,6 +436,45 @@ test("a unit member reads a master file scoped to their unit", async () => {
   await assertFails(getDoc(doc(dbFor(DOC_B), path.master(WS, "m1"))));
 });
 
+test("per-unit master-file index is readable only by that unit and the owner", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, path.master(WS, "m-indexed")), {
+      id: "m-indexed", workspaceId: WS, createdBy: DOC_A, ownerUnitId: UNIT_A,
+      contextIds: [UNIT_A], name: "Patient A", sourcePatientIds: ["pA"], schemaVersion: 1,
+    });
+    await setDoc(doc(db, path.masterIndex(WS, UNIT_A, "m-indexed")), {
+      workspaceId: WS, unitId: UNIT_A, masterFileId: "m-indexed",
+    });
+  });
+
+  const unitA = dbFor(DOC_A);
+  const unitB = dbFor(DOC_B);
+  const ownIndex = collection(unitA, `workspaces/${WS}/units/${UNIT_A}/masterIndex`);
+  const foreignIndex = collection(unitB, `workspaces/${WS}/units/${UNIT_A}/masterIndex`);
+  await assertSucceeds(getDocs(ownIndex));
+  await assertSucceeds(getDoc(doc(unitA, path.masterIndex(WS, UNIT_A, "m-indexed"))));
+  await assertSucceeds(getDoc(doc(unitA, path.master(WS, "m-indexed"))));
+  await assertFails(getDocs(foreignIndex));
+  await assertFails(getDoc(doc(unitB, path.masterIndex(WS, UNIT_A, "m-indexed"))));
+  await assertFails(getDoc(doc(unitB, path.master(WS, "m-indexed"))));
+  await assertSucceeds(getDoc(doc(dbFor(OWNER), path.masterIndex(WS, UNIT_A, "m-indexed"))));
+});
+
+test("a member cannot create a unit index unless the parent file includes that unit", async () => {
+  const db = dbFor(DOC_A);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), path.master(WS, "m-only-a")), {
+      id: "m-only-a", workspaceId: WS, createdBy: DOC_A, ownerUnitId: UNIT_A,
+      contextIds: [UNIT_A], name: "Patient A", sourcePatientIds: ["pA"], schemaVersion: 1,
+    });
+  });
+
+  await assertFails(setDoc(doc(db, path.masterIndex(WS, UNIT_B, "m-only-a")), {
+    workspaceId: WS, unitId: UNIT_B, masterFileId: "m-only-a",
+  }));
+});
+
 test("a member cannot create a master file that references a foreign unit", async () => {
   const db = dbFor(DOC_A);
   await assertFails(
@@ -445,6 +485,57 @@ test("a member cannot create a master file that references a foreign unit", asyn
       name: "Foreign",
     }),
   );
+});
+
+test("a member atomically creates a master file and unit index while root enumeration stays owner-only", async () => {
+  const db = dbFor(DOC_A);
+  const fileId = "m-atomic-index";
+  const batch = writeBatch(db);
+  batch.set(doc(db, path.master(WS, fileId)), {
+    id: fileId, workspaceId: WS, createdBy: DOC_A, ownerUnitId: UNIT_A,
+    contextIds: [UNIT_A], name: "Patient A", sourcePatientIds: ["pA"],
+    riskFactors: [], history: "", pastOperations: [], pastImaging: [], timeline: [],
+    createdAtMs: Date.now(), updatedAtMs: Date.now(), schemaVersion: 1,
+  });
+  batch.set(doc(db, path.masterIndex(WS, UNIT_A, fileId)), {
+    workspaceId: WS, unitId: UNIT_A, masterFileId: fileId,
+  });
+
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(getDocs(collection(db, `workspaces/${WS}/units/${UNIT_A}/masterIndex`)));
+  await assertSucceeds(getDoc(doc(db, path.master(WS, fileId))));
+  await assertFails(getDocs(query(
+    collection(db, `workspaces/${WS}/masterFiles`),
+    where("contextIds", "array-contains", UNIT_A),
+  )));
+});
+
+test("sharing a master file atomically adds the destination unit index", async () => {
+  const memberDb = dbFor(DOC_A);
+  const fileId = "m-shared-index";
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await updateDoc(doc(db, path.member(WS, DOC_A)), { unitIds: [UNIT_A, UNIT_B] });
+    await updateDoc(doc(db, path.team(WS, DOC_A)), { assignedUnitIds: [UNIT_A, UNIT_B] });
+    await setDoc(doc(db, path.master(WS, fileId)), {
+      id: fileId, workspaceId: WS, createdBy: DOC_A, ownerUnitId: UNIT_A,
+      contextIds: [UNIT_A], name: "Patient A", sourcePatientIds: ["pA"],
+      riskFactors: [], history: "", pastOperations: [], pastImaging: [], timeline: [],
+      createdAtMs: Date.now(), updatedAtMs: Date.now(), schemaVersion: 1,
+    });
+    await setDoc(doc(db, path.masterIndex(WS, UNIT_A, fileId)), {
+      workspaceId: WS, unitId: UNIT_A, masterFileId: fileId,
+    });
+  });
+
+  const batch = writeBatch(memberDb);
+  batch.update(doc(memberDb, path.master(WS, fileId)), { contextIds: [UNIT_A, UNIT_B], updatedAtMs: Date.now() });
+  batch.set(doc(memberDb, path.masterIndex(WS, UNIT_B, fileId)), {
+    workspaceId: WS, unitId: UNIT_B, masterFileId: fileId,
+  });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(getDoc(doc(dbFor(DOC_B), path.masterIndex(WS, UNIT_B, fileId))));
+  await assertSucceeds(getDoc(doc(dbFor(DOC_B), path.master(WS, fileId))));
 });
 
 // ── Unit waiting list ────────────────────────────────────────────────────

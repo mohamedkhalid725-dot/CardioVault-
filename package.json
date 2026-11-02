@@ -18,10 +18,11 @@
     "ios:prepare": "npm run build && npx cap sync ios",
     "test:firestore-rules": "npx firebase-tools@15.30.2 emulators:exec --only firestore \"node --test test/firestore.rules.test.js test/department-team.rules.test.js\"",
     "test:firebase-config": "node --test test/firebaseProject.test.ts",
+    "test:master-files": "node --test test/masterPatientFileCloudPersistence.test.ts test/admissionDuplicateCheck.test.ts test/patientMasterFileBackfill.test.ts",
     "emulators:start": "npx firebase-tools@15.30.2 emulators:start --only firestore,auth,storage --project cardiovault-emulator-test",
     "emulators:seed": "node scripts/seed-emulator.mjs",
     "dev:emulator": "vite --mode emulator",
-    "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/patientDedup.test.ts test/clinicalMerge.test.ts test/bedReconciliation.test.ts test/abgHistory.test.ts test/previousAdmissionViewer.test.ts test/voiceProxyAuth.test.ts test/voiceProxyNumbers.test.ts test/voiceProxyPrompt.test.ts test/voiceQueue.test.ts test/voiceProxyLogging.test.ts test/unitBeds.test.ts",
+    "test:summary-input": "node --test test/patientSummaryInput.test.ts test/patientFilePhase2.test.ts test/examinationContent.test.ts test/patientAdmission.test.ts test/patientDedup.test.ts test/admissionDuplicateCheck.test.ts test/clinicalMerge.test.ts test/bedReconciliation.test.ts test/abgHistory.test.ts test/previousAdmissionViewer.test.ts test/voiceProxyAuth.test.ts test/voiceProxyNumbers.test.ts test/voiceProxyPrompt.test.ts test/voiceQueue.test.ts test/voiceProxyLogging.test.ts test/unitBeds.test.ts",
     "test:department-team": "node --test test/unitCatalog.test.ts test/patientLifecycleAccess.test.ts test/institutionSetup.test.ts test/waitingList.test.ts test/clinicMode.test.ts test/unitMembership.test.ts test/patientEncounters.test.ts test/subscriptionLifecycle.test.ts test/localAuditLog.test.ts test/masterPatientFile.test.ts test/operationWaiting.test.ts test/subscriptionRequests.test.ts test/clinicDashboard.test.ts"
   },
   "dependencies": {
