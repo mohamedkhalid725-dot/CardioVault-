@@ -10,7 +10,7 @@ import { useApp } from '../../../context/AppContext';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { installArabicTextSupport } from '../../../services/pdfArabicSupport';
-import { aggregateLabResults, buildPdfTimeline } from './labExportData';
+import { aggregateLabResults, buildPdfTimeline, pdfChartX } from './labExportData';
 import { getPdfSafetyWarnings } from './pdfSafetyWarnings';
 
 // CCU case-presentation template: selected groups feed a single chronological report timeline.
@@ -484,9 +484,9 @@ export const ExportSummarySectionV2: React.FC<{ patient: Patient }> = ({ patient
           para(analyte.name, analyte.panel);
           if(numeric.length&&units.length===1){
             const points=numeric.sort((a,b)=>a.t-b.t),min=Math.min(...points.map(point=>point.n)),max=Math.max(...points.map(point=>point.n));
-            const span=max-min||Math.max(Math.abs(max)*.1,1),low=min-span*.1,high=max+span*.1,x0=points[0].t,x1=points[points.length-1].t||x0+1;
+            const span=max-min||Math.max(Math.abs(max)*.1,1),low=min-span*.1,high=max+span*.1,x0=points[0].t,x1=points[points.length-1].t;
             ensureSpace(34,'Laboratory Appendix');doc.setFont('helvetica','bold');doc.setFontSize(7.5);text(navy);doc.text(`${analyte.name} trend (${units[0]||'unit not recorded'})`,MARGIN+3,y+4);
-            const xAt=(t:number)=>MARGIN+12+(t-x0)/(x1-x0)*(CONTENT_W-24),yAt=(n:number)=>y+24-(n-low)/(high-low)*16;
+            const xAt=(t:number)=>pdfChartX(t,x0,x1,MARGIN+12,CONTENT_W-24),yAt=(n:number)=>y+24-(n-low)/(high-low)*16;
             draw(line);doc.line(MARGIN+10,y+25,MARGIN+CONTENT_W-6,y+25);draw(blueBar);doc.setLineWidth(.7);
             points.forEach((point,index)=>{const xx=xAt(point.t),yy=yAt(point.n);doc.circle(xx,yy,1,'F');if(index)doc.line(xAt(points[index-1].t),yAt(points[index-1].n),xx,yy);});
             doc.setFont('helvetica','normal');doc.setFontSize(6.5);text(muted);doc.text(String(low.toPrecision(4)),MARGIN+2,y+24);doc.text(String(high.toPrecision(4)),MARGIN+2,y+10);y+=31;

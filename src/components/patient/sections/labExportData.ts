@@ -7,6 +7,14 @@ const LEGACY_FIELDS: Array<{ field: keyof Omit<LabPanel, 'date' | 'customLabs'>;
 ].map(([field,name,unit])=>({field:field as keyof Omit<LabPanel,'date'|'customLabs'>,name,unit}));
 
 export type ExportLabResult = LabResult & { legacy?: boolean; panel?: string };
+
+/** Map a timestamp to the chart's horizontal range, centering zero-span series. */
+export const pdfChartX = (timestamp: number, start: number, end: number, left: number, width: number): number => {
+  const span = end - start;
+  if (!Number.isFinite(timestamp) || !Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(left) || !Number.isFinite(width)) return NaN;
+  return span > 0 ? left + ((timestamp - start) / span) * width : left + width / 2;
+};
+
 export const legacyLabResults = (panels: LabPanel[] = []): ExportLabResult[] => panels.flatMap(panel => {
   const timestamp = typeof panel.date === 'string' ? panel.date : '';
   const fields = LEGACY_FIELDS.flatMap(({field,name,unit}) => {
