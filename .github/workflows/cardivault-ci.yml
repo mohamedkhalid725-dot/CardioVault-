@@ -182,8 +182,9 @@ jobs:
           PY
       - name: Deploy Firestore rules
         # Phase 2b is rules-test-only: never deploy Firestore rules from this branch.
-        # Other branches retain the existing deployment behavior.
-        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.ref_name != 'phase2-security-review' }}
+        # Pull requests must never write production rules; pushes and manual runs
+        # retain the existing deployment behavior.
+        if: ${{ env.HAS_FIREBASE_SERVICE_ACCOUNT != '' && github.event_name != 'pull_request' && github.ref_name != 'phase2-security-review' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
