@@ -13,6 +13,7 @@ export const unitLicenseCodePath = (workspaceId: string, codeHash: string) =>
 
 const readPath = async (path: string): Promise<Record<string, any> | null> => {
   if (Capacitor.isNativePlatform()) {
+    await FirebaseFirestore.enableNetwork();
     const result: any = await FirebaseFirestore.getDocument({ reference: path });
     const snapshot = result?.snapshot;
     try { return typeof snapshot?.data === 'function' ? snapshot.data() || null : snapshot?.data || null; }
@@ -235,6 +236,7 @@ export async function issueUnitLicenseCode(
 
 /** Redeems the one-use code for an existing member; it never edits membership records. */
 export async function redeemUnitLicenseCode(rawCode: string, options: { nowMs?: number } = {}): Promise<UnitLicenseRecord> {
+  if (!(await isMasterAccount())) throw new Error('Only the platform owner can activate a unit license code.');
   const uid = await getCurrentUid();
   if (!uid) throw new Error('Sign in before redeeming a unit license code.');
   const workspaceId = getActiveWorkspaceId();

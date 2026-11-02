@@ -69,6 +69,7 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
   const [finalizing, setFinalizing] = useState(false);
   // The unit whose missing beds are being uploaded right now.
   const [repairing, setRepairing] = useState<string | null>(null);
+  const [repairStage, setRepairStage] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -216,9 +217,10 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
   const repairSetup = async (unit: Unit) => {
     if (repairing) return;
     setRepairing(unit.id);
+    setRepairStage('Checking cloud state');
     showToast('Checking this unit’s beds in the cloud…', 'info');
     try {
-      const result = await completeUnitSetup(unit.id);
+      const result = await completeUnitSetup(unit.id, stage => setRepairStage(stage));
       if (result.ok) {
         showToast(result.message, 'success');
       } else {
@@ -228,6 +230,7 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
       showToast(String(error?.message || 'Could not finish this unit’s setup.'), 'error');
     } finally {
       setRepairing(null);
+      setRepairStage('');
     }
   };
 
@@ -406,7 +409,7 @@ export const UnitManagementModalV2: React.FC<Props> = ({ isOpen, onClose }) => {
               title="Create the missing beds in the cloud and verify the capacity. Safe to repeat."
             >
               <RefreshCw className={`w-3 h-3 ${repairing === u.id ? 'animate-spin' : ''}`} />
-              {missingCount > 0 ? `Finish setup (${missingCount} missing)` : 'Finish setup'}
+              {repairing === u.id ? `Working: ${repairStage || 'checking…'}` : missingCount > 0 ? `Finish setup (${missingCount} missing)` : 'Finish setup'}
             </button>
           )}
           {canChangeCapacity(u) && (

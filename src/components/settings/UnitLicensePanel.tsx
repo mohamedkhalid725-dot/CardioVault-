@@ -32,7 +32,7 @@ export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
     try {
       const result = await issueUnitLicenseCode(unit.id, { workspaceId });
       setIssuedCodes(previous => ({ ...previous, [unit.id]: result.code }));
-      showToast(`One-use code for ${unit.name} created. Share it with an existing unit member to redeem.`, 'success');
+      showToast(`One-use activation code for ${unit.name} created. Enter it here to activate the unit.`, 'success');
     } catch (error) {
       showToast(`Could not issue a code for ${unit.name}: ${String((error as any)?.message || error)}`, 'error');
     } finally { setBusyUnit(''); }
@@ -44,7 +44,7 @@ export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
     try {
       const license = await redeemUnitLicenseCode(codeInput);
       setCodeInput('');
-      showToast(`Unit access restored through ${new Date(license.expiresAtMs).toLocaleDateString()}. Memberships were not changed.`, 'success');
+      showToast(`Unit license activated through ${new Date(license.expiresAtMs).toLocaleDateString()}. Memberships were not changed.`, 'success');
       window.dispatchEvent(new CustomEvent('cardiovault-data-restored'));
       if (isOwner) await refresh();
     } catch (error) {
@@ -76,8 +76,8 @@ export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
 
   return <section className="rounded-2xl border border-cyan-500/25 bg-white dark:bg-[#111c2e] p-4 space-y-3">
     <h2 className="flex items-center gap-2 font-extrabold"><KeyRound size={17} className="text-cyan-500" /> Unit licenses <span className="text-[10px] font-semibold text-slate-500">30 days · all unit members</span></h2>
-    <p className="text-xs text-slate-500 dark:text-slate-400">Expired units are locked for their members without removing membership. The platform owner issues a one-use code for each unit; an existing member redeems it.</p>
-    <form onSubmit={redeemCode} className="flex flex-wrap gap-2"><input aria-label="Unit license code" value={codeInput} onChange={event => setCodeInput(event.target.value.toUpperCase())} placeholder="CVL-…" className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm font-mono dark:border-slate-700" /><button disabled={redeeming || !codeInput.trim()} className="rounded-lg bg-cyan-500 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">{redeeming ? 'Redeeming…' : 'Redeem code'}</button></form>
+    <p className="text-xs text-slate-500 dark:text-slate-400">Expired units are locked for their members without removing membership. Only the platform owner issues and activates one-use codes.</p>
+    {isOwner && <form onSubmit={redeemCode} className="flex flex-wrap gap-2"><input aria-label="Unit license code" value={codeInput} onChange={event => setCodeInput(event.target.value.toUpperCase())} placeholder="CVL-…" className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm font-mono dark:border-slate-700" /><button disabled={redeeming || !codeInput.trim()} className="rounded-lg bg-cyan-500 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">{redeeming ? 'Activating…' : 'Activate code'}</button></form>}
     {isOwner && <>
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/40 bg-amber-50/60 p-3 dark:bg-amber-950/15">
       <p className="text-xs text-slate-600 dark:text-slate-300">One-time reset: non-deleted units with beds start at 30 days. Memberships and pending status stay unchanged; unused CVL codes are cancelled.</p>
