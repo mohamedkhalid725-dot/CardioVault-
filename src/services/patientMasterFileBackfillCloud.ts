@@ -63,9 +63,10 @@ export async function previewCurrentWorkspacePatientMasterFileBackfill(): Promis
 export async function runCurrentWorkspacePatientMasterFileBackfill(
   preview: PatientMasterFileBackfillPreview,
   onProgress?: (progress: PatientMasterFileBackfillProgress) => void,
+  signal?: AbortSignal,
 ) {
   const { workspaceId, uid } = await requireOwnerWorkspace();
   if (preview.workspaceId !== workspaceId) throw new Error('The workspace changed after preview. Run the preview again.');
   const patients = await listWorkspacePatients(workspaceId);
-  return executePatientMasterFileBackfill(backfillIO(), workspaceId, uid, patients, preview, onProgress);
+  return executePatientMasterFileBackfill(backfillIO(), workspaceId, uid, patients, preview, onProgress, Date.now(), signal);
 }

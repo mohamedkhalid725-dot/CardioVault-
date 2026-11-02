@@ -145,6 +145,30 @@ test('partial event failure is reported and the same preview safely resumes', as
   assert.equal(io.events.size, 1);
 });
 
+test('cancellation finishes the current group, reports partial progress, and safely resumes', async () => {
+  const io = memoryIO();
+  const records = Array.from({ length: 12 }, (_, index) => patient({ id: `p-${index}` }));
+  const preview = await previewPatientMasterFileBackfill(io, 'ws-a', records);
+  const controller = new AbortController();
+  const createFile = io.createFile.bind(io);
+  io.createFile = async (...args) => {
+    await createFile(...args);
+    if (args[1].sourcePatientIds[0] === 'p-0') controller.abort();
+  };
+
+  const partial = await executePatientMasterFileBackfill(io, 'ws-a', 'owner-1', records, preview, undefined, Date.now(), controller.signal);
+  assert.equal(partial.cancelled, true);
+  assert.equal(partial.processed, 10);
+  assert.equal(partial.completed, 10);
+  assert.equal(partial.failed.length, 0);
+  assert.equal(io.files.size, 10);
+
+  const resumed = await executePatientMasterFileBackfill(io, 'ws-a', 'owner-1', records, preview);
+  assert.equal(resumed.cancelled, false);
+  assert.equal(resumed.completed, 12);
+  assert.equal(io.files.size, 12);
+});
+
 test('backfill does not invent a timeline date when legacy admission time is absent', async () => {
   const io = memoryIO();
   const records = [patient({ id: 'p-no-date', admissionDate: '', admissionTime: '' })];

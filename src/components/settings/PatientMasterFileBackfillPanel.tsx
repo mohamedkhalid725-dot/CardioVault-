@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Archive, Database, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
@@ -21,6 +21,17 @@ export const PatientMasterFileBackfillPanel: React.FC = () => {
   const [result, setResult] = useState<PatientMasterFileBackfillResult | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [running, setRunning] = useState(false);
+  const [stopRequested, setStopRequested] = useState(false);
+  const mounted = useRef(false);
+  const runController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      runController.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -37,11 +48,12 @@ export const PatientMasterFileBackfillPanel: React.FC = () => {
     setProgress(null);
     setResult(null);
     try {
-      setPreview(await previewCurrentWorkspacePatientMasterFileBackfill());
+      const nextPreview = await previewCurrentWorkspacePatientMasterFileBackfill();
+      if (mounted.current) setPreview(nextPreview);
     } catch (error) {
-      showToast(`Could not preview patient files: ${String((error as any)?.message || error)}`, 'error');
+      if (mounted.current) showToast(`Could not preview patient files: ${String((error as any)?.message || error)}`, 'error');
     } finally {
-      setPreviewing(false);
+      if (mounted.current) setPreviewing(false);
     }
   };
 
@@ -52,23 +64,33 @@ export const PatientMasterFileBackfillPanel: React.FC = () => {
       `Backfill ${ready} patient record(s) in this workspace? ${preview.missingMasterFiles} master file(s) are missing; ${preview.archivedPatients} archived record(s) are included. This writes master-file and unit-index documents in batches of 10. It is safe to retry, but review the preview before proceeding.`,
     );
     if (!confirmed) return;
+    const controller = new AbortController();
+    runController.current = controller;
     setRunning(true);
-    setProgress({ processed: 0, total: ready, completed: 0, failed: [] });
+    setStopRequested(false);
+    setProgress({ processed: 0, total: ready, completed: 0, failed: [], cancelled: false });
     setResult(null);
     try {
-      const completed = await runCurrentWorkspacePatientMasterFileBackfill(preview, setProgress);
+      const completed = await runCurrentWorkspacePatientMasterFileBackfill(preview, next => {
+        if (mounted.current) setProgress(next);
+      }, controller.signal);
+      if (!mounted.current) return;
       setResult(completed);
-      window.dispatchEvent(new CustomEvent('cardiovault-data-restored'));
-      showToast(
-        completed.failed.length
+      if (completed.completed > 0) window.dispatchEvent(new CustomEvent('cardiovault-data-restored'));
+      showToast(completed.cancelled
+        ? `Backfill cancelled after ${completed.processed}/${completed.total} record(s): ${completed.completed} completed, ${completed.failed.length} failed. Unprocessed records are safe to retry.`
+        : completed.failed.length
           ? `Backfill stopped with ${completed.failed.length} record failure(s). Completed records are safe to retry.`
           : `Backfill completed for ${completed.completed} patient record(s).`,
-        completed.failed.length ? 'warning' : 'success',
-      );
+      completed.cancelled || completed.failed.length ? 'warning' : 'success');
     } catch (error) {
-      showToast(`Backfill could not complete: ${String((error as any)?.message || error)}`, 'error');
+      if (mounted.current) showToast(`Backfill could not complete: ${String((error as any)?.message || error)}`, 'error');
     } finally {
-      setRunning(false);
+      runController.current = null;
+      if (mounted.current) {
+        setRunning(false);
+        setStopRequested(false);
+      }
     }
   };
 
@@ -85,6 +107,9 @@ export const PatientMasterFileBackfillPanel: React.FC = () => {
       {preview && <button type="button" disabled={running || previewing || preview.candidatePatientIds.length === 0} onClick={() => void runBackfill()} className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">
         {running ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}{running ? 'Backfilling…' : 'Run confirmed backfill'}
       </button>}
+      {running && <button type="button" disabled={stopRequested} onClick={() => { setStopRequested(true); runController.current?.abort(); }} className="rounded-lg border border-rose-500 px-3 py-2 text-xs font-bold text-rose-600 disabled:opacity-50">
+        {stopRequested ? 'Stopping after current batch…' : 'Stop after current batch'}
+      </button>}
     </div>
 
     {preview && <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2 text-xs">
@@ -100,7 +125,7 @@ export const PatientMasterFileBackfillPanel: React.FC = () => {
     </div>}
 
     {progress && <div className="space-y-1.5 text-xs" aria-live="polite">
-      <div className="flex justify-between"><span>{running ? 'Processing in batches of 10' : 'Last run'}</span><span>{progress.processed}/{progress.total} · {percent}%</span></div>
+      <div className="flex justify-between"><span>{running ? stopRequested ? 'Stopping after current batch' : 'Processing in batches of 10' : result?.cancelled ? 'Cancelled · safe to retry' : 'Last run'}</span><span>{progress.processed}/{progress.total} · {percent}%</span></div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full bg-amber-500 transition-all" style={{ width: `${percent}%` }} /></div>
       <div>{progress.completed} completed · {progress.failed.length} failed</div>
     </div>}
