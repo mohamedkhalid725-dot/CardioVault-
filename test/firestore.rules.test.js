@@ -1556,7 +1556,7 @@ test("35. an expired unit license blocks only that unit and retains membership",
   );
 });
 
-test("36. only the platform owner can renew a unit license and renewal restores unit access", async () => {
+test("36. only the platform owner can issue and activate a unit license code", async () => {
   const now = Date.now();
   const owner = dbFor("admin_root");
   const member = dbFor("userA");
@@ -1565,10 +1565,14 @@ test("36. only the platform owner can renew a unit license and renewal restores 
   await testEnv.withSecurityRulesDisabled(async context => updateDoc(doc(context.firestore(), unitLicensePath(UNIT_A)), { expiresAtMs: now - 1000 }));
   await assertFails(setDoc(doc(member, unitLicenseCodePath(hash)), { workspaceId: WORKSPACE, unitId: UNIT_A, codeHash: hash }));
   await assertSucceeds(setDoc(codeRef, { workspaceId: WORKSPACE, unitId: UNIT_A, codeHash: hash, issuedBy: "admin_root", issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: "active", schemaVersion: 1 }));
-  await assertFails(updateDoc(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000, activationCodeHash: hash }));
-  const redemption = writeBatch(member);
-  redemption.update(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000 });
-  redemption.set(doc(member, unitLicensePath(UNIT_A)), { workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: now, expiresAtMs: now + 30 * 86400000, updatedBy: "userA", schemaVersion: 1, activationCodeHash: hash });
+  await assertFails(updateDoc(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000 }));
+  const memberRedemption = writeBatch(member);
+  memberRedemption.update(doc(member, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000 });
+  memberRedemption.set(doc(member, unitLicensePath(UNIT_A)), { workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: now, expiresAtMs: now + 30 * 86400000, updatedBy: "userA", schemaVersion: 1, activationCodeHash: hash });
+  await assertFails(memberRedemption.commit());
+  const redemption = writeBatch(owner);
+  redemption.update(doc(owner, unitLicenseCodePath(hash)), { status: "redeemed", redeemedBy: "admin_root", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000 });
+  redemption.set(doc(owner, unitLicensePath(UNIT_A)), { workspaceId: WORKSPACE, unitId: UNIT_A, issuedAtMs: now, expiresAtMs: now + 30 * 86400000, updatedBy: "admin_root", schemaVersion: 1, activationCodeHash: hash });
   await assertSucceeds(redemption.commit());
   await assertSucceeds(getDoc(doc(dbFor("userA"), patientPath(PATIENT_A))));
   await assertFails(updateDoc(doc(owner, unitLicensePath(UNIT_A)), { expiresAtMs: now + 90 * 86400000 }));
@@ -2200,6 +2204,7 @@ test("65. the creation flow uploads the unit, its beds, and only then closes the
   // write fail, and the unit reached the cloud with no beds at all.
   const now = Date.now();
   const a = dbFor("userA");
+  const owner = dbFor("admin_root");
   const unitId = "unitCreated";
   await testEnv.withSecurityRulesDisabled(async context => {
     await updateDoc(doc(context.firestore(), path("members", "userA")), { role: "department_admin" });
@@ -2240,20 +2245,21 @@ test("65. the creation flow uploads the unit, its beds, and only then closes the
     }),
   );
 
-  // The owner issues a one-use code; the creator, now an authorized member,
-  // redeems it to activate the unit before closing the setup window.
+  // The owner issues and activates a one-use code before closing the setup window.
   const licenseHash = "c".repeat(64);
-  await assertSucceeds(setDoc(doc(dbFor("admin_root"), unitLicenseCodePath(licenseHash)), {
+  await assertSucceeds(setDoc(doc(owner, unitLicenseCodePath(licenseHash)), {
     workspaceId: WORKSPACE, unitId, codeHash: licenseHash, issuedBy: "admin_root",
     issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: "active", schemaVersion: 1,
   }));
-  await assertSucceeds(updateDoc(doc(a, unitLicenseCodePath(licenseHash)), {
-    status: "redeemed", redeemedBy: "userA", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000,
-  }));
-  await assertSucceeds(setDoc(doc(a, unitLicensePath(unitId)), {
+  const ownerActivation = writeBatch(owner);
+  ownerActivation.update(doc(owner, unitLicenseCodePath(licenseHash)), {
+    status: "redeemed", redeemedBy: "admin_root", redeemedAtMs: now, licenseExpiresAtMs: now + 30 * 86400000,
+  });
+  ownerActivation.set(doc(owner, unitLicensePath(unitId)), {
     workspaceId: WORKSPACE, unitId, issuedAtMs: now, expiresAtMs: now + 30 * 86400000,
-    updatedBy: "userA", schemaVersion: 1, activationCodeHash: licenseHash,
-  }));
+    updatedBy: "admin_root", schemaVersion: 1, activationCodeHash: licenseHash,
+  });
+  await assertSucceeds(ownerActivation.commit());
 
   // Step 4: only now may the capacity window be closed.
   await assertSucceeds(

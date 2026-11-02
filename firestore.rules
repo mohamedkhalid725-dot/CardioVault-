@@ -337,8 +337,8 @@ service cloud.firestore {
         : request.time.toMillis() + 2592000000;
     }
     function validLicenseCodeRedemption(workspaceId,unitId) {
-      return signedIn()
-        && memberHasUnit(workspaceId,unitId)
+      return adminOf(workspaceId)
+        && unitExists(workspaceId,unitId)
         && resource.data.status == 'active'
         && resource.data.codeExpiresAtMs > request.time.toMillis()
         && request.resource.data.workspaceId == workspaceId
@@ -353,7 +353,8 @@ service cloud.firestore {
         && request.resource.data.licenseExpiresAtMs <= expectedLicenseExpiryMs(workspaceId,unitId) + 120000;
     }
     function licenseWriteUsesRedeemedCode(workspaceId,unitId) {
-      return memberHasUnit(workspaceId,unitId)
+      return adminOf(workspaceId)
+        && unitExists(workspaceId,unitId)
         && request.resource.data.activationCodeHash is string
         && existsAfter(unitLicenseCodePath(workspaceId,request.resource.data.activationCodeHash))
         && getAfter(unitLicenseCodePath(workspaceId,request.resource.data.activationCodeHash)).data.workspaceId == workspaceId
@@ -1430,11 +1431,10 @@ service cloud.firestore {
         allow delete: if false;
       }
 
-      // One-use owner-issued renewal codes are unit-scoped. A member first
-      // reserves the code for themselves, then atomically writes the matching
-      // unit license in the same batch; retrying may finish their own redemption.
+      // One-use renewal codes are owner-issued and owner-redeemed. Redemption
+      // atomically marks the code and writes the matching unit license.
       match /unitLicenseCodes/{codeHash} {
-        allow get: if adminOf(workspaceId) || (signedIn() && resource.data.unitId is string && memberHasUnit(workspaceId,resource.data.unitId));
+        allow get: if adminOf(workspaceId);
         allow list: if adminOf(workspaceId);
         allow create: if adminOf(workspaceId)
           && request.resource.data.keys().hasOnly(['workspaceId','unitId','codeHash','issuedBy','issuedAtMs','codeExpiresAtMs','status','schemaVersion'])

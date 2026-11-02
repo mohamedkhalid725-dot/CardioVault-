@@ -98,7 +98,7 @@ export interface AppContextType{
   finalizeUnitCreation:(unitId:string)=>Promise<void>;
   // Same work without creating anything: repairs a unit whose bed upload did
   // not finish. Safe to repeat; it never touches a bed that already exists.
-  completeUnitSetup:(unitId:string)=>Promise<UnitSetupResult>;
+  completeUnitSetup:(unitId:string,onStage?:(stage:string)=>void)=>Promise<UnitSetupResult>;
   updateUnit:(id:string,name:string,type:string,extra?:Partial<Unit>)=>void;
   lockUnitCapacity:(id:string)=>void;
   deleteUnit:(id:string)=>boolean;
@@ -699,7 +699,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   }
   if(changed)commitBeds(Array.from(byId.values()));
  };
-  const runCompleteUnitSetup=async(unitId:string):Promise<UnitSetupResult>=>{
+   const runCompleteUnitSetup=async(unitId:string,onStage?:(stage:string)=>void):Promise<UnitSetupResult>=>{
  const unit=StorageService.getUnits().find(item=>item.id===unitId);
  const expected=normalizeBedCount(unit?.totalBeds);
  if(!unit)return{ok:false,unitId,expected:0,present:0,created:0,missing:[],message:'This unit is no longer on this device.'};
@@ -712,8 +712,12 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   lockUnitCapacity(unitId);clearUnitBedsPending(unitId);
   return{ok:true,unitId,expected,present,created:missing.length,missing:[],message:'Saved only in the isolated local preview.'};
  }
-  let confirmedPresent=0;let provisioningBeds=false;const deadlineAtMs=Date.now()+60000;
-  const stage=<T,>(promise:Promise<T>,name:string)=>withOperationTimeout(promise,Math.max(1,deadlineAtMs-Date.now()),`Unit setup timed out while ${name}. Check the connection and retry; no later setup steps were started.`,()=>unitSetupTimedOut.current.add(unitId),()=>unitSetupTimedOut.current.delete(unitId));
+   let confirmedPresent=0;let currentStage='starting setup';const deadlineAtMs=Date.now()+60000;
+   const stage=async <T,>(promise:Promise<T>,name:string):Promise<T>=>{
+    currentStage=name;onStage?.(name);
+    try{return await withOperationTimeout(promise,Math.max(1,deadlineAtMs-Date.now()),`Unit setup timed out while ${name}. Check the connection and retry; no later setup steps were started.`,()=>unitSetupTimedOut.current.add(unitId),()=>unitSetupTimedOut.current.delete(unitId));}
+    catch(error:any){const message=String(error?.message||error);if(message.toLowerCase().includes(name.toLowerCase()))throw error;throw new Error(`Unit setup failed while ${name}: ${message}`);}
+   };
   try{
    const uploaded=await stage(syncCurrentUserNow(),'syncing the unit');
    const cloudUnit=await stage(firestoreUnitVerificationIO.getUnit(unitId),'verifying the unit');
@@ -725,8 +729,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    catch(error){throw new Error(`The unit could not be added to your team membership: ${String((error as any)?.message||error)}`);}
   }
    if(owner&&unit.hospitalId){await stage(assignUnitHospitalDocument(firestoreHospitalPersistence,getActiveWorkspaceId(),unitId,unit.hospitalId),'linking the hospital');}
-  provisioningBeds=true;
-   const ensured=await stage(ensureUnitBedsNow(unitId,expected),'saving beds');
+    const ensured=await stage(ensureUnitBedsNow(unitId,expected),'saving beds');
    const verified=await stage(verifyUnitSetupInCloud(firestoreUnitVerificationIO,unitId,expected),'verifying saved beds');
   confirmedPresent=verified.beds.length;applyCloudBeds(verified.beds);
   // Close the local window first so an overlapping sync cannot reopen capacity.
@@ -744,9 +747,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    clearUnitBedsPending(unitId);
    const active=StorageService.getUnits().find(item=>item.id===unitId)?.activationStatus==='active';
    return{...ensured,ok:true,present:confirmedPresent,message:active?`The unit and all ${confirmedPresent} beds are verified in Firestore and licensed for 30 days.`:`The unit and all ${confirmedPresent} beds are verified in Firestore. The unit is pending platform-owner activation.`};
- }catch(error:any){
-  const raw=String(error?.message||error);
-  const message=provisioningBeds&&/permission|insufficient/i.test(raw)?'Bed provisioning was denied. Only the workspace owner can add beds after the provisioning window closes. Ask the owner to finish setup.':raw;
+   }catch(error:any){
+   const message=String(error?.message||error);
+   onStage?.(`Failed while ${currentStage}`);
   console.warn('Unit setup incomplete:',error);markUnitBedsPending(unitId,expected);
   let cloudPresent=error instanceof UnitCloudVerificationError?error.confirmedPresent:confirmedPresent;
   if(!cloudPresent&&confirmedPresent===0){
@@ -769,10 +772,10 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
    }
    showToast(isLocalPreview()?`Local preview only: setup is incomplete; ${result.present} of ${result.expected} beds are saved on this device. ${result.message}`:`Cloud setup is incomplete; ${result.present} of ${result.expected} beds are confirmed in Firestore. ${result.message} Open Manage Units and tap "Finish setup" to retry.`,'error');
  };
-  const completeUnitSetup=async(unitId:string):Promise<UnitSetupResult>=>{
+  const completeUnitSetup=async(unitId:string,onStage?:(stage:string)=>void):Promise<UnitSetupResult>=>{
    if(unitSetupInFlight.current.has(unitId)||unitSetupTimedOut.current.has(unitId))return{ok:false,unitId,expected:0,present:0,created:0,missing:[],message:'A setup operation is still finishing in the background. Wait for it to settle before retrying.'};
    unitSetupInFlight.current.add(unitId);
-   try{return await runCompleteUnitSetup(unitId);}
+   try{return await runCompleteUnitSetup(unitId,onStage);}
    finally{unitSetupInFlight.current.delete(unitId);}
   };
  // Freezes capacity in the local record as soon as the creation wizard finishes, so

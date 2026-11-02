@@ -10,7 +10,7 @@
  */
 import test from "node:test";
 import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, writeBatch } from "firebase/firestore";
 import fs from "node:fs";
 
 const PROJECT_ID = "cardiovault-dept-team-rules-test";
@@ -328,21 +328,27 @@ test("an expired unit license blocks that unit but preserves membership and acti
   await assertSucceeds(getDoc(doc(dbFor(OWNER), path.patient(WS, "pA"))));
 });
 
-test("only the platform owner can issue a one-use code; a unit member redeems it for all members", async () => {
+test("only the platform owner can issue and activate a one-use unit code", async () => {
   const ownerDb = dbFor(OWNER);
   const memberDb = dbFor(DOC_A);
   const hash = 'a'.repeat(64);
   const now = Date.now();
   const codeRef = doc(ownerDb, path.licenseCode(WS, hash));
-  const licenseRef = doc(memberDb, path.license(WS, UNIT_A));
+  const licenseRef = doc(ownerDb, path.license(WS, UNIT_A));
   const license = (await getDoc(doc(ownerDb, path.license(WS, UNIT_A)))).data();
   const expiresAtMs = Math.max(Number(license.expiresAtMs), now) + 30 * 86400000;
   await assertFails(setDoc(doc(memberDb, path.licenseCode(WS, hash)), { workspaceId: WS, unitId: UNIT_A, codeHash: hash }));
   await assertSucceeds(setDoc(codeRef, { workspaceId: WS, unitId: UNIT_A, codeHash: hash, issuedBy: OWNER, issuedAtMs: now, codeExpiresAtMs: now + 30 * 86400000, status: 'active', schemaVersion: 1 }));
   await assertFails(updateDoc(doc(dbFor(DOC_B), path.licenseCode(WS, hash)), { status: 'redeemed', redeemedBy: DOC_B, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs }));
   await assertFails(updateDoc(doc(ownerDb, path.license(WS, UNIT_A)), { expiresAtMs: expiresAtMs + 86400000 }));
-  await assertSucceeds(updateDoc(doc(memberDb, path.licenseCode(WS, hash)), { status: 'redeemed', redeemedBy: DOC_A, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs }));
-  await assertSucceeds(updateDoc(licenseRef, { workspaceId: WS, unitId: UNIT_A, issuedAtMs: now, expiresAtMs, updatedBy: DOC_A, schemaVersion: 1, activationCodeHash: hash }));
+  const memberRedemption = writeBatch(memberDb);
+  memberRedemption.update(doc(memberDb, path.licenseCode(WS, hash)), { status: 'redeemed', redeemedBy: DOC_A, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs });
+  memberRedemption.update(doc(memberDb, path.license(WS, UNIT_A)), { workspaceId: WS, unitId: UNIT_A, issuedAtMs: now, expiresAtMs, updatedBy: DOC_A, schemaVersion: 1, activationCodeHash: hash });
+  await assertFails(memberRedemption.commit());
+  const ownerActivation = writeBatch(ownerDb);
+  ownerActivation.update(codeRef, { status: 'redeemed', redeemedBy: OWNER, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs });
+  ownerActivation.update(licenseRef, { workspaceId: WS, unitId: UNIT_A, issuedAtMs: now, expiresAtMs, updatedBy: OWNER, schemaVersion: 1, activationCodeHash: hash });
+  await assertSucceeds(ownerActivation.commit());
   await assertFails(updateDoc(doc(dbFor(DOC_B), path.licenseCode(WS, hash)), { status: 'redeemed', redeemedBy: DOC_B, redeemedAtMs: now, licenseExpiresAtMs: expiresAtMs }));
   await assertSucceeds(getDoc(doc(dbFor(DOC_A), path.patient(WS, "pA"))));
 });
