@@ -25,6 +25,7 @@ function memoryIO(): MasterPatientFilePersistenceIO {
       files.set(id, structuredClone(file));
     },
     async updateFile(workspace, file) { files.set(key(workspace, file.id), structuredClone(file)); },
+    async ensureUnitIndex() {},
     async getEvent(workspace, fileId, eventId) { return events.get(key(workspace, `${fileId}/${eventId}`)) || null; },
     async listEvents(workspace, fileId) {
       const prefix = key(workspace, `${fileId}/`);

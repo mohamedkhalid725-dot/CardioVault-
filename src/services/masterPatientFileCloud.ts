@@ -5,6 +5,7 @@ export interface MasterPatientFilePersistenceIO {
   listFilesForUnit(workspaceId: string, unitId: string): Promise<MasterPatientFile[]>;
   createFile(workspaceId: string, file: MasterPatientFile): Promise<void>;
   updateFile(workspaceId: string, file: MasterPatientFile): Promise<void>;
+  ensureUnitIndex(workspaceId: string, fileId: string, unitId: string): Promise<void>;
   getEvent(workspaceId: string, fileId: string, eventId: string): Promise<MasterTimelineEvent | null>;
   listEvents(workspaceId: string, fileId: string): Promise<MasterTimelineEvent[]>;
   createEvent(workspaceId: string, fileId: string, event: MasterTimelineEvent): Promise<void>;
@@ -41,6 +42,7 @@ export async function ensurePatientMasterFile(
     if (input.masterFileId && !existing.contextIds.includes(input.unitId)) {
       throw new Error('The selected master patient file is not available in the admitting unit.');
     }
+    await io.ensureUnitIndex(workspaceId, id, input.unitId);
     return existing;
   }
   const file: MasterPatientFile = {
@@ -56,6 +58,7 @@ export async function ensurePatientMasterFile(
     || (input.linkedPatientIds || []).some(id => !(saved.sourcePatientIds || []).includes(id))) {
     throw new Error('Master patient file creation was not confirmed by Firestore.');
   }
+  await io.ensureUnitIndex(workspaceId, id, input.unitId);
   return saved;
 }
 
@@ -64,12 +67,16 @@ export async function ensureMasterFileUnitContext(
 ): Promise<MasterPatientFile> {
   const current = await io.getFile(workspaceId, fileId);
   if (!current) throw new Error('The master patient file is unavailable in this workspace.');
-  if (current.contextIds.includes(unitId)) return current;
+  if (current.contextIds.includes(unitId)) {
+    await io.ensureUnitIndex(workspaceId, fileId, unitId);
+    return current;
+  }
   await io.updateFile(workspaceId, { ...current, contextIds: [...current.contextIds, unitId], updatedAtMs: Math.floor(atMs) });
   const saved = await io.getFile(workspaceId, fileId);
   if (!saved || !saved.contextIds.includes(unitId) || !saved.contextIds.includes(current.ownerUnitId || current.contextIds[0])) {
     throw new Error('The destination unit was not linked to the existing master file in Firestore.');
   }
+  await io.ensureUnitIndex(workspaceId, fileId, unitId);
   return saved;
 }
 

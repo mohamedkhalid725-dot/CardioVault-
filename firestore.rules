@@ -1288,8 +1288,10 @@ service cloud.firestore {
       // treated the patient. `contextIds` is the unit list allowed to read it,
       // and a member may only ever add a unit they already belong to.
       match /masterFiles/{fileId} {
-        allow get, list: if adminOf(workspaceId)
+        allow get: if adminOf(workspaceId)
           || unitMemberAny(workspaceId, resource.data.get('contextIds', []));
+        // Members enumerate file IDs only through their unit-scoped index.
+        allow list: if adminOf(workspaceId);
         allow create: if canWrite(workspaceId)
           && signedIn()
           && request.resource.data.workspaceId == workspaceId
@@ -1332,6 +1334,38 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------------
+      // The path makes the membership check statically provable for a query.
+      // Index records contain identifiers only; the parent master file still
+      // enforces its own context scope on every direct read.
+      match /units/{unitId}/masterIndex/{fileId} {
+        function indexedFilePath() {
+          return /databases/$(database)/documents/workspaces/$(workspaceId)/masterFiles/$(fileId);
+        }
+        function indexedParentContainsUnit() {
+          return existsAfter(indexedFilePath())
+            && getAfter(indexedFilePath()).data.workspaceId == workspaceId
+            && getAfter(indexedFilePath()).data.get('contextIds', []).hasAny([unitId]);
+        }
+        function validMasterIndex(data) {
+          return data.keys().hasOnly(['workspaceId','unitId','masterFileId'])
+            && data.keys().hasAll(['workspaceId','unitId','masterFileId'])
+            && data.workspaceId == workspaceId
+            && data.unitId == unitId
+            && data.masterFileId == fileId;
+        }
+        allow get, list: if adminOf(workspaceId) || unitMember(workspaceId,unitId);
+        allow create: if canWrite(workspaceId)
+          && (adminOf(workspaceId) || unitMember(workspaceId,unitId))
+          && validMasterIndex(request.resource.data)
+          && indexedParentContainsUnit();
+        allow update: if canWrite(workspaceId)
+          && (adminOf(workspaceId) || unitMember(workspaceId,unitId))
+          && validMasterIndex(request.resource.data)
+          && request.resource.data == resource.data
+          && indexedParentContainsUnit();
+        allow delete: if adminOf(workspaceId);
+      }
+
       // Scoped under the unit so one unit's queue can never be read through
       // another unit's membership.
       match /units/{unitId}/waiting/{entryId} {
