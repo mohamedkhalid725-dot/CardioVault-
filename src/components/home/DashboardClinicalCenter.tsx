@@ -13,7 +13,10 @@ export const DashboardClinicalCenter:React.FC=()=>{
  const scopedUnits=useMemo(()=>AuthorizationService.filterAuthorizedUnits(units,currentUser).filter(u=>beds.some(b=>b.unitId===u.id)),[units,beds,currentUser]);
  const activeIds=new Set(active.map(p=>p.id));
  // T6 scope: ONLY department_admin sees all beds; every other role (incl. consultant) is unit-scoped.
- const scopedBeds=currentUser.role==='department_admin'?beds:beds.filter(b=>(currentUser.assignedUnitIds||[]).includes(b.unitId));
+ // scopeUnitIds() falls back to the workspace membership so a member who joined with a unit code
+ // is not left with an empty dashboard while the cached profile has no roster yet.
+ const scopeUnitIds=useMemo(()=>new Set(AuthorizationService.scopeUnitIds(currentUser)),[currentUser]);
+ const scopedBeds=currentUser.role==='department_admin'?beds:beds.filter(b=>scopeUnitIds.has(String(b.unitId)));
  const occupied=scopedBeds.filter(b=>b.patientId&&activeIds.has(b.patientId)).length;
  const critical=active.filter(p=>p.status==='Critical').length;
  const tasks=useMemo(()=>ClinicalWorkflowService.getTasks().filter(t=>(t.status==='pending'||t.status==='in_progress')&&(!t.patientId||activeIds.has(t.patientId))),[patients,currentUser]);

@@ -1,5 +1,6 @@
 import { ClinicalRole, UserProfile, BreakGlassLog } from '../types/clinical';
 import { AuditTrailService } from './auditTrailService';
+import { scopeUnitIds as resolveUnitScope, storedWorkspaceAccess } from './unitScope';
 
 export type ClinicalAction =
   | 'view_unit'
@@ -424,6 +425,20 @@ export const AuthorizationService = {
   },
 
   /**
+   * Effective unit scope for UI filtering: the member roster when it lists units,
+   * otherwise the units granted by the active workspace membership.
+   *
+   * Signing in with a Unit Access Code updates the workspace membership but not
+   * always the cached clinical profile; without this fallback such a member sees
+   * an empty dashboard (0 units / 0 beds) while the unit census itself is fully
+   * populated. Firestore rules remain the enforcement point — this only keeps the
+   * dashboard in step with the membership the user actually holds.
+   */
+  scopeUnitIds(user: UserProfile): string[] {
+    return resolveUnitScope(user?.assignedUnitIds);
+  },
+
+  /**
    * Helper to filter list of units according to user scope.
    * ONLY department_admin sees all units; consultant and all other roles see
    * only assigned units (+ valid temporary assignment / break-glass).
@@ -435,12 +450,11 @@ export const AuthorizationService = {
     // The platform owner sees every unit whether or not a local clinical profile
     // lists them: ownership is the grant, the roster is not. Read the stored
     // workspace access directly to avoid importing workspaceAccess (cycles).
-    try {
-      const ownerState = JSON.parse(localStorage.getItem('cardiovault_active_workspace_access_v1') || 'null');
-      if (ownerState?.role === 'owner' && ownerState?.workspaceId) return units;
-    } catch { /* fall through to the roster filter */ }
+    const ownerState = storedWorkspaceAccess();
+    if (ownerState?.role === 'owner') return units;
+    const scope = new Set(this.scopeUnitIds(user));
     return units.filter(unit => {
-      if (user.assignedUnitIds.includes(unit.id)) return true;
+      if (scope.has(String(unit.id))) return true;
       if (this.hasValidTemporaryUnit(user, unit.id)) return true;
       if (this.hasActiveBreakGlass(unit.id)) return true;
       return false;
@@ -456,8 +470,9 @@ export const AuthorizationService = {
     if (user.role === 'department_admin') {
       return patients;
     }
+    const scope = new Set(this.scopeUnitIds(user));
     return patients.filter(patient => {
-      if (user.assignedUnitIds.includes(patient.unitId)) return true;
+      if (scope.has(String(patient.unitId))) return true;
       if (this.hasValidTemporaryUnit(user, patient.unitId)) return true;
       if (this.hasActiveBreakGlass(patient.unitId, patient.id)) return true;
       return false;
