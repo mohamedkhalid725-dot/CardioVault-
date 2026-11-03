@@ -40,6 +40,8 @@ import type {
   OperationAttachment,
 } from '../../types/clinicArea';
 import { PREVIEW_CLINIC_ID, SECRETARY_CAN_VIEW_CLINICAL_SUMMARIES } from '../../types/clinicArea';
+import { PREVIOUS_ADMISSION_OPEN_KEY } from '../../services/previousAdmissionPatient';
+import { formatLocalAdmissionDate } from '../../services/patientAdmission';
 import { isLocalPreview, PREVIEW_WORKSPACE_ID } from '../../config/localPreview';
 import { appendPatientMasterEvent, loadMasterFilesForUnits } from '../../services/masterPatientFileCloud';
 import { firestoreMasterPatientFilePersistence } from '../../services/firestoreMasterPatientFilePersistence';
@@ -129,6 +131,16 @@ const timelineEventKey = (event: MasterTimelineEvent, index: number): string => 
   const id = typeof event.id === 'string' ? event.id.trim() : '';
   return id ? `event:${id}` : `legacy:${event.kind}:${event.atMs}:${index}`;
 };
+
+// Admission-kind timeline events carry the department patient record in `refId`,
+// so tapping one can open that admission's own clinical file instead of only
+// expanding a text summary.
+const ADMISSION_TIMELINE_KINDS: TimelineEventKind[] = [
+  'patient-admission',
+  'patient-readmission',
+  'patient-transfer',
+  'patient-discharge',
+];
 
 // ---------------------------------------------------------------------------
 // New master file form state
@@ -472,6 +484,47 @@ export const MasterPatientFileView: React.FC = () => {
     ? [...(Array.isArray(selectedFile.timeline) ? selectedFile.timeline : [])].sort((a, b) => b.atMs - a.atMs)
     : [];
 
+  // Resolve the department patient record behind an admission-kind event.
+  // `refId` is written as `patient.id` when the admission is linked, so it stays
+  // stable across discharge and readmission. When the event predates a
+  // readmission, the matching episode inside `pastAdmissions` is opened read-only.
+  const resolveAdmissionTarget = (
+    event: MasterTimelineEvent,
+  ): { patientId: string; previousAdmissionId?: string } | null => {
+    if (!ADMISSION_TIMELINE_KINDS.includes(event.kind)) return null;
+    const refId = String(event.refId || '').trim();
+    if (!refId) return null;
+    const patient = patients.find((item) => item.id === refId) || archivedPatients.find((item) => item.id === refId);
+    if (!patient) return null;
+    if (patient.isArchived) return { patientId: patient.id };
+    const eventDay = formatLocalAdmissionDate(new Date(event.atMs));
+    const matches = (patient.pastAdmissions || []).filter(
+      (admission) => admission && admission.episodeSnapshot && admission.admissionDate === eventDay,
+    );
+    return {
+      patientId: patient.id,
+      previousAdmissionId: matches.length === 1 ? matches[0].id : undefined,
+    };
+  };
+
+  const openAdmissionTarget = (target: { patientId: string; previousAdmissionId?: string }): void => {
+    if (target.previousAdmissionId) {
+      try {
+        window.sessionStorage.setItem(PREVIOUS_ADMISSION_OPEN_KEY, target.previousAdmissionId);
+      } catch {
+        /* Session storage is best effort; the current admission still opens. */
+      }
+    }
+    setCurrentPatientId(target.patientId);
+    setCurrentView('patient');
+  };
+
+  const toggleTimelineEvent = (eventKey: string): void => {
+    setExpandedEventKeys((current) =>
+      current.includes(eventKey) ? current.filter((key) => key !== eventKey) : [...current, eventKey],
+    );
+  };
+
   return (
     <div className="max-w-5xl mx-auto w-full px-3 sm:px-6 py-4 space-y-4" dir="ltr">
       <header className="space-y-1">
@@ -575,16 +628,14 @@ export const MasterPatientFileView: React.FC = () => {
                 {timeline.map((event, index) => {
                   const eventKey = timelineEventKey(event, index);
                   const expanded = expandedEventKeys.includes(eventKey);
+                  const admissionTarget = resolveAdmissionTarget(event);
                   return (
                     <li key={eventKey} className="border border-slate-200 dark:border-slate-800 rounded-xl p-3">
                       <button
                         type="button"
                         className="w-full text-right space-y-1"
-                        onClick={() =>
-                          setExpandedEventKeys((current) =>
-                            current.includes(eventKey) ? current.filter((key) => key !== eventKey) : [...current, eventKey]
-                          )
-                        }
+                        title={admissionTarget ? 'Open this admission file' : undefined}
+                        onClick={() => (admissionTarget ? openAdmissionTarget(admissionTarget) : toggleTimelineEvent(eventKey))}
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${KIND_BADGE[event.kind]}`}>
@@ -594,10 +645,27 @@ export const MasterPatientFileView: React.FC = () => {
                           <span className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
                             {new Date(event.atMs).toLocaleString()}
                           </span>
-                          {expanded ? <ChevronUp size={14} className="ms-auto" /> : <ChevronDown size={14} className="ms-auto" />}
+                          {admissionTarget ? (
+                            <span className="ms-auto inline-flex items-center gap-1 text-[11px] font-bold text-cyan-600 dark:text-cyan-300">
+                              <FileText size={12} /> Open admission file
+                            </span>
+                          ) : expanded ? (
+                            <ChevronUp size={14} className="ms-auto" />
+                          ) : (
+                            <ChevronDown size={14} className="ms-auto" />
+                          )}
                         </div>
                         {canViewMedicalSummaries ? <><p className="text-sm font-bold">{event.title}</p>{event.summary && <p className="text-xs text-slate-600 dark:text-slate-400">{event.summary}</p>}</> : <p className="text-xs text-slate-500 dark:text-slate-400">Event details are hidden from secretary accounts.</p>}
                       </button>
+                      {admissionTarget && (
+                        <button
+                          type="button"
+                          onClick={() => toggleTimelineEvent(eventKey)}
+                          className="mt-1 text-[11px] font-bold text-slate-500 underline dark:text-slate-400"
+                        >
+                          {expanded ? 'Hide details' : 'Show details'}
+                        </button>
+                      )}
                       {expanded && (
                         <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
                           {canViewMedicalSummaries && <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-line">{event.detail || 'No additional details.'}</p>}
