@@ -66,6 +66,11 @@ export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
       );
       if (!confirmed) return;
       const result = await resetEligibleUnitLicenses(preview);
+      if (result.licenseResetBlocked) {
+        showToast(`Reset blocked: ${result.failedCodeIds.length} code(s) could not be cancelled, so no unit licenses were reset. ${result.cancelledCodeCount} code(s) were cancelled; refresh and confirm again to retry.`, 'warning');
+        await refresh();
+        return;
+      }
       const partial = result.failedUnitIds.length > 0 || result.failedCodeIds.length > 0;
       const detail = `${result.unitCount} unit(s) reset; ${result.cancelledCodeCount} code(s) cancelled.`;
       const failures = [result.failedUnitIds.length ? `${result.failedUnitIds.length} unit(s) failed` : '', result.failedCodeIds.length ? `${result.failedCodeIds.length} code(s) failed` : ''].filter(Boolean).join('; ');

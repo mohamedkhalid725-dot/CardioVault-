@@ -91,6 +91,7 @@ export interface UnitLicenseResetResult {
   cancelledCodeCount: number;
   failedUnitIds: string[];
   failedCodeIds: string[];
+  licenseResetBlocked: boolean;
 }
 
 export async function resetEligibleUnitLicenses(preview: UnitLicenseResetPreview, options: { nowMs?: number } = {}): Promise<UnitLicenseResetResult> {
@@ -133,6 +134,18 @@ export async function resetEligibleUnitLicenses(preview: UnitLicenseResetPreview
       }
     }
   }
+  // Never extend unit licenses while any old access code is still redeemable.
+  // Some earlier chunks may already be revoked, so surface partial progress for
+  // the owner to confirm again before retrying.
+  if (failedCodeIds.length) {
+    return {
+      unitCount: 0,
+      cancelledCodeCount: cancelledCodes,
+      failedUnitIds: eligible,
+      failedCodeIds,
+      licenseResetBlocked: true,
+    };
+  }
   let appliedUnits = 0;
   const failedUnitIds: string[] = [];
   // Each small batch is retried independently and later batches still run.
@@ -154,7 +167,7 @@ export async function resetEligibleUnitLicenses(preview: UnitLicenseResetPreview
       }
     }
   }
-  return { unitCount: appliedUnits, cancelledCodeCount: cancelledCodes, failedUnitIds, failedCodeIds };
+  return { unitCount: appliedUnits, cancelledCodeCount: cancelledCodes, failedUnitIds, failedCodeIds, licenseResetBlocked: false };
 }
 
 export async function getUnitLicense(workspaceId: string, unitId: string): Promise<UnitLicenseRecord | null> {
