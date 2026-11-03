@@ -13,6 +13,10 @@ env:
 jobs:
   release:
     env:
+      # webFirebase.ts deliberately has no production fallback: without this the
+      # bundle throws UnsafeFirebaseConfigError at startup and the app opens to a
+      # blank/black screen. Keep it in step with cardivault-ci.yml.
+      VITE_FIREBASE_PROJECT_ID: ccu-notebook
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY: ${{ secrets.FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY }}
