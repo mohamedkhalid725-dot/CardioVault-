@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Building2, CreditCard, ExternalLink, MessageCircle, ShieldCheck } from 'lucide-react';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { CreditCard, ExternalLink, MessageCircle, ShieldCheck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { buildLineItems, loadRequests, submitRequest } from '../../services/subscriptionRequests';
 import { clinicEnabledForUnit } from '../../services/clinicMode';
@@ -29,7 +29,7 @@ interface RenewalScope {
 }
 
 export const PaymentPanel = () => {
-  const { currentUser, units, setCurrentView } = useApp();
+  const { currentUser, units } = useApp();
   const subscriberId = String(currentUser?.userId || '').trim();
   const [requests, setRequests] = useState<SubscriptionRequest[]>(() => loadRequests());
   const [scopeKey, setScopeKey] = useState('');
@@ -84,7 +84,7 @@ export const PaymentPanel = () => {
       byUnit.set(unit.id, {
         key: `department:${unit.id}`,
         area: 'department',
-        label: `Department · ${unit.name}`,
+        label: `Department Â· ${unit.name}`,
         institutionName: previous?.request.institutionName || unit.name,
         unitDraft: {
           id: unit.id,
@@ -108,7 +108,7 @@ export const PaymentPanel = () => {
         byUnit.set(id, {
           key: `department:${id}`,
           area: 'department',
-          label: `Department · ${unit.name || `Unit ${index + 1}`}`,
+          label: `Department Â· ${unit.name || `Unit ${index + 1}`}`,
           institutionName: request.institutionName,
           unitDraft: { ...unit, id },
           doctorsCount: 0,
@@ -124,7 +124,7 @@ export const PaymentPanel = () => {
       scopes.push({
         key: clinicUnit ? `clinic:${clinicUnit.id}` : 'clinic',
         area: 'clinic',
-        label: `Clinic · ${clinicUnit?.name || clinicRequest?.institutionName || 'Clinic'}`,
+        label: `Clinic Â· ${clinicUnit?.name || clinicRequest?.institutionName || 'Clinic'}`,
         institutionName: clinicRequest?.institutionName || clinicUnit?.name || 'Clinic',
         unitDraft: clinicUnit
           ? {
@@ -250,7 +250,7 @@ export const PaymentPanel = () => {
             <h1 className="text-base font-bold text-slate-900 dark:text-white">Subscription and payment</h1>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Choose the exact scope to renew, then select a payment method to see the amount for the next 30 days.</p>
             <p className="mt-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-              {syncing ? 'Checking the owner queue…' : cloudQueue ? 'Cloud delivery is active for this account.' : 'Showing this device copy.'}
+              {syncing ? 'Checking the owner queueâ€¦' : cloudQueue ? 'Cloud delivery is active for this account.' : 'Showing this device copy.'}
             </p>
           </div>
         </div>
@@ -258,10 +258,7 @@ export const PaymentPanel = () => {
         {renewalScopes.length === 0 ? (
           <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">No subscribed unit or clinic is linked to this account yet.</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Join a unit with its access code, or start from Institution Setup to submit a department or clinic request.</p>
-            <button type="button" onClick={() => setCurrentView('institution-setup')} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-3 py-2 text-xs font-bold text-white">
-              <Building2 className="h-3.5 w-3.5" /> Open Institution Setup
-            </button>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Join a unit with its access code first; renewal is available once a unit or clinic is linked to this account.</p>
           </div>
         ) : (
           <form onSubmit={submitRenewal} className="mt-4 space-y-3">
@@ -273,8 +270,8 @@ export const PaymentPanel = () => {
             <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">Payment method
               <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethodChoice | '')} className={INPUT}>
                 <option value="">Choose InstaPay or Visa</option>
-                <option value="instapay">InstaPay · EGP</option>
-                <option value="visa">Visa · USD</option>
+                <option value="instapay">InstaPay Â· EGP</option>
+                <option value="visa">Visa Â· USD</option>
               </select>
             </label>
             {selectedScope?.area === 'clinic' && (
@@ -304,8 +301,8 @@ export const PaymentPanel = () => {
                 <p className="mt-1 text-2xl font-black text-cyan-700 dark:text-cyan-300">{due} {currency}</p>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                   {selectedScope.area === 'department'
-                    ? 'One selected department unit · EGP 500 or USD 20 per unit.'
-                    : `${selectedDoctors} clinic doctor(s) · EGP 500 or USD 20 per doctor.`}
+                    ? 'One selected department unit Â· EGP 500 or USD 20 per unit.'
+                    : `${selectedDoctors} clinic doctor(s) Â· EGP 500 or USD 20 per doctor.`}
                 </p>
                 {paymentMethod === 'instapay' ? (
                   <div className="mt-3 space-y-2">
@@ -315,7 +312,7 @@ export const PaymentPanel = () => {
                 ) : (
                   <div className="mt-3 space-y-2">
                     <p className="text-xs text-slate-600 dark:text-slate-300">Visa checkout is not connected yet. Contact the owner to arrange payment.</p>
-                    <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Contact on WhatsApp · {WHATSAPP_NUMBER} <MessageCircle className="h-3.5 w-3.5" /></a>
+                    <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Contact on WhatsApp Â· {WHATSAPP_NUMBER} <MessageCircle className="h-3.5 w-3.5" /></a>
                   </div>
                 )}
                 {clinicNeedsUnit && (
@@ -329,7 +326,7 @@ export const PaymentPanel = () => {
             )}
             {notice && <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:bg-slate-800/60 dark:text-slate-200">{notice}</p>}
             <button type="submit" disabled={busy || !paymentMethod} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-slate-900">
-              {busy ? 'Sending request…' : 'Submit renewal request'}
+              {busy ? 'Sending requestâ€¦' : 'Submit renewal request'}
             </button>
           </form>
         )}

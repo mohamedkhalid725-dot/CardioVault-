@@ -3,7 +3,6 @@ import {
   X,
   ClipboardList,
   Users2,
-  Building2,
   Pill,
   BookOpen,
   Calculator,
@@ -84,13 +83,6 @@ export const MoreDrawerModal: React.FC<MoreDrawerModalProps> = ({ isOpen, onClos
       subtitle: 'Longitudinal patient identity, visit timeline and historical admissions',
       icon: Archive,
       color: 'text-amber-500 bg-amber-500/10',
-    },
-    {
-      id: 'institution-setup',
-      title: 'Institution Setup',
-      subtitle: 'Institution, unit types, beds and plan - creates the real units',
-      icon: Building2,
-      color: 'text-sky-500 bg-sky-500/10',
     },
     {
       id: 'protocols',

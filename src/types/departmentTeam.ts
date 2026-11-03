@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared contracts for the Department Team roadmap.
  *
  * These types are the single source of truth for every new module added in the
@@ -11,7 +11,7 @@
 
 export const DEPARTMENT_TEAM_SCHEMA_VERSION = 1;
 
-/* ─── 1. Unit types and configuration ─────────────────────────────────────── */
+/* â”€â”€â”€ 1. Unit types and configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type UnitTypeId =
   | 'cardiology'
@@ -51,7 +51,7 @@ export interface UnitConfig {
   schemaVersion: number;
 }
 
-/* ─── 5/6. Unit-specific waiting list ─────────────────────────────────────── */
+/* â”€â”€â”€ 5/6. Unit-specific waiting list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type WaitingStatus = 'waiting' | 'ready' | 'deferred' | 'cancelled' | 'admitted';
 
@@ -92,7 +92,7 @@ export interface WaitingEntry {
   schemaVersion: number;
 }
 
-/* ─── 4. Encounters / stays ───────────────────────────────────────────────── */
+/* â”€â”€â”€ 4. Encounters / stays â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type EncounterKind = 'admission' | 'transfer' | 'clinic-visit';
 
@@ -114,7 +114,7 @@ export interface PatientEncounter {
   schemaVersion: number;
 }
 
-/* ─── 8. Clinic mode ──────────────────────────────────────────────────────── */
+/* â”€â”€â”€ 8. Clinic mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type AppointmentStatus = 'scheduled' | 'checked-in' | 'completed' | 'cancelled' | 'no-show';
 
@@ -207,37 +207,7 @@ export interface ClinicBill {
   schemaVersion: number;
 }
 
-/* ─── 7. Institution and unit setup ───────────────────────────────────────── */
-
-export interface InstitutionUnitDraft {
-  tempId: string;
-  name: string;
-  typeId: UnitTypeId;
-  customTypeName?: string;
-  beds: number;
-}
-
-export interface InstitutionSetupDraft {
-  id: 'current';
-  institutionName: string;
-  adminName: string;
-  adminEmail: string;
-  unitDrafts: InstitutionUnitDraft[];
-  teamSize: number;
-  /** Chosen plan id, if the product has already defined one. Never a price. */
-  planId?: string;
-  completedSteps: string[];
-  updatedAtMs: number;
-  schemaVersion: number;
-}
-
-export interface SetupValidation {
-  ok: boolean;
-  errors: Record<string, string>;
-  totalBeds: number;
-}
-
-/* ─── 9/10. Subscription lifecycle and manual payments ────────────────────── */
+/* â”€â”€â”€ 9/10. Subscription lifecycle and manual payments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type SubscriptionLifecycleState = 'Active' | 'Expired' | 'Pending' | 'Renewal';
 
@@ -289,7 +259,7 @@ export interface SubscriptionLifecycleView {
   renewalBlocked: boolean;
 }
 
-/* ─── 14. Unit-scoped audit (local append-only buffer) ────────────────────── */
+/* â”€â”€â”€ 14. Unit-scoped audit (local append-only buffer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface LocalAuditEvent {
   id: string;

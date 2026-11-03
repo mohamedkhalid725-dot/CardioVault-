@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { SubscriptionRequest, SubscriptionRequestType } from '../src/types/clinicArea';
 import {
@@ -21,20 +21,10 @@ import {
   subscriptionHistoryExists,
   type SubscriptionStorage,
 } from '../src/services/subscriptionRequests.ts';
-import {
-  clearDraft,
-  createUnitsFromDraft,
-  INSTITUTION_SETUP_STORAGE_KEY,
-  loadDraft,
-  loadSetupCompanion,
-  saveSetupCompanion,
-  SETUP_COMPANION_STORAGE_KEY,
-  unitTypeLabel,
-} from '../src/services/institutionSetup.ts';
 
 /**
  * Pricing, payment, request submission, owner codes and the per-area
- * entitlement state machine for the local preview (approved plan §7/§8/§19).
+ * entitlement state machine for the local preview (approved plan Â§7/Â§8/Â§19).
  *
  * Every test uses an injected Map-backed storage and FIXED timestamps, so the
  * 3-day trial / 30-day code / 3-day grace timeline is asserted without any
@@ -77,7 +67,7 @@ const submit = (
       institutionName: 'Nile Cardiac Hospital',
       unitDrafts: [unitRow('CCU A', true), unitRow('CCU B', false)],
       doctorsCount: 4,
-      clinicServices: ['استشارات القلب'],
+      clinicServices: ['Ø§Ø³ØªØ´Ø§Ø±Ø§Øª Ø§Ù„Ù‚Ù„Ø¨'],
       chosenPaymentMethod: 'instapay',
       nowMs: T0,
       ...over,
@@ -293,83 +283,4 @@ test('assertAreaWritable throws ReadOnlyAreaError for the read-only state only',
     assert.equal((error as ReadOnlyAreaError).name, 'ReadOnlyAreaError');
     assert.match(String((error as Error).message), /read-only-area/);
   }
-});
-
-test('institutionSetup draft backward-compat: old stored JSON without a companion record loads fine', () => {
-  const storage = fakeStorage({
-    [INSTITUTION_SETUP_STORAGE_KEY]: JSON.stringify({
-      institutionName: 'Old Clinic',
-      adminName: 'Dr Old',
-      adminEmail: 'old@example.com',
-      unitDrafts: [{ tempId: 'temp-1', name: 'Ward', typeId: 'ccu', beds: 4 }],
-      teamSize: 3,
-      completedSteps: ['institution'],
-      updatedAtMs: 123,
-      schemaVersion: 1,
-    }),
-  });
-
-  const draft = loadDraft(storage);
-  assert.equal(draft.institutionName, 'Old Clinic');
-  assert.equal(draft.teamSize, 3);
-  // Companion defaults, no throw, no new required draft fields.
-  const companion = loadSetupCompanion(storage);
-  assert.equal(companion.requestType, undefined);
-  assert.equal(companion.paymentMethod, undefined);
-  assert.equal(companion.lastSubmittedRequestId, undefined);
-  clearDraft(storage);
-  assert.equal(storage.getItem(SETUP_COMPANION_STORAGE_KEY), null, 'reset clears the companion too');
-});
-
-test('companion record persists per keystroke and round-trips the wizard extras', () => {
-  const storage = fakeStorage();
-  saveSetupCompanion({ requestType: 'clinic', phone: '01012345678', doctorsCount: 3 }, storage);
-  saveSetupCompanion({ paymentMethod: 'visa', clinicServices: ['استشارات'] }, storage);
-  const companion = loadSetupCompanion(storage);
-  assert.equal(companion.requestType, 'clinic');
-  assert.equal(companion.phone, '01012345678');
-  assert.equal(companion.doctorsCount, 3);
-  assert.equal(companion.paymentMethod, 'visa');
-  assert.deepEqual(companion.clinicServices, ['استشارات']);
-
-  saveSetupCompanion({ receivesOperationsByUnit: { 'temp-ccu': true } }, storage);
-  assert.deepEqual(loadSetupCompanion(storage).receivesOperationsByUnit, { 'temp-ccu': true });
-});
-
-test('the read-only gate inside createUnitsFromDraft blocks unit creation once expired', () => {
-  const storage = fakeStorage();
-  const request = submit(storage, { requestType: 'department', doctorsCount: 0, unitDrafts: [unitRow('CCU A', true)] });
-  // Trial expired long ago, no codes: history exists -> read-only.
-  freeze(storage, T0 + 30 * DAY_MS);
-  assert.equal(computeEntitlementState('department', T0 + 30 * DAY_MS, storage), 'read-only');
-  const validDraft = {
-    id: 'current' as const,
-    institutionName: 'Nile Cardiac Hospital',
-    adminName: 'Dr Ahmed',
-    adminEmail: 'dr@example.com',
-    unitDrafts: [{ tempId: 't1', name: 'CCU A', typeId: 'ccu' as const, beds: 6 }],
-    teamSize: 1,
-    completedSteps: ['institution', 'units', 'team', 'plan'],
-    updatedAtMs: T0,
-    schemaVersion: 1,
-  };
-  assert.throws(() => createUnitsFromDraft(validDraft, [], storage), ReadOnlyAreaError);
-
-  // First-run behavior: with NO history at all, unit creation is allowed.
-  const fresh = fakeStorage();
-  assert.equal(subscriptionHistoryExists(fresh), false);
-  assert.doesNotThrow(() =>
-    createUnitsFromDraft(
-      { ...validDraft, adminEmail: 'dr2@example.com' },
-      [],
-      fresh,
-    ),
-  );
-  void request;
-});
-
-test('unitTypeLabel maps the wizard rows for the submission contract', () => {
-  assert.equal(unitTypeLabel({ typeId: 'ccu', customTypeName: undefined }).startsWith('CCU'), true);
-  assert.equal(unitTypeLabel({ typeId: 'custom', customTypeName: 'Bone Marrow' }), 'Bone Marrow');
-  assert.equal(unitTypeLabel({ typeId: 'custom', customTypeName: '' }), 'Custom');
 });
