@@ -42,6 +42,7 @@ import type {
 import { PREVIEW_CLINIC_ID, SECRETARY_CAN_VIEW_CLINICAL_SUMMARIES } from '../../types/clinicArea';
 import { PREVIOUS_ADMISSION_OPEN_KEY } from '../../services/previousAdmissionPatient';
 import { formatLocalAdmissionDate } from '../../services/patientAdmission';
+import { HospitalUnitPicker, ALL_UNITS_SCOPE, type UnitScope } from '../units/HospitalUnitPicker';
 import { isLocalPreview, PREVIEW_WORKSPACE_ID } from '../../config/localPreview';
 import { appendPatientMasterEvent, loadMasterFilesForUnits } from '../../services/masterPatientFileCloud';
 import { firestoreMasterPatientFilePersistence } from '../../services/firestoreMasterPatientFilePersistence';
@@ -195,15 +196,16 @@ interface AuditRow {
 }
 
 export const MasterPatientFileView: React.FC = () => {
-  const { currentUser, units, archivedPatients, beds, patients, readmitPatient, canWriteUnit, showToast, setCurrentPatientId, setCurrentView } = useApp();
+  const { currentUser, units, hospitals, archivedPatients, beds, patients, readmitPatient, canWriteUnit, showToast, setCurrentPatientId, setCurrentView } = useApp();
   const [readmitTarget, setReadmitTarget] = useState<(typeof archivedPatients)[number] | null>(null);
   const [readmitUnitId, setReadmitUnitId] = useState('');
+  const [readmitHospitalId, setReadmitHospitalId] = useState('');
   const [readmitBedId, setReadmitBedId] = useState('');
   const isSecretary = currentUser?.clinicRole === 'secretary' || String(currentUser?.role || '') === 'coordinator';
   const canViewMedicalSummaries = !isSecretary || SECRETARY_CAN_VIEW_CLINICAL_SUMMARIES;
   const readmitUnits = useMemo(() => AuthorizationService.filterAuthorizedUnits(units, currentUser).filter(unit => canWriteUnit(unit.id) && AuthorizationService.canPerformAction(currentUser, 'admit_patient', { unitId: unit.id })), [units, currentUser, canWriteUnit]);
   const readmitBeds = beds.filter(bed => bed.unitId === readmitUnitId && isAvailableLifecycleBed(bed, patients));
-  const beginReadmit = (patient: (typeof archivedPatients)[number]) => { const unitId = readmitUnits.find(unit => unit.id === patient.unitId)?.id || readmitUnits[0]?.id || ''; setReadmitTarget(patient); setReadmitUnitId(unitId); setReadmitBedId(beds.find(bed => bed.unitId === unitId && isAvailableLifecycleBed(bed, patients))?.id || ''); };
+  const beginReadmit = (patient: (typeof archivedPatients)[number]) => { const unitId = readmitUnits.find(unit => unit.id === patient.unitId)?.id || readmitUnits[0]?.id || ''; setReadmitTarget(patient); setReadmitUnitId(unitId); const targetUnit=readmitUnits.find(unit=>unit.id===unitId); setReadmitHospitalId(targetUnit?.hospitalId&&hospitals.some(hospital=>hospital.id===targetUnit.hospitalId)?targetUnit.hospitalId:'__unassigned'); setReadmitBedId(beds.find(bed => bed.unitId === unitId && isAvailableLifecycleBed(bed, patients))?.id || ''); };
   const confirmMasterReadmit = async () => { if (!readmitTarget || !readmitUnitId || !readmitBedId) return; if (!(await readmitPatient(readmitTarget.id, readmitUnitId, readmitBedId))) return; const id = readmitTarget.id; setReadmitTarget(null); setCurrentPatientId(id); setCurrentView('patient'); showToast(`${readmitTarget.fullName} successfully re-admitted.`, 'success'); };
 
   const unitIds = useMemo(() => units.map((unit) => String(unit.id || '').trim()).filter(Boolean), [units]);
@@ -1028,7 +1030,7 @@ export const MasterPatientFileView: React.FC = () => {
           )}
         </section>
       )}
-      {readmitTarget && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-label={`Readmit ${readmitTarget.fullName}`} className={`${CARD} w-full max-w-md p-5 space-y-4`}><h3 className="font-bold">Readmit {readmitTarget.fullName}</h3><p className="text-xs text-amber-700 dark:text-amber-300">The prior admission remains in the patient history. A new episode will start with a fresh admission record.</p><label className={LABEL}>Unit<select className={INPUT} value={readmitUnitId} onChange={event => { setReadmitUnitId(event.target.value); setReadmitBedId(''); }}><option value="">Select unit</option>{readmitUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className={LABEL}>Available bed<select className={INPUT} value={readmitBedId} onChange={event => setReadmitBedId(event.target.value)}><option value="">Select bed</option>{readmitBeds.map(bed => <option key={bed.id} value={bed.id}>{bed.bedNumber}</option>)}</select></label><div className="flex justify-end gap-2"><button type="button" className={GHOST} onClick={() => setReadmitTarget(null)}>Cancel</button><button type="button" className={PRIMARY} disabled={!readmitBedId} onClick={confirmMasterReadmit}>Readmit</button></div></div></div>}
+      {readmitTarget && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-label={`Readmit ${readmitTarget.fullName}`} className={`${CARD} w-full max-w-md p-5 space-y-4`}><h3 className="font-bold">Readmit {readmitTarget.fullName}</h3><p className="text-xs text-amber-700 dark:text-amber-300">The prior admission remains in the patient history. A new episode will start with a fresh admission record.</p><label className={LABEL}>Hospital and unit<HospitalUnitPicker className="mt-1" units={readmitUnits} hospitals={hospitals} value={{hospitalId:readmitHospitalId,unitId:readmitUnitId}} onChange={scope=>{setReadmitHospitalId(scope.hospitalId);setReadmitUnitId(scope.unitId);setReadmitBedId('');}}/></label><label className={LABEL}>Available bed<select className={INPUT} value={readmitBedId} onChange={event => setReadmitBedId(event.target.value)}><option value="">Select bed</option>{readmitBeds.map(bed => <option key={bed.id} value={bed.id}>{bed.bedNumber}</option>)}</select></label><div className="flex justify-end gap-2"><button type="button" className={GHOST} onClick={() => setReadmitTarget(null)}>Cancel</button><button type="button" className={PRIMARY} disabled={!readmitBedId} onClick={confirmMasterReadmit}>Readmit</button></div></div></div>}
 
       <p className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
         <Info size={12} /> The patient file is longitudinal. Timeline events are append-only and cannot be deleted from this screen.

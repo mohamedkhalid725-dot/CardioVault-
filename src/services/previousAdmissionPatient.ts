@@ -1,4 +1,4 @@
-﻿import type {AppContextType} from '../context/AppContext';
+import type {AppContextType} from '../context/AppContext';
 import type {Patient,PastAdmission} from '../types/clinical';
 import {createEmptyPatientShape,pickIdentityFields} from './admissionEpisode.ts';
 

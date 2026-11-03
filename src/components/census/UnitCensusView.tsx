@@ -4,9 +4,10 @@ import { useApp } from '../../context/AppContext';
 import { isAvailableLifecycleBed } from '../../services/patientLifecycleAccess';
 import { PatientStatus, UserProfile } from '../../types/clinical';
 import { canEditClinicalData, canManageStructure, getStoredWorkspaceAccess, getTeamDirectoryMembers } from '../../services/workspaceAccess';
+import { HospitalUnitPicker, ALL_UNITS_SCOPE, UNASSIGNED_HOSPITAL, unitsInScope, type UnitScope } from '../units/HospitalUnitPicker';
 
 export const UnitCensusView: React.FC = () => {
-  const { currentUnitId, getUnitById, getBedsByUnit, units, beds, patients, setCurrentPatientId, setCurrentView, setCurrentUnitId, addBed, addPatient, setActivePatientSection, dischargePatient, showToast } = useApp();
+  const { currentUnitId, getUnitById, getBedsByUnit, units, beds, patients, hospitals, setCurrentPatientId, setCurrentView, setCurrentUnitId, addBed, addPatient, setActivePatientSection, dischargePatient, showToast } = useApp();
   const [showAdmitModal,setShowAdmitModal]=useState(false);
   const [selectedBedId,setSelectedBedId]=useState<string|null>(null);
   const [dischargeTarget,setDischargeTarget]=useState<{id:string;name:string;bed:string}|null>(null);
@@ -28,6 +29,12 @@ export const UnitCensusView: React.FC = () => {
   const editable=canEditClinicalData();
   const structureAdmin=canManageStructure();
   const currentUnit=currentUnitId&&scopedUnits.some(unit=>unit.id===currentUnitId)?getUnitById(currentUnitId):scopedUnits[0]||null;
+  // Census only lists units that actually have beds; the picker mirrors that set.
+  const censusUnits=scopedUnits.filter(unit=>beds.some(bed=>bed.unitId===unit.id));
+  const censusScope:UnitScope=currentUnit?{
+    hospitalId:currentUnit.hospitalId&&hospitals.some(hospital=>hospital.id===currentUnit.hospitalId)?currentUnit.hospitalId:UNASSIGNED_HOSPITAL,
+    unitId:currentUnit.id,
+  }:ALL_UNITS_SCOPE;
   const unitBeds=currentUnit?getBedsByUnit(currentUnit.id):[];
 
   useEffect(()=>{
@@ -55,7 +62,7 @@ export const UnitCensusView: React.FC = () => {
 
   return <div className="max-w-5xl mx-auto px-4 py-6 space-y-5 animate-in fade-in duration-200">
     <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><button onClick={()=>setCurrentView('home')} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"><ArrowLeft className="w-5 h-5"/></button><div><h1 className="text-2xl font-bold text-slate-900 dark:text-white">{currentUnit.name}</h1><p className="text-xs text-slate-500 dark:text-slate-400">{unitBeds.length} Beds • {currentUnit.type||'—'}{access?.role!=='owner'&&access?.unitName?` • Access: ${access.unitName}`:''}</p><div className="mt-2"><select value={currentUnit.id} onChange={e=>setCurrentUnitId(e.target.value)} className="text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5">{scopedUnits.filter(u=>beds.some(b=>b.unitId===u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div></div>
+      <div className="flex items-center gap-3"><button onClick={()=>setCurrentView('home')} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"><ArrowLeft className="w-5 h-5"/></button><div><h1 className="text-2xl font-bold text-slate-900 dark:text-white">{currentUnit.name}</h1><p className="text-xs text-slate-500 dark:text-slate-400">{unitBeds.length} Beds • {currentUnit.type||'—'}{access?.role!=='owner'&&access?.unitName?` • Access: ${access.unitName}`:''}</p><div className="mt-2"><HospitalUnitPicker units={censusUnits} hospitals={hospitals} value={censusScope} onChange={next=>{const nextUnits=unitsInScope(censusUnits,hospitals,next);if(next.unitId)setCurrentUnitId(next.unitId);else if(nextUnits[0])setCurrentUnitId(nextUnits[0].id);}}/></div></div></div>
       {structureAdmin?<button onClick={()=>addBed(currentUnit.id)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-xs font-bold"><Plus className="w-4 h-4"/> Add Bed</button>:<div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-semibold"><LockKeyhole className="w-3.5 h-3.5"/> Beds managed by Owner</div>}
     </div>
 

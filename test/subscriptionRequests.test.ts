@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { SubscriptionRequest, SubscriptionRequestType } from '../src/types/clinicArea';
 import {
@@ -24,7 +24,7 @@ import {
 
 /**
  * Pricing, payment, request submission, owner codes and the per-area
- * entitlement state machine for the local preview (approved plan Â§7/Â§8/Â§19).
+ * entitlement state machine for the local preview (approved plan §7/§8/§19).
  *
  * Every test uses an injected Map-backed storage and FIXED timestamps, so the
  * 3-day trial / 30-day code / 3-day grace timeline is asserted without any
@@ -67,7 +67,7 @@ const submit = (
       institutionName: 'Nile Cardiac Hospital',
       unitDrafts: [unitRow('CCU A', true), unitRow('CCU B', false)],
       doctorsCount: 4,
-      clinicServices: ['Ø§Ø³ØªØ´Ø§Ø±Ø§Øª Ø§Ù„Ù‚Ù„Ø¨'],
+      clinicServices: ['استشارات القلب'],
       chosenPaymentMethod: 'instapay',
       nowMs: T0,
       ...over,
