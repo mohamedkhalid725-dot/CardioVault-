@@ -30,7 +30,7 @@ import {firestoreUnitVerificationIO}from'../services/firestoreUnitPersistence';
 import {UnitCloudVerificationError,verifyUnitSetupInCloud}from'../services/unitPersistence';
 import {withOperationTimeout}from'../services/operationTimeout';
 
-export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail'|'results-center'|'institution-setup'|'waiting-list'|'clinic'|'payments'|'master-file'|'operation-waiting'|'owner-requests';
+export type AppView='login'|'home'|'census'|'patient'|'patients'|'add-patient'|'archive'|'calculators'|'settings'|'handover'|'my-worklist'|'team'|'protocols'|'statistics'|'audit-trail'|'results-center'|'waiting-list'|'clinic'|'payments'|'master-file'|'operation-waiting'|'owner-requests';
 interface AuthState{isAuthenticated:boolean;userEmail:string;userName:string;pinCode:string;isLocked:boolean;}
 interface ToastInfo{id:string;message:string;type:'success'|'info'|'warning'|'error';}
 interface PendingDepartmentLifecycleWrite {
@@ -92,7 +92,6 @@ export interface AppContextType{
    readmitPatient:(id:string,unitId:string,bedId:string)=>Promise<boolean>;
   deletePatientPermanently:(id:string)=>void;
   addUnit:(name:string,type:string,initialBedsCount?:number,options?:AddUnitOptions)=>Unit;
-  addPreviewUnits:(units:Unit[])=>number;
   // Uploads a freshly created unit with its beds and then closes its capacity
   // window. It must run after addUnit and before the unit is resized.
   finalizeUnitCreation:(unitId:string)=>Promise<void>;
@@ -123,7 +122,6 @@ export interface AppContextType{
   toasts:ToastInfo[];
   showToast:(message:string,type?:ToastInfo['type'])=>void;
   dismissToast:(id:string)=>void;
-  resetDatabase:()=>void;
   privacySafeMonitor:boolean;
   setPrivacySafeMonitor:(v:boolean)=>void;
   favoritePatientIds:string[];
@@ -656,25 +654,6 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   }
   return unit;
  };
- const addPreviewUnits=(requested:Unit[]):number=>{
-  if(!isLocalPreview())throw new Error('Preview unit creation is available only in the isolated local preview.');
-  const current=StorageService.getUnits();
-  const knownIds=new Set(current.map(unit=>String(unit.id)));
-  const additions=(Array.isArray(requested)?requested:[]).filter(unit=>unit?.id&&!knownIds.has(String(unit.id)));
-  if(!additions.length)return 0;
-  const nextUnits=[...current,...additions];
-  const currentBeds=StorageService.getBeds();
-  const knownBedIds=new Set(currentBeds.map(bed=>String(bed.id)));
-  const newBeds=additions.flatMap(unit=>desiredBeds(String(unit.id),normalizeBedCount(unit.totalBeds)).filter(bed=>!knownBedIds.has(String(bed.id))));
-  StorageService.saveUnits(nextUnits);
-  StorageService.saveBeds([...currentBeds,...newBeds]);
-  const savedPreviewUnits=loadPreviewCreatedUnits();
-  const savedIds=new Set(savedPreviewUnits.map(unit=>String(unit.id)));
-  savePreviewCreatedUnits([...savedPreviewUnits,...additions.filter(unit=>!savedIds.has(String(unit.id)))]);
-  setUnits(nextUnits);
-  setBeds(StorageService.getBeds());
-  return additions.length;
- };
  // Makes the cloud copy of a unit match the capacity it declares.
  //
  // The unit document and its bed documents are two different writes, and the
@@ -797,8 +776,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  const addBed=(unitId:string,bedNumber?:string)=>{const n=beds.filter(b=>b.unitId===unitId).length+1;const bed={id:`bed-${unitId}-${Date.now()}`,unitId,bedNumber:bedNumber||`Bed ${n}`,status:'Empty' as BedStatus};commitBeds([...beds,bed]);commitUnits(units.map(u=>u.id===unitId?{...u,totalBeds:u.totalBeds+1}:u));void notifyClinicalData(`تم إضافة سرير جديد: ${bed.bedNumber}.`,'تمت إضافة بيانات جديدة',{unitId:bed.unitId,type:'bed-update'});return bed;};
  const removeBed=(id:string)=>{const bed=beds.find(b=>b.id===id);if(!bed||bedIsOccupied(bed))return false;const count=beds.filter(b=>b.unitId===bed.unitId).length;if(count<=1)return false;commitBeds(beds.filter(b=>b.id!==id));commitUnits(units.map(u=>u.id===bed.unitId?{...u,totalBeds:Math.max(1,u.totalBeds-1)}:u));return true;};
  const syncNow=async()=>{if(isLocalPreview()){showToast('Cloud sync is disabled in the isolated local preview.','info');return;}setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}const pendingEventsSaved=await flushPendingDepartmentLifecycleWrites(getActiveWorkspaceId());setLastSyncTime(new Date().toLocaleTimeString());showToast(pendingEventsSaved?'Cloud sync and pending lifecycle events completed successfully.':'Clinical data synced, but a master-file event still needs confirmation. Retry cloud sync.',pendingEventsSaved?'success':'warning');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
- const resetDatabase=()=>{if(patients.length>0||units.length>0){const answer=window.prompt('This ERASES all units, beds and patients. Type RESET to confirm.');if(String(answer||'').trim().toUpperCase()!=='RESET'){showToast('Reset cancelled.','info');return;}}StorageService.resetToDefaultSeed();hydrateClinicalState();showToast('Database reset.','warning');};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
-  return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,updateOwnDisplayName,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,addPreviewUnits,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,hospitals,addHospital,assignUnitToHospital,canWriteUnit,groupUnitsByHospital,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,resetDatabase,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,updateOwnDisplayName,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,hospitals,addHospital,assignUnitToHospital,canWriteUnit,groupUnitsByHospital,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
 };
 export const useApp=()=>{const c=useContext(AppContext);if(!c)throw new Error('useApp must be used inside AppProvider');return c;};

@@ -47,12 +47,18 @@
 
 import type { SubscriptionCodeRecord, SubscriptionRequest } from '../types/clinicArea';
 import { isLocalPreview } from '../config/localPreview.ts';
-import { MAX_REQUEST_UNIT_DRAFTS } from './institutionSetup.ts';
 import { PRICE_EGP, PRICE_USD, cacheCodes, cacheRequests, loadCodes, loadRequests } from './subscriptionRequests.ts';
 import type { SubscriptionStorage } from './subscriptionRequests.ts';
 
 export const CLOUD_REQUEST_SCHEMA_VERSION = 1;
 export const CLOUD_INDEX_SCHEMA_VERSION = 1;
+
+/**
+ * Firestore validates each requested unit individually; this cap keeps rule
+ * evaluation below its 1000-expression limit. Lives here because this module is
+ * the only remaining consumer of the request-unit cap.
+ */
+export const MAX_REQUEST_UNIT_DRAFTS = 50;
 
 /** Hard cap so a corrupt index can never turn into an unbounded read loop. */
 export const MAX_INDEXED_REQUESTS = 100;

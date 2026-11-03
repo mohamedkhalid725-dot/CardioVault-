@@ -207,36 +207,6 @@ export interface ClinicBill {
   schemaVersion: number;
 }
 
-/* ─── 7. Institution and unit setup ───────────────────────────────────────── */
-
-export interface InstitutionUnitDraft {
-  tempId: string;
-  name: string;
-  typeId: UnitTypeId;
-  customTypeName?: string;
-  beds: number;
-}
-
-export interface InstitutionSetupDraft {
-  id: 'current';
-  institutionName: string;
-  adminName: string;
-  adminEmail: string;
-  unitDrafts: InstitutionUnitDraft[];
-  teamSize: number;
-  /** Chosen plan id, if the product has already defined one. Never a price. */
-  planId?: string;
-  completedSteps: string[];
-  updatedAtMs: number;
-  schemaVersion: number;
-}
-
-export interface SetupValidation {
-  ok: boolean;
-  errors: Record<string, string>;
-  totalBeds: number;
-}
-
 /* ─── 9/10. Subscription lifecycle and manual payments ────────────────────── */
 
 export type SubscriptionLifecycleState = 'Active' | 'Expired' | 'Pending' | 'Renewal';

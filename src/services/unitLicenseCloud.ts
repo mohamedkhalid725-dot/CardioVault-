@@ -74,43 +74,44 @@ export interface UnitLicenseResetPreview {
 export async function previewUnitLicenseReset(): Promise<UnitLicenseResetPreview> {
   if (!(await isMasterAccount())) throw new Error('Only the platform owner can reset unit licenses.');
   const workspaceId = getActiveWorkspaceId();
-  const [units, beds, codes] = await Promise.all([
+  const [units, codes] = await Promise.all([
     listServerDocuments(`workspaces/${workspaceId}/units`),
-    listServerDocuments(`workspaces/${workspaceId}/beds`),
     listServerDocuments(`workspaces/${workspaceId}/unitLicenseCodes`),
   ]);
-  const bedCounts = new Map<string, number>();
-  for (const { data } of beds) {
-    const unitId = String(data.unitId || '');
-    if (unitId && data.deleted !== true && !data.deletedAt) bedCounts.set(unitId, (bedCounts.get(unitId) || 0) + 1);
-  }
   const eligibleUnitIds = units
-    .filter(({ id, data }) => data.deleted !== true && !data.deletedAt && (bedCounts.get(id) || 0) > 0)
+    .filter(({ data }) => data.deleted !== true && !data.deletedAt)
     .map(({ id }) => id);
   const activeCodesToCancel = codes.filter(({ data }) => data.status === 'active').length;
   return { workspaceId, eligibleUnitIds, activeCodesToCancel };
 }
 
 /** Resets eligible units and invalidates outstanding CVLs in bounded batches. */
-export async function resetEligibleUnitLicenses(preview: UnitLicenseResetPreview, options: { nowMs?: number } = {}): Promise<{ unitCount: number; cancelledCodeCount: number }> {
+export interface UnitLicenseResetResult {
+  unitCount: number;
+  cancelledCodeCount: number;
+  failedUnitIds: string[];
+  failedCodeIds: string[];
+}
+
+export async function resetEligibleUnitLicenses(preview: UnitLicenseResetPreview, options: { nowMs?: number } = {}): Promise<UnitLicenseResetResult> {
   if (!(await isMasterAccount())) throw new Error('Only the platform owner can reset unit licenses.');
   if (preview.workspaceId !== getActiveWorkspaceId()) throw new Error('The active workspace changed. Refresh the license list and retry.');
   const fresh = await previewUnitLicenseReset();
-  if (fresh.workspaceId !== preview.workspaceId || fresh.eligibleUnitIds.join('|') !== preview.eligibleUnitIds.join('|') || fresh.activeCodesToCancel !== preview.activeCodesToCancel) {
-    throw new Error('Unit or bed eligibility changed since confirmation. Refresh and confirm the reset again; no changes were made.');
+  if (fresh.workspaceId !== preview.workspaceId || fresh.activeCodesToCancel !== preview.activeCodesToCancel) {
+    throw new Error('The active workspace or outstanding-code count changed since confirmation. Refresh and confirm the reset again; no changes were made.');
   }
-  const [unitDocs, bedDocs, codes] = await Promise.all([
+  const [unitDocs, codes] = await Promise.all([
     listServerDocuments(`workspaces/${preview.workspaceId}/units`),
-    listServerDocuments(`workspaces/${preview.workspaceId}/beds`),
     listServerDocuments(`workspaces/${preview.workspaceId}/unitLicenseCodes`),
   ]);
-  const actualBedUnits = new Set(bedDocs.filter(({ data }) => data.deleted !== true && !data.deletedAt).map(({ data }) => String(data.unitId || '')).filter(Boolean));
   const unitById = new Map(unitDocs.map(document => [document.id, document.data]));
   const eligible = preview.eligibleUnitIds.filter(id => {
     const unit = unitById.get(id);
-    return !!unit && unit.deleted !== true && !unit.deletedAt && actualBedUnits.has(id);
+    return !!unit && unit.deleted !== true && !unit.deletedAt;
   });
-  if (eligible.length !== preview.eligibleUnitIds.length) throw new Error('Unit or bed eligibility changed before reset. Refresh and confirm again; no changes were made.');
+  // A unit deleted after confirmation is skipped rather than blocking resets
+  // for every other still-live unit. Newly-created units are not added to this
+  // confirmed ID set.
   const activeCodes = codes.filter(({ data }) => data.status === 'active');
   if (activeCodes.length !== fresh.activeCodesToCancel) throw new Error('The outstanding CVL codes changed before reset. Refresh and confirm again; no changes were made.');
   const uid = await getCurrentUid();
@@ -119,31 +120,41 @@ export async function resetEligibleUnitLicenses(preview: UnitLicenseResetPreview
   const chunks = <T,>(items: T[], size: number): T[][] => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
   // Revoke old codes first; if revocation fails, do not change any license.
   let cancelledCodes = 0;
-  try {
-    for (const codeChunk of chunks(activeCodes, 400)) {
-      await commitBatch(codeChunk.map(({ id }) => ({ type: 'delete' as const, reference: unitLicenseCodePath(preview.workspaceId, id) })));
-      cancelledCodes += codeChunk.length;
+  const failedCodeIds: string[] = [];
+  for (const codeChunk of chunks(activeCodes, 400)) {
+    let completed = false;
+    for (let attempt = 0; attempt < 3 && !completed; attempt++) {
+      try {
+        await commitBatch(codeChunk.map(({ id }) => ({ type: 'delete' as const, reference: unitLicenseCodePath(preview.workspaceId, id) })));
+        cancelledCodes += codeChunk.length;
+        completed = true;
+      } catch (error) {
+        if (attempt === 2) failedCodeIds.push(...codeChunk.map(({ id }) => id));
+      }
     }
-  } catch (error: any) {
-    throw new Error(`${cancelledCodes} of ${activeCodes.length} old CVL codes were cancelled; no unit licenses were reset. Refresh and retry. ${String(error?.message || error)}`);
   }
   let appliedUnits = 0;
-  try {
-    // Keep each batch small: every license write checks the corresponding unit
-    // document in Security Rules, and Firestore has a separate rules read limit.
-    for (const unitChunk of chunks(eligible, 10)) {
-      await commitBatch(unitChunk.map(unitId => ({
-        type: 'set' as const,
-        reference: unitLicensePath(preview.workspaceId, unitId),
-        data: { workspaceId: preview.workspaceId, unitId, issuedAtMs: nowMs, expiresAtMs: nowMs + UNIT_LICENSE_MS, updatedBy: uid, schemaVersion: 1 },
-        options: { merge: false },
-      })));
-      appliedUnits += unitChunk.length;
+  const failedUnitIds: string[] = [];
+  // Each small batch is retried independently and later batches still run.
+  // This keeps a transient rules/network failure from stranding unrelated units.
+  for (const unitChunk of chunks(eligible, 10)) {
+    let completed = false;
+    for (let attempt = 0; attempt < 3 && !completed; attempt++) {
+      try {
+        await commitBatch(unitChunk.map(unitId => ({
+          type: 'set' as const,
+          reference: unitLicensePath(preview.workspaceId, unitId),
+          data: { workspaceId: preview.workspaceId, unitId, issuedAtMs: nowMs, expiresAtMs: nowMs + UNIT_LICENSE_MS, updatedBy: uid, schemaVersion: 1 },
+          options: { merge: false },
+        })));
+        appliedUnits += unitChunk.length;
+        completed = true;
+      } catch (error) {
+        if (attempt === 2) failedUnitIds.push(...unitChunk);
+      }
     }
-  } catch (error: any) {
-    throw new Error(`${cancelledCodes} old CVL codes were cancelled and ${appliedUnits} of ${eligible.length} unit licenses were reset. Remaining units were unchanged. Refresh and retry the reset to complete it. ${String(error?.message || error)}`);
   }
-  return { unitCount: eligible.length, cancelledCodeCount: cancelledCodes };
+  return { unitCount: appliedUnits, cancelledCodeCount: cancelledCodes, failedUnitIds, failedCodeIds };
 }
 
 export async function getUnitLicense(workspaceId: string, unitId: string): Promise<UnitLicenseRecord | null> {

@@ -40,6 +40,9 @@ import type {
   OperationAttachment,
 } from '../../types/clinicArea';
 import { PREVIEW_CLINIC_ID, SECRETARY_CAN_VIEW_CLINICAL_SUMMARIES } from '../../types/clinicArea';
+import { PREVIOUS_ADMISSION_OPEN_KEY } from '../../services/previousAdmissionPatient';
+import { formatLocalAdmissionDate } from '../../services/patientAdmission';
+import { HospitalUnitPicker, ALL_UNITS_SCOPE, type UnitScope } from '../units/HospitalUnitPicker';
 import { isLocalPreview, PREVIEW_WORKSPACE_ID } from '../../config/localPreview';
 import { appendPatientMasterEvent, loadMasterFilesForUnits } from '../../services/masterPatientFileCloud';
 import { firestoreMasterPatientFilePersistence } from '../../services/firestoreMasterPatientFilePersistence';
@@ -130,6 +133,16 @@ const timelineEventKey = (event: MasterTimelineEvent, index: number): string => 
   return id ? `event:${id}` : `legacy:${event.kind}:${event.atMs}:${index}`;
 };
 
+// Admission-kind timeline events carry the department patient record in `refId`,
+// so tapping one can open that admission's own clinical file instead of only
+// expanding a text summary.
+const ADMISSION_TIMELINE_KINDS: TimelineEventKind[] = [
+  'patient-admission',
+  'patient-readmission',
+  'patient-transfer',
+  'patient-discharge',
+];
+
 // ---------------------------------------------------------------------------
 // New master file form state
 // ---------------------------------------------------------------------------
@@ -183,15 +196,16 @@ interface AuditRow {
 }
 
 export const MasterPatientFileView: React.FC = () => {
-  const { currentUser, units, archivedPatients, beds, patients, readmitPatient, canWriteUnit, showToast, setCurrentPatientId, setCurrentView } = useApp();
+  const { currentUser, units, hospitals, archivedPatients, beds, patients, readmitPatient, canWriteUnit, showToast, setCurrentPatientId, setCurrentView } = useApp();
   const [readmitTarget, setReadmitTarget] = useState<(typeof archivedPatients)[number] | null>(null);
   const [readmitUnitId, setReadmitUnitId] = useState('');
+  const [readmitHospitalId, setReadmitHospitalId] = useState('');
   const [readmitBedId, setReadmitBedId] = useState('');
   const isSecretary = currentUser?.clinicRole === 'secretary' || String(currentUser?.role || '') === 'coordinator';
   const canViewMedicalSummaries = !isSecretary || SECRETARY_CAN_VIEW_CLINICAL_SUMMARIES;
   const readmitUnits = useMemo(() => AuthorizationService.filterAuthorizedUnits(units, currentUser).filter(unit => canWriteUnit(unit.id) && AuthorizationService.canPerformAction(currentUser, 'admit_patient', { unitId: unit.id })), [units, currentUser, canWriteUnit]);
   const readmitBeds = beds.filter(bed => bed.unitId === readmitUnitId && isAvailableLifecycleBed(bed, patients));
-  const beginReadmit = (patient: (typeof archivedPatients)[number]) => { const unitId = readmitUnits.find(unit => unit.id === patient.unitId)?.id || readmitUnits[0]?.id || ''; setReadmitTarget(patient); setReadmitUnitId(unitId); setReadmitBedId(beds.find(bed => bed.unitId === unitId && isAvailableLifecycleBed(bed, patients))?.id || ''); };
+  const beginReadmit = (patient: (typeof archivedPatients)[number]) => { const unitId = readmitUnits.find(unit => unit.id === patient.unitId)?.id || readmitUnits[0]?.id || ''; setReadmitTarget(patient); setReadmitUnitId(unitId); const targetUnit=readmitUnits.find(unit=>unit.id===unitId); setReadmitHospitalId(targetUnit?.hospitalId&&hospitals.some(hospital=>hospital.id===targetUnit.hospitalId)?targetUnit.hospitalId:'__unassigned'); setReadmitBedId(beds.find(bed => bed.unitId === unitId && isAvailableLifecycleBed(bed, patients))?.id || ''); };
   const confirmMasterReadmit = async () => { if (!readmitTarget || !readmitUnitId || !readmitBedId) return; if (!(await readmitPatient(readmitTarget.id, readmitUnitId, readmitBedId))) return; const id = readmitTarget.id; setReadmitTarget(null); setCurrentPatientId(id); setCurrentView('patient'); showToast(`${readmitTarget.fullName} successfully re-admitted.`, 'success'); };
 
   const unitIds = useMemo(() => units.map((unit) => String(unit.id || '').trim()).filter(Boolean), [units]);
@@ -472,6 +486,47 @@ export const MasterPatientFileView: React.FC = () => {
     ? [...(Array.isArray(selectedFile.timeline) ? selectedFile.timeline : [])].sort((a, b) => b.atMs - a.atMs)
     : [];
 
+  // Resolve the department patient record behind an admission-kind event.
+  // `refId` is written as `patient.id` when the admission is linked, so it stays
+  // stable across discharge and readmission. When the event predates a
+  // readmission, the matching episode inside `pastAdmissions` is opened read-only.
+  const resolveAdmissionTarget = (
+    event: MasterTimelineEvent,
+  ): { patientId: string; previousAdmissionId?: string } | null => {
+    if (!ADMISSION_TIMELINE_KINDS.includes(event.kind)) return null;
+    const refId = String(event.refId || '').trim();
+    if (!refId) return null;
+    const patient = patients.find((item) => item.id === refId) || archivedPatients.find((item) => item.id === refId);
+    if (!patient) return null;
+    if (patient.isArchived) return { patientId: patient.id };
+    const eventDay = formatLocalAdmissionDate(new Date(event.atMs));
+    const matches = (patient.pastAdmissions || []).filter(
+      (admission) => admission && admission.episodeSnapshot && admission.admissionDate === eventDay,
+    );
+    return {
+      patientId: patient.id,
+      previousAdmissionId: matches.length === 1 ? matches[0].id : undefined,
+    };
+  };
+
+  const openAdmissionTarget = (target: { patientId: string; previousAdmissionId?: string }): void => {
+    if (target.previousAdmissionId) {
+      try {
+        window.sessionStorage.setItem(PREVIOUS_ADMISSION_OPEN_KEY, target.previousAdmissionId);
+      } catch {
+        /* Session storage is best effort; the current admission still opens. */
+      }
+    }
+    setCurrentPatientId(target.patientId);
+    setCurrentView('patient');
+  };
+
+  const toggleTimelineEvent = (eventKey: string): void => {
+    setExpandedEventKeys((current) =>
+      current.includes(eventKey) ? current.filter((key) => key !== eventKey) : [...current, eventKey],
+    );
+  };
+
   return (
     <div className="max-w-5xl mx-auto w-full px-3 sm:px-6 py-4 space-y-4" dir="ltr">
       <header className="space-y-1">
@@ -575,16 +630,14 @@ export const MasterPatientFileView: React.FC = () => {
                 {timeline.map((event, index) => {
                   const eventKey = timelineEventKey(event, index);
                   const expanded = expandedEventKeys.includes(eventKey);
+                  const admissionTarget = resolveAdmissionTarget(event);
                   return (
                     <li key={eventKey} className="border border-slate-200 dark:border-slate-800 rounded-xl p-3">
                       <button
                         type="button"
                         className="w-full text-right space-y-1"
-                        onClick={() =>
-                          setExpandedEventKeys((current) =>
-                            current.includes(eventKey) ? current.filter((key) => key !== eventKey) : [...current, eventKey]
-                          )
-                        }
+                        title={admissionTarget ? 'Open this admission file' : undefined}
+                        onClick={() => (admissionTarget ? openAdmissionTarget(admissionTarget) : toggleTimelineEvent(eventKey))}
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${KIND_BADGE[event.kind]}`}>
@@ -594,10 +647,27 @@ export const MasterPatientFileView: React.FC = () => {
                           <span className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
                             {new Date(event.atMs).toLocaleString()}
                           </span>
-                          {expanded ? <ChevronUp size={14} className="ms-auto" /> : <ChevronDown size={14} className="ms-auto" />}
+                          {admissionTarget ? (
+                            <span className="ms-auto inline-flex items-center gap-1 text-[11px] font-bold text-cyan-600 dark:text-cyan-300">
+                              <FileText size={12} /> Open admission file
+                            </span>
+                          ) : expanded ? (
+                            <ChevronUp size={14} className="ms-auto" />
+                          ) : (
+                            <ChevronDown size={14} className="ms-auto" />
+                          )}
                         </div>
                         {canViewMedicalSummaries ? <><p className="text-sm font-bold">{event.title}</p>{event.summary && <p className="text-xs text-slate-600 dark:text-slate-400">{event.summary}</p>}</> : <p className="text-xs text-slate-500 dark:text-slate-400">Event details are hidden from secretary accounts.</p>}
                       </button>
+                      {admissionTarget && (
+                        <button
+                          type="button"
+                          onClick={() => toggleTimelineEvent(eventKey)}
+                          className="mt-1 text-[11px] font-bold text-slate-500 underline dark:text-slate-400"
+                        >
+                          {expanded ? 'Hide details' : 'Show details'}
+                        </button>
+                      )}
                       {expanded && (
                         <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
                           {canViewMedicalSummaries && <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-line">{event.detail || 'No additional details.'}</p>}
@@ -960,7 +1030,7 @@ export const MasterPatientFileView: React.FC = () => {
           )}
         </section>
       )}
-      {readmitTarget && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-label={`Readmit ${readmitTarget.fullName}`} className={`${CARD} w-full max-w-md p-5 space-y-4`}><h3 className="font-bold">Readmit {readmitTarget.fullName}</h3><p className="text-xs text-amber-700 dark:text-amber-300">The prior admission remains in the patient history. A new episode will start with a fresh admission record.</p><label className={LABEL}>Unit<select className={INPUT} value={readmitUnitId} onChange={event => { setReadmitUnitId(event.target.value); setReadmitBedId(''); }}><option value="">Select unit</option>{readmitUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className={LABEL}>Available bed<select className={INPUT} value={readmitBedId} onChange={event => setReadmitBedId(event.target.value)}><option value="">Select bed</option>{readmitBeds.map(bed => <option key={bed.id} value={bed.id}>{bed.bedNumber}</option>)}</select></label><div className="flex justify-end gap-2"><button type="button" className={GHOST} onClick={() => setReadmitTarget(null)}>Cancel</button><button type="button" className={PRIMARY} disabled={!readmitBedId} onClick={confirmMasterReadmit}>Readmit</button></div></div></div>}
+      {readmitTarget && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-label={`Readmit ${readmitTarget.fullName}`} className={`${CARD} w-full max-w-md p-5 space-y-4`}><h3 className="font-bold">Readmit {readmitTarget.fullName}</h3><p className="text-xs text-amber-700 dark:text-amber-300">The prior admission remains in the patient history. A new episode will start with a fresh admission record.</p><label className={LABEL}>Hospital and unit<HospitalUnitPicker className="mt-1" units={readmitUnits} hospitals={hospitals} value={{hospitalId:readmitHospitalId,unitId:readmitUnitId}} onChange={scope=>{setReadmitHospitalId(scope.hospitalId);setReadmitUnitId(scope.unitId);setReadmitBedId('');}}/></label><label className={LABEL}>Available bed<select className={INPUT} value={readmitBedId} onChange={event => setReadmitBedId(event.target.value)}><option value="">Select bed</option>{readmitBeds.map(bed => <option key={bed.id} value={bed.id}>{bed.bedNumber}</option>)}</select></label><div className="flex justify-end gap-2"><button type="button" className={GHOST} onClick={() => setReadmitTarget(null)}>Cancel</button><button type="button" className={PRIMARY} disabled={!readmitBedId} onClick={confirmMasterReadmit}>Readmit</button></div></div></div>}
 
       <p className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
         <Info size={12} /> The patient file is longitudinal. Timeline events are append-only and cannot be deleted from this screen.

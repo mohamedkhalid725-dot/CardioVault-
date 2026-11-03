@@ -4,9 +4,10 @@ import { useApp } from '../../context/AppContext';
 import { CardioLogo } from '../CardioLogo';
 import { NotificationsCenterModal } from './NotificationsCenterModal';
 import { ClinicalWorkflowService } from '../../services/clinicalWorkflowService';
+import { AuthorizationService } from '../../services/authorizationService';
 
 export const AppHeader: React.FC = () => {
-  const { theme, toggleTheme, auth, logout, setIsSearchOpen, syncNow, isSyncing, lastSyncTime, currentView, setCurrentView, currentUnitId, getUnitById, patients, currentUser, openTeamPicker, myWorkspaces } = useApp();
+  const { theme, toggleTheme, auth, logout, setIsSearchOpen, syncNow, isSyncing, lastSyncTime, currentView, setCurrentView, currentUnitId, getUnitById, patients, units, currentUser, openTeamPicker, myWorkspaces } = useApp();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -54,12 +55,13 @@ export const AppHeader: React.FC = () => {
   }, []);
 
   const notificationCount = useMemo(() => {
-    const active = patients.filter(p => !p.isArchived);
-    const tasks = ClinicalWorkflowService.getTasks().filter(t => t.status !== 'completed' && (!t.patientId || active.some(p => p.id === t.patientId))).length;
+    const allowedUnits = AuthorizationService.filterAuthorizedUnits(units, currentUser);
+    const active = AuthorizationService.filterAuthorizedPatients(patients.filter(p => !p.isArchived && allowedUnits.some(u => u.id === p.unitId)), currentUser);
+    const tasks = ClinicalWorkflowService.getTasks().filter(t => t.status !== 'completed' && allowedUnits.some(u => u.id === t.unitId) && (!t.patientId || active.some(p => p.id === t.patientId))).length;
     const clinical = active.reduce((n, p) => n + (p.investigations || []).filter(i => i.status === 'available' || i.flag === 'critical').length + (p.consultations || []).filter(c => c.status !== 'Completed').length, 0);
     const critical = active.filter(p => p.status === 'Critical').length;
     return tasks + clinical + critical;
-  }, [patients, version]);
+  }, [patients, units, currentUser, version]);
 
   return (
     <>

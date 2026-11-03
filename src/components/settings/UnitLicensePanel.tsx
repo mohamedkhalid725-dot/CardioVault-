@@ -7,7 +7,7 @@ import { unitLicenseState, type UnitLicenseRecord } from '../../services/unitLic
 import { useApp } from '../../context/AppContext';
 
 export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
-  const { showToast } = useApp();
+  const { showToast, groupUnitsByHospital } = useApp();
   const [isOwner, setIsOwner] = useState(false);
   const [licenses, setLicenses] = useState<Record<string, UnitLicenseRecord | null>>({});
   const [busyUnit, setBusyUnit] = useState('');
@@ -58,7 +58,7 @@ export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
     try {
       const preview = await previewUnitLicenseReset();
       if (!preview.eligibleUnitIds.length && !preview.activeCodesToCancel) {
-        showToast('No non-deleted units with at least one bed were found. No licenses were changed.', 'info');
+        showToast('No non-deleted units or active CVL codes were found. No licenses were changed.', 'info');
         return;
       }
       const confirmed = window.confirm(
@@ -66,7 +66,10 @@ export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
       );
       if (!confirmed) return;
       const result = await resetEligibleUnitLicenses(preview);
-      showToast(`Reset complete: ${result.unitCount} unit(s) now have 30 days. ${result.cancelledCodeCount} unused CVL code(s) were cancelled.`, 'success');
+      const partial = result.failedUnitIds.length > 0 || result.failedCodeIds.length > 0;
+      const detail = `${result.unitCount} unit(s) reset; ${result.cancelledCodeCount} code(s) cancelled.`;
+      const failures = [result.failedUnitIds.length ? `${result.failedUnitIds.length} unit(s) failed` : '', result.failedCodeIds.length ? `${result.failedCodeIds.length} code(s) failed` : ''].filter(Boolean).join('; ');
+      showToast(partial ? `Reset partially completed: ${detail} ${failures}. Refresh and retry.` : `Reset complete: ${detail}`, partial ? 'warning' : 'success');
       window.dispatchEvent(new CustomEvent('cardiovault-data-restored'));
       await refresh();
     } catch (error) {
@@ -80,19 +83,19 @@ export const UnitLicensePanel: React.FC<{ units: Unit[] }> = ({ units }) => {
     {isOwner && <form onSubmit={redeemCode} className="flex flex-wrap gap-2"><input aria-label="Unit license code" value={codeInput} onChange={event => setCodeInput(event.target.value.toUpperCase())} placeholder="CVL-…" className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm font-mono dark:border-slate-700" /><button disabled={redeeming || !codeInput.trim()} className="rounded-lg bg-cyan-500 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">{redeeming ? 'Activating…' : 'Activate code'}</button></form>}
     {isOwner && <>
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/40 bg-amber-50/60 p-3 dark:bg-amber-950/15">
-      <p className="text-xs text-slate-600 dark:text-slate-300">One-time reset: non-deleted units with beds start at 30 days. Memberships and pending status stay unchanged; unused CVL codes are cancelled.</p>
+      <p className="text-xs text-slate-600 dark:text-slate-300">One-time reset: every non-deleted unit starts at 30 days, even if it currently has no beds. Memberships and pending status stay unchanged; unused CVL codes are cancelled.</p>
       <button type="button" disabled={resetting} onClick={() => void resetLicenses()} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500 px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 disabled:opacity-50">
         {resetting ? <RefreshCw size={13} className="animate-spin" /> : <RotateCcw size={13} />}{resetting ? 'Resetting…' : 'Reset eligible licenses'}
       </button>
     </div>
-    {units.map(unit => {
+     {groupUnitsByHospital(units).map(group=><div key={group.hospital?.id||'unassigned'} className="space-y-2"><h3 className="pt-2 text-[11px] font-black uppercase tracking-wide text-slate-500">{group.hospital?.name||'Unassigned hospital'}</h3>{group.units.map(unit => {
       const license = licenses[unit.id];
       const state = unitLicenseState(license, Date.now());
       return <div key={unit.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
         <div><div className="font-bold text-sm">{unit.name}</div><div className="text-[11px] text-slate-500">{state === 'missing' ? 'Needs initial activation' : `${state === 'active' ? 'Active until' : 'Expired'} ${new Date(license!.expiresAtMs).toLocaleString()}`}</div></div>
         <div className="flex items-center gap-2"><button type="button" disabled={busyUnit === unit.id} onClick={() => void issueCode(unit)} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50"><ShieldCheck size={14} />{busyUnit === unit.id ? <RefreshCw size={13} className="animate-spin" /> : 'Issue unit code'}</button>{issuedCodes[unit.id] && <button type="button" onClick={() => { void navigator.clipboard?.writeText(issuedCodes[unit.id]); showToast('Unit code copied.', 'success'); }} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-2 text-xs font-mono dark:border-slate-700"><Copy size={13} />{issuedCodes[unit.id]}</button>}</div>
       </div>;
-    })}
+     })}</div>)}
     </>}
   </section>;
 };

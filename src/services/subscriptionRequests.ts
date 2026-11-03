@@ -699,7 +699,7 @@ export function assertAreaWritable(state: AreaEntitlementState): void {
 }
 
 /**
- * The setup/save gate (wired from institutionSetup.createUnitsFromDraft):
+ * The department save gate:
  * with NO subscription history yet this is the very first signup, so creating
  * units is allowed (the request step starts the trial at save). Once history
  * exists, the standard state machine decides.

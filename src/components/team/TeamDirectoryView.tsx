@@ -76,7 +76,7 @@ const memberFromRoster = (entry: RosterMember): DirectoryMember => ({
 });
 
 export const TeamDirectoryView: React.FC = () => {
-  const { currentUser, units, showToast, setCurrentUser } = useApp();
+  const { currentUser, units, hospitals, groupUnitsByHospital, showToast, setCurrentUser } = useApp();
   const [members, setMembers] = useState<DirectoryMember[]>([]);
   const [selectedUnitId, setSelectedUnitId] = useState<string>('all');
   const [editing, setEditing] = useState<DirectoryMember | null>(null);
@@ -183,6 +183,11 @@ export const TeamDirectoryView: React.FC = () => {
 
   const unitName = (unitId: string): string =>
     units.find((u) => u.id === unitId)?.name || unitNames[unitId] || access?.unitNames?.[unitId] || unitId;
+  const unitHospitalName = (unitId:string):string => {
+    const unit=units.find(item=>item.id===unitId);
+    return unit?.hospitalId?hospitals.find(hospital=>hospital.id===unit.hospitalId)?.name||'Hospital': 'Unassigned hospital';
+  };
+  const editUnitGroups=groupUnitsByHospital(units.filter(unit=>isMaster||myUnitIds.includes(unit.id)));
 
   // Chips: the owner sees every unit present in the directory; a member sees the
   // units he belongs to and nothing else.
@@ -419,7 +424,7 @@ export const TeamDirectoryView: React.FC = () => {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <Building className="w-4 h-4 text-cyan-500 shrink-0" />
-                  <h2 className="text-sm font-black truncate">{unitName(section.unitId)}</h2>
+                  <div className="min-w-0"><div className="text-[10px] font-bold text-slate-400 truncate">{unitHospitalName(section.unitId)}</div><h2 className="text-sm font-black truncate">{unitName(section.unitId)}</h2></div>
                 </div>
                 <span className="shrink-0 text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
                   {section.rows.length} {section.rows.length === 1 ? 'member' : 'members'}
@@ -492,18 +497,19 @@ export const TeamDirectoryView: React.FC = () => {
               </div>
               <div>
                 <label className="text-xs font-bold">Assigned Units</label>
-                <div className="mt-1 grid sm:grid-cols-2 gap-2">
-                  {units.map((u) => (
-                    <label key={u.id} className="flex items-center gap-2 p-2.5 rounded-xl border text-xs">
-                      <input
-                        type="checkbox"
-                        checked={unitIds.includes(u.id)}
-                        onChange={() =>
-                          setUnitIds((v) => (v.includes(u.id) ? v.filter((x) => x !== u.id) : [...v, u.id]))
-                        }
-                      />
-                      {u.name}
-                    </label>
+                <div className="mt-1 space-y-3">
+                  {editUnitGroups.map((group) => (
+                    <fieldset key={group.hospital?.id||'unassigned'} className="rounded-xl border p-2.5">
+                      <legend className="px-1 text-[10px] font-black text-cyan-600">{group.hospital?.name||'Unassigned hospital'}</legend>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {group.units.map((u) => (
+                          <label key={u.id} className="flex items-center gap-2 p-2.5 rounded-xl border text-xs">
+                            <input type="checkbox" checked={unitIds.includes(u.id)} onChange={() => setUnitIds((v) => (v.includes(u.id) ? v.filter((x) => x !== u.id) : [...v, u.id]))}/>
+                            {u.name}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
                   ))}
                 </div>
               </div>

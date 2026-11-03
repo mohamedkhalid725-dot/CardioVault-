@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, CreditCard, ExternalLink, MessageCircle, ShieldCheck } from 'lucide-react';
+import { CreditCard, ExternalLink, MessageCircle, ShieldCheck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { buildLineItems, loadRequests, submitRequest } from '../../services/subscriptionRequests';
 import { clinicEnabledForUnit } from '../../services/clinicMode';
@@ -29,7 +29,7 @@ interface RenewalScope {
 }
 
 export const PaymentPanel = () => {
-  const { currentUser, units, setCurrentView } = useApp();
+  const { currentUser, units } = useApp();
   const subscriberId = String(currentUser?.userId || '').trim();
   const [requests, setRequests] = useState<SubscriptionRequest[]>(() => loadRequests());
   const [scopeKey, setScopeKey] = useState('');
@@ -258,10 +258,7 @@ export const PaymentPanel = () => {
         {renewalScopes.length === 0 ? (
           <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">No subscribed unit or clinic is linked to this account yet.</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Join a unit with its access code, or start from Institution Setup to submit a department or clinic request.</p>
-            <button type="button" onClick={() => setCurrentView('institution-setup')} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-3 py-2 text-xs font-bold text-white">
-              <Building2 className="h-3.5 w-3.5" /> Open Institution Setup
-            </button>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Join a unit with its access code first; renewal is available once a unit or clinic is linked to this account.</p>
           </div>
         ) : (
           <form onSubmit={submitRenewal} className="mt-4 space-y-3">
