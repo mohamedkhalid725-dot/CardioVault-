@@ -465,8 +465,8 @@ jobs:
           cat >> app/build.gradle <<'GRADLE'
           android {
               defaultConfig {
-                  versionCode 21
-                  versionName "2.1.0"
+                  versionCode 22
+                  versionName "2.1.1"
               }
           }
           GRADLE
@@ -570,20 +570,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="v2.1.0-ci"
+          TAG="v2.1.1-ci"
           mkdir -p apk-out
           if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk "apk-out/CardioVault-2.1.0-release.apk"
+            cp android/app/build/outputs/apk/release/app-release.apk "apk-out/CardioVault-2.1.1-release.apk"
           fi
           if [ -f android/app/build/outputs/apk/debug/app-debug.apk ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk "apk-out/CardioVault-2.1.0-debug.apk"
+            cp android/app/build/outputs/apk/debug/app-debug.apk "apk-out/CardioVault-2.1.1-debug.apk"
           fi
           if [ -z "$(ls -A apk-out)" ]; then
             echo "No APK was produced by this run."
             exit 0
           fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "CardioVault 2.1.0 (internal CI build)" --notes "Automatic build from the v2.1-build branch. Not published to any store." --target "$GITHUB_SHA"
+            gh release create "$TAG" --title "CardioVault 2.1.1 (internal CI build)" --notes "Automatic build from the v2.1-build branch. Not published to any store." --target "$GITHUB_SHA"
           fi
           gh release upload "$TAG" apk-out/*.apk --clobber
           echo "APKs published to the release $TAG."

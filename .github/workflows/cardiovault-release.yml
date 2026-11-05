@@ -177,8 +177,8 @@ jobs:
           cat >> app/build.gradle <<'GRADLE'
           android {
               defaultConfig {
-                  versionCode 21
-                  versionName "2.1.0"
+                  versionCode 22
+                  versionName "2.1.1"
               }
           }
           GRADLE
@@ -230,12 +230,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="v2.1.0"
+          TAG="v2.1.1"
           mkdir -p release-out
-          cp android/app/build/outputs/apk/release/app-release.apk "release-out/CardioVault-2.1.0-release.apk"
-          cp android/app/build/outputs/bundle/release/app-release.aab "release-out/CardioVault-2.1.0-release.aab"
+          cp android/app/build/outputs/apk/release/app-release.apk "release-out/CardioVault-2.1.1-release.apk"
+          cp android/app/build/outputs/bundle/release/app-release.aab "release-out/CardioVault-2.1.1-release.aab"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "CardioVault 2.1.0 (production release)" --notes "Signed production build: versionCode 21, versionName 2.1.0, package com.cardiovault.app. Built from commit $GITHUB_SHA on ref $GITHUB_REF_NAME. This is the file prepared for APKPure." --target "$GITHUB_SHA"
+            gh release create "$TAG" --title "CardioVault 2.1.1 (production release)" --notes "Signed production build: versionCode 22, versionName 2.1.1, package com.cardiovault.app. Built from commit $GITHUB_SHA on ref $GITHUB_REF_NAME. Cloud resilience release: local-first admissions, delta sync, automatic master-file flush. This is the file prepared for APKPure." --target "$GITHUB_SHA"
           fi
           gh release upload "$TAG" release-out/* --clobber
           echo "Production APK and AAB from commit $GITHUB_SHA published to release $TAG."

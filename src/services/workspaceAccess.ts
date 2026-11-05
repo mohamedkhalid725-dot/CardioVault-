@@ -491,13 +491,22 @@ export async function removeTeamDirectoryMember(userId:string):Promise<void>{
   const users=AuthorizationService.getUsers().filter(u=>u.userId!==userId);
   AuthorizationService.saveUsers(users);
 }
-export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
+export type WorkspaceAccessStatus='valid'|'revoked'|'unauthorized'|'unreachable';
+/**
+ * Distinguishes "the server said no" from "the server could not be reached".
+ * The UI must only send the user back to the access gate for a definitive
+ * answer; a network failure keeps the app running on the cached workspace.
+ */
+export async function resolveWorkspaceAccessStatus():Promise<WorkspaceAccessStatus>{
   // The isolated local preview never validates against a workspace document:
   // there is no cloud session by design (mock data only).
-  if(isLocalPreview())return true;
+  if(isLocalPreview())return 'valid';
   const id=await uid();
-  if(!id)return null;
-  if(await isMasterAccount())return !!(await ensureOwnerWorkspace());
+  if(!id)return 'unreachable';
+  if(await isMasterAccount()){
+    try{return (await ensureOwnerWorkspace())?'valid':'unreachable';}
+    catch(error){console.warn('Owner workspace validation failed:',error);return 'unreachable';}
+  }
   const workspaceId=getActiveWorkspaceId();
   try{
     let membership:any=null;
@@ -508,16 +517,20 @@ export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
       const result=await webGetDoc(webDoc(`workspaces/${workspaceId}/members/${id}`));
       membership=result.exists()?result.data():null;
     }
-    if(!membership)return null;
-    if(membership?.active===false||membership?.forceReauth===true)return false;
+    if(!membership)return 'unauthorized';
+    if(membership?.active===false||membership?.forceReauth===true)return 'revoked';
     // An active membership is sufficient authorization. Access codes are only
     // required when the account is first enrolled; revocation is enforced through
     // membership.active / membership.forceReauth.
     const memberUnitIds=Array.isArray(membership?.unitIds)
       ? membership.unitIds.map(String).filter(Boolean)
       : (membership?.unitId ? [String(membership.unitId)] : []);
-    return membership?.active!==false && !membership?.forceReauth && memberUnitIds.length>0;
-  }catch(error){console.warn('Workspace access validation failed:',error);return null;}
+    return memberUnitIds.length>0?'valid':'unauthorized';
+  }catch(error){console.warn('Workspace access validation failed:',error);return 'unreachable';}
+}
+export async function validateCurrentWorkspaceAccess():Promise<boolean|null>{
+  const status=await resolveWorkspaceAccessStatus();
+  return status==='valid'?true:status==='revoked'?false:null;
 }
 export function isOwnerAccess(){
   const state=getStoredWorkspaceAccess();

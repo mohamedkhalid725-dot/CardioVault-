@@ -4,9 +4,11 @@ import type { Unit } from '../types/clinical';
 import { reconcileClinicalRegistry } from './bedReconciliation';
 import { clearPendingLocalChanges, hasPendingLocalChanges, markPendingLocalChanges, mergeClinicalCollections, pendingChangesGeneration } from './clinicalMerge';
 import { ensureUnitBeds, pendingUnitBedCounts, type CloudBedRecord, type EnsureUnitBedsResult, type UnitBedsIO } from './unitBeds';
-import { onSnapshot } from 'firebase/firestore';
+import { onSnapshot, writeBatch } from 'firebase/firestore';
 import { webCurrentUser, webDoc, webCollection, getDoc, getDocs, setDoc, deleteDoc, query, where, or } from './webFirebase';
 import { ensureOwnerWorkspace, isMasterAccount, getActiveWorkspaceId, type WorkspaceAccessState } from './workspaceAccess';
+import { chunkOperations, computeSyncPlan } from './clinicalSyncPlan';
+import { classifySyncError, isQuotaCoolingDown, loadManifest, peekDeletions, recordCloudFailure, recordCloudSuccess, removeDeletions, runLifecycleFlush, saveManifest, setQuotaCooldown } from './clinicalSyncStore';
 
 const SCHEMA_VERSION=12;
 const LAST_SYNC_KEY='cardiovault_last_cloud_sync';
@@ -278,38 +280,46 @@ async function runWebSync():Promise<boolean>{
     // up: the rules make him the unit's consultant. Uploading the units but not
     // their beds left exactly the units he created with a bed count of zero.
     const myCreatedUnitIds=new Set(StorageService.getUnits().filter(unit=>String((unit as any).createdBy||'')===String(user.uid)).map(unit=>String(unit.id)));
-    const sync=async(name:string,records:any[],unitScoped:boolean,extra?:(record:any)=>boolean)=>{
-      const current=new Set<string>();
-      for(const record of records){
-        if(!record?.id)continue;
-        if(unitScoped&&!allowedUnitIds.has(String(record.unitId||''))&&!(extra?.(record)))continue;
-        current.add(String(record.id));
-        await withTimeout(setDoc(webDoc(`${path(access.workspaceId,name)}/${record.id}`),{...safe(record),id:String(record.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},{merge:true}));
-      }
-      if(access.role==='owner'){
-        const remote=await collectionData(path(access.workspaceId,name));
-        for(const item of remote)if(!current.has(String(item.id)))await deleteDoc(webDoc(`${path(access.workspaceId,name)}/${item.id}`));
+    const scope=(collection:'units'|'beds'|'patients',record:any)=>collection==='units'
+      ?(access.role==='owner'||allowedUnitIds.has(String(record?.id||''))||String(record?.createdBy||'')===String(user.uid))
+      :(access.role==='owner'||allowedUnitIds.has(String(record?.unitId||''))||myCreatedUnitIds.has(String(record?.unitId||'')));
+    const plan=computeSyncPlan({
+      workspaceId:access.workspaceId,
+      manifest:loadManifest(access.workspaceId),
+      units:StorageService.getUnits() as any,
+      beds:StorageService.getBeds() as any,
+      patients:StorageService.getPatients() as any,
+      scope,
+      tombstones:peekDeletions(),
+    });
+    const commit=async(operations:Array<{type:'set'|'delete';reference:string;data?:any}>,merge:boolean)=>{
+      if(!operations.length)return;
+      for(const chunk of chunkOperations(operations,400)){
+        const batch=writeBatch(webDoc(chunk[0].reference).firestore);
+        for(const operation of chunk){
+          const reference=webDoc(operation.reference);
+          if(operation.type==='delete')batch.delete(reference);
+          else batch.set(reference,operation.data||{},{merge});
+        }
+        await withTimeout(batch.commit());
       }
     };
-    if(access.role==='owner'){
-      await sync('units',StorageService.getUnits(),false);
-    }else{
-      // A member owns only the units on their membership plus any unit they created
-      // themselves (the rules make the creator that unit's consultant). Pushing the
-      // whole local list would be denied for every unit they do not belong to.
-      await sync('units',StorageService.getUnits().filter(u=>allowedUnitIds.has(String(u.id))||String((u as any).createdBy||'')===String(user.uid)),false);
-    }
-    await sync('beds',StorageService.getBeds(),access.role!=='owner',(bed:any)=>myCreatedUnitIds.has(String(bed?.unitId||'')));
-    await sync('patients',StorageService.getPatients(),access.role!=='owner');
+    await commit(plan.writes.map(write=>({type:'set' as const,reference:`${path(access.workspaceId,write.collection)}/${write.id}`,data:{...safe(write.data),id:String(write.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION}})),true);
+    await commit(plan.deletes.map(item=>({type:'delete' as const,reference:`${path(access.workspaceId,item.collection)}/${item.id}`})),true);
+    removeDeletions(plan.deletes);
+    saveManifest(plan.nextManifest);
     // Only a sync that saw no new local write may declare the workspace clean.
     // A save that landed mid-upload leaves the flag set, so the next sync still
     // treats the local copy as the doctor's latest intent.
     if(pendingChangesGeneration()===generation)clearPendingLocalChanges();
-    localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);uploaded=true;return true;
+    recordCloudSuccess(access.workspaceId);
+    await runLifecycleFlush(access.workspaceId);
+    uploaded=true;return true;
   }catch(error:any){
+    const kind=classifySyncError(error);
+    if(kind==='quota')setQuotaCooldown(5*60*1000);
     markPendingLocalChanges();
-    localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());
-    localStorage.setItem(LAST_ERROR_DETAIL_KEY,String(error?.message||error));
+    recordCloudFailure(error,kind);
     return false;
   }finally{
     webSyncRunning=false;

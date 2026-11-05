@@ -10,6 +10,8 @@ import { ensureUnitBeds, type CloudBedRecord, type EnsureUnitBedsResult, type Un
 import { webCurrentUser } from './webFirebase';
 import { ensureWebUnitBeds, webLoadCurrentUserFromCloud, webSyncCurrentUserNow } from './webCloudSyncBridge';
 import { isLocalPreview } from '../config/localPreview';
+import { chunkOperations, computeSyncPlan, type SyncDeleteOperation, type SyncWriteOperation } from './clinicalSyncPlan';
+import { classifySyncError, isQuotaCoolingDown, loadManifest, peekDeletions, recordCloudFailure, recordCloudSuccess, removeDeletions, runLifecycleFlush, saveManifest, setQuotaCooldown } from './clinicalSyncStore';
 
 let installed=false;
 let syncing=false;
@@ -31,8 +33,11 @@ const currentUser=async():Promise<any|null>=>{if(!Capacitor.isNativePlatform())r
 const currentUid=async():Promise<string|null>=>{const user=await currentUser();return user?.uid||null;};
 const recoverNativeGoogleSession=async():Promise<string|null>=>{if(!Capacitor.isNativePlatform())return null;try{const pending=await FirebaseAuthentication.getPendingAuthResult();if(pending?.user?.uid)return pending.user.uid;}catch{}try{const result=await FirebaseAuthentication.signInWithGoogle({useCredentialManager:true});if(result?.user?.uid)return result.user.uid;}catch(error){console.warn('Interactive Google session recovery failed:',error);}return currentUid();};
 const errorText=(error:unknown):string=>{const v=error as any;const code=String(v?.code||v?.errorCode||'').trim();const message=String(v?.message||v?.errorMessage||error||'').trim();return[code,message].filter(Boolean).join(': ').slice(0,500)||'Unknown cloud error';};
-const recordCloudError=(error:unknown)=>{localStorage.setItem(LAST_ERROR_KEY,new Date().toISOString());localStorage.setItem(LAST_ERROR_DETAIL_KEY,errorText(error));};
-const clearCloudError=()=>{localStorage.removeItem(LAST_ERROR_KEY);localStorage.removeItem(LAST_ERROR_DETAIL_KEY);};
+const recordCloudError=(error:unknown)=>{recordCloudFailure(error);};
+// Deliberately a no-op: a later success must not erase the last failure, which is
+// the evidence the user needs to report a problem. Only the diagnostics banner
+// clears it, through clinicalSyncStore.dismissCloudError().
+const clearCloudError=()=>{void 0;};
 const ensureFirestoreNetwork=async()=>{if(Capacitor.isNativePlatform())await FirebaseFirestore.enableNetwork();};
 const readSnapshotData=(snapshot:any):any=>{try{return typeof snapshot?.data==='function'?snapshot.data():(snapshot?.data||{});}catch{return{};}};
 const readSnapshotId=(snapshot:any):string|null=>{const id=snapshot?.id||snapshot?.documentId||snapshot?.reference?.id;return typeof id==='string'&&id?id:null;};
@@ -45,6 +50,29 @@ async function getCollectionDocuments(reference:string,unitId?:string):Promise<A
 async function getSharedCollectionDocuments(reference:string,unitId:string):Promise<Array<{id:string;data:any}>>{if(!unitId)return[];const options:any={reference,compositeFilter:{type:'and',queryConstraints:[{type:'where',fieldPath:'unitIds',opStr:'array-contains',value:unitId}]}};try{const result:any=await FirebaseFirestore.getCollection(options);const snapshots=Array.isArray(result?.snapshots)?result.snapshots:[];return snapshots.map((snapshot:any)=>({id:readSnapshotId(snapshot)||'',data:readSnapshotData(snapshot)})).filter(x=>!!x.id);}catch(error){console.warn('Shared clinical file lookup failed:',error);return[];}}
 const withTimeout=<T,>(promise:Promise<T>,timeoutMs=15000):Promise<T>=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Cloud sync operation timed out.')),timeoutMs);promise.then(v=>{clearTimeout(timer);resolve(v);},e=>{clearTimeout(timer);reject(e);});});
 async function withRetry<T>(operation:()=>Promise<T>,attempts=3):Promise<T>{let last:unknown;for(let i=0;i<attempts;i++){try{return await withTimeout(operation(),15000);}catch(error){last=error;if(i<attempts-1)await new Promise(r=>setTimeout(r,500*2**i));}}throw last;}
+type ClinicalBatchOperation={type:'set'|'delete';reference:string;data?:Record<string,any>;options?:{merge:boolean}};
+async function commitClinicalBatch(operations:ClinicalBatchOperation[]):Promise<void>{
+  if(!operations.length)return;
+  if(operations.length>450)throw new Error('Cloud sync batch exceeds the Firestore 500-write limit.');
+  if(Capacitor.isNativePlatform()){
+    await withTimeout(FirebaseFirestore.writeBatch({operations}),15000);
+    return;
+  }
+  const [{writeBatch},{webDoc}]=await Promise.all([import('firebase/firestore'),import('./webFirebase')]);
+  const batch=writeBatch(webDoc(operations[0].reference).firestore);
+  for(const operation of operations){
+    const reference=webDoc(operation.reference);
+    if(operation.type==='delete')batch.delete(reference);
+    else batch.set(reference,operation.data||{},{merge:operation.options?.merge===true});
+  }
+  await withTimeout(batch.commit(),15000);
+}
+function clinicalWriteOperations(workspaceId:string,writes:SyncWriteOperation[]):ClinicalBatchOperation[]{
+  return writes.map(write=>({type:'set' as const,reference:`${workspacePath(workspaceId,write.collection)}/${write.id}`,data:{...firestoreSafe(write.data),id:String(write.id),updatedAt:new Date().toISOString(),schemaVersion:SCHEMA_VERSION},options:{merge:true}}));
+}
+function clinicalDeleteOperations(workspaceId:string,deletes:SyncDeleteOperation[]):ClinicalBatchOperation[]{
+  return deletes.map(item=>({type:'delete' as const,reference:`${workspacePath(workspaceId,item.collection)}/${item.id}`}));
+}
 const workspacePath=(workspaceId:string,collection:string)=>`workspaces/${workspaceId}/${collection}`;
 function clearLocalClinicalData(){const previous=suppressSync;suppressSync=true;try{StorageService.saveUnits([]);StorageService.saveBeds([]);StorageService.savePatients([]);}finally{suppressSync=previous;}}
 function setLocalData(units:any[],beds:any[],patients:any[]){const previous=suppressSync;suppressSync=true;try{StorageService.saveUnits(units);StorageService.saveBeds(beds);StorageService.savePatients(patients);}finally{suppressSync=previous;}}
@@ -155,18 +183,33 @@ async function syncLocalDatabase(uid:string):Promise<void>{
         ||myUnitIds.includes(String(record?.unitId||''))
         ||myCreatedUnitIds.has(String(record?.unitId||''))
         ||String(record?.unitId||'')===String(access.unitId||'');
-      await syncCollection(access.workspaceId,'units',StorageService.getUnits(),record=>owner||myUnitIds.includes(String(record?.id||''))||String(record?.createdBy||'')===myUid,owner);
-      await syncCollection(access.workspaceId,'beds',StorageService.getBeds(),filterUnit,owner);
-      await syncCollection(access.workspaceId,'patients',StorageService.getPatients(),filterUnit,owner);
+      const scope=(collection:'units'|'beds'|'patients',record:any)=>collection==='units'
+        ?(owner||myUnitIds.includes(String(record?.id||''))||String(record?.createdBy||'')===myUid)
+        :filterUnit(record);
+      const plan=computeSyncPlan({
+        workspaceId:access.workspaceId,
+        manifest:loadManifest(access.workspaceId),
+        units:StorageService.getUnits() as any,
+        beds:StorageService.getBeds() as any,
+        patients:StorageService.getPatients() as any,
+        scope,
+        tombstones:peekDeletions(),
+      });
+      for(const chunk of chunkOperations(plan.writes,400))await commitClinicalBatch(clinicalWriteOperations(access.workspaceId,chunk));
+      for(const chunk of chunkOperations(plan.deletes,400))await commitClinicalBatch(clinicalDeleteOperations(access.workspaceId,chunk));
+      removeDeletions(plan.deletes);
+      saveManifest(plan.nextManifest);
       if(owner)await writeMetadata(access.workspaceId,uid,access);
       // The workspace only counts as clean when nothing was saved while this
       // upload was running; otherwise the local copy is still the newest truth.
       if(pendingChangesGeneration()===generation)clearPendingLocalChanges();
-      localStorage.setItem(LAST_SYNC_KEY,new Date().toISOString());
-      clearCloudError();
+      recordCloudSuccess(access.workspaceId);
+      await runLifecycleFlush(access.workspaceId);
     }catch(error){
+      const kind=classifySyncError(error);
+      if(kind==='quota')setQuotaCooldown(5*60*1000);
       markPendingLocalChanges();
-      recordCloudError(error);
+      recordCloudFailure(error,kind);
       throw error;
     }
   })();
@@ -175,7 +218,7 @@ async function syncLocalDatabase(uid:string):Promise<void>{
 }
 /** Waits until no automatic sync is running, so the next one really uploads. */
 async function waitForIdleSync():Promise<void>{for(let attempt=0;attempt<100;attempt+=1){if(!syncing)return;const current=inflightSync;if(current){try{await current;}catch{}}await new Promise(resolve=>setTimeout(resolve,100));}}
-function scheduleSync(delay=100){if(suppressSync)return;if(syncTimer)clearTimeout(syncTimer);syncTimer=setTimeout(()=>{syncTimer=null;void(async()=>{const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);try{await syncLocalDatabase(uid);}catch(error){console.warn('Automatic cloud sync failed; changes will be retried on the next local save or manual sync.',error);}})();},delay);}
+function scheduleSync(delay=100){if(suppressSync)return;if(isQuotaCoolingDown())return;if(syncTimer)clearTimeout(syncTimer);syncTimer=setTimeout(()=>{syncTimer=null;void(async()=>{const uid=await currentUid();if(!uid)return;localStorage.setItem(UID_KEY,uid);try{await syncLocalDatabase(uid);}catch(error){console.warn('Automatic cloud sync failed; changes will be retried on the next local save or manual sync.',error);}})();},delay);}
 
 async function migrateLegacyMemberPatients(uid:string,access:WorkspaceAccessState):Promise<number>{
   if(access.role==='owner'||access.role==='view_only')return 0;
