@@ -104,3 +104,17 @@ export async function loadMasterFilesForUnits(
     return { ...file, timeline: [...merged.values()].sort((a, b) => a.atMs - b.atMs) };
   }));
 }
+
+/**
+ * Files only, without their timeline events. The admission duplicate check needs
+ * names, ages and MRNs; loading every event of every file cost one read per file
+ * on top of the index read, which is a large share of the daily read budget.
+ */
+export async function listMasterFileSummariesForUnits(
+  io: MasterPatientFilePersistenceIO, workspaceId: string, unitIds: string[],
+): Promise<MasterPatientFile[]> {
+  const perUnit = await Promise.all([...new Set(unitIds.filter(Boolean))].map(unitId => io.listFilesForUnit(workspaceId, unitId)));
+  const unique = new Map<string, MasterPatientFile>();
+  for (const file of perUnit.flat()) unique.set(file.id, file);
+  return [...unique.values()].map(file => ({ ...file, timeline: Array.isArray(file.timeline) ? file.timeline : [] }));
+}

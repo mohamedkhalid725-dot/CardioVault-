@@ -8,6 +8,7 @@ import {FirebaseAuthentication}from'@capacitor-firebase/authentication';
 import {webCurrentUser,webGoogleSignIn,checkWebRedirectResult,webEmailSignIn,webEmailCreate,webSignOut} from'../services/webFirebase';
 import {Capacitor}from'@capacitor/core';
 import {clearActiveClinicalWorkspace,ensureUnitBedsNow,installCloudSyncBridge,loadCurrentUserFromCloud,syncCurrentUserNow}from'../services/cloudSyncBridge';
+import {enqueueDeletion,setLifecycleFlushHandler}from'../services/clinicalSyncStore';
 import {clearUnitBedsPending,desiredBeds,markUnitBedsPending,normalizeBedCount,UnitBedsIncompleteError,type UnitSetupResult}from'../services/unitBeds';
 import {isMasterAccount,ensureOwnerWorkspace,validateCurrentWorkspaceAccess,setStoredWorkspaceAccess,registerCreatedUnit,setUnitCapacityLocked,getActiveWorkspaceId,getStoredWorkspaceAccess,getCurrentUid,updateOwnDisplayName as saveOwnDisplayName } from '../services/workspaceAccess';
 import {listIndexedWorkspaces,registerWorkspaceInIndex,readWorkspaceName,type IndexedWorkspace } from '../services/workspaceIndex';
@@ -503,19 +504,26 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
     }
     return complete;
    };
+   // Both sync bridges (web and native) flush this queue after a successful
+   // upload instead of waiting for the user to press "Sync" by hand.
+   useEffect(()=>{setLifecycleFlushHandler(async workspaceId=>{await flushPendingDepartmentLifecycleWrites(workspaceId);});return()=>setLifecycleFlushHandler(null);},[]);
    const recordDepartmentLifecycle=async(patient:Patient,unitId:string,title:string,summary:string,detail:string,atMs=Date.now()):Promise<boolean>=>{
     if(!isLocalPreview()){
      const workspaceId=getActiveWorkspaceId();
      try{
-      if(!(await syncCurrentUserNow()))throw new Error('Patient and bed changes were not confirmed by cloud sync.');
-      if(getActiveWorkspaceId()!==workspaceId)throw new Error('Workspace changed before the lifecycle event was confirmed.');
+      // The admission/transfer/discharge already happened locally. The cloud
+      // confirmation runs in the background: a slow or failing network must never
+      // block a clinician from documenting a patient. The event is queued below
+      // when the write fails, and the queue flushes after the next good sync.
+      if(!workspaceId)throw new Error('No active workspace for the lifecycle event.');
       await recordCloudDepartmentLifecycle(patient,unitId,title,summary,detail,atMs,workspaceId);
+      void syncCurrentUserNow();
       return true;
      }catch(error){
       if(workspaceId)savePendingLifecycleWrite({id:`${workspaceId}/${atMs}/${patient.id}/${unitId}`,workspaceId,patient:{id:patient.id,masterFileId:patient.masterFileId,fullName:String(patient.fullName||patient.name||patient.id),age:Number(patient.age)||0,unitId:String(patient.unitId||unitId),unitIds:patient.unitIds},unitId,title,summary,detail,atMs});
       console.warn('Cloud master patient file lifecycle write failed:',error);
-      showToast('The lifecycle action is not cloud-complete: patient, bed, or master-file event confirmation failed. Retry cloud sync before continuing.','error');
-      return false;
+      showToast('Saved on this device. The master-file event will sync automatically when the connection is back.','warning');
+      return !!workspaceId;
      }
     }
    try{
@@ -620,7 +628,7 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
   setPatients(nextPatients);StorageService.savePatients(nextPatients);setBeds(nextBeds);StorageService.saveBeds(nextBeds);
    return await recordDepartmentLifecycle(nextWithUnits,unitId,'Patient readmitted',`${p.fullName} was readmitted to ${freshUnits.find(unit=>unit.id===unitId)?.name||unitId}.`,`Admission date/time: ${date} ${time}. Bed: ${target.bedNumber||target.id}. Diagnosis: ${nextWithUnits.primaryDiagnosis||'Not recorded'}.`,started.getTime());
  }catch(error){showToast(`Re-admission blocked. Nothing was changed. ${String((error as any)?.message||'')}`,'error');return false;}
-}; const deletePatientPermanently=(id:string)=>{commitPatients(patients.filter(p=>p.id!==id));commitBeds(beds.map(b=>b.patientId===id?{...b,patientId:undefined,status:'Empty'}:b));};
+}; const deletePatientPermanently=(id:string)=>{commitPatients(patients.filter(p=>p.id!==id));commitBeds(beds.map(b=>b.patientId===id?{...b,patientId:undefined,status:'Empty'}:b));enqueueDeletion({collection:'patients',id});};
   const addUnit=(name:string,type:string,initialBedsCount=3,options?:AddUnitOptions):Unit=>{
    if(!isLocalPreview()&&currentUser?.role!=='department_admin')throw new Error('Only the platform owner or a department administrator can create a unit.');
   const requestedId=String(options?.id||'').trim();
@@ -772,9 +780,9 @@ export const AppProvider:React.FC<{children:React.ReactNode}>=({children})=>{
  });
 
   const updateUnit=(id:string,name:string,type:string,extra:Partial<Unit>={})=>{const current=StorageService.getUnits();commitUnits(current.map(u=>u.id===id?{...u,name,type,...extra}:u));};
- const deleteUnit=(id:string)=>{if(units.length<=1){showToast('Cannot delete the last clinical unit.','error');return false;}const activeIds=new Set(patients.filter(p=>!p.isArchived&&p.unitId===id).map(p=>p.id));if(activeIds.size>0||beds.some(b=>b.unitId===id&&b.patientId&&activeIds.has(b.patientId))){showToast('Transfer or discharge active patients before deleting this unit.','error');return false;}commitUnits(units.filter(u=>u.id!==id));commitBeds(beds.filter(b=>b.unitId!==id));clearUnitBedsPending(id);if(currentUnitId===id)setCurrentUnitId(units.find(u=>u.id!==id)?.id||null);return true;};
+ const deleteUnit=(id:string)=>{if(units.length<=1){showToast('Cannot delete the last clinical unit.','error');return false;}const activeIds=new Set(patients.filter(p=>!p.isArchived&&p.unitId===id).map(p=>p.id));if(activeIds.size>0||beds.some(b=>b.unitId===id&&b.patientId&&activeIds.has(b.patientId))){showToast('Transfer or discharge active patients before deleting this unit.','error');return false;}commitUnits(units.filter(u=>u.id!==id));commitBeds(beds.filter(b=>b.unitId!==id));enqueueDeletion({collection:'units',id});beds.filter(b=>b.unitId===id).forEach(b=>enqueueDeletion({collection:'beds',id:b.id}));clearUnitBedsPending(id);if(currentUnitId===id)setCurrentUnitId(units.find(u=>u.id!==id)?.id||null);return true;};
  const addBed=(unitId:string,bedNumber?:string)=>{const n=beds.filter(b=>b.unitId===unitId).length+1;const bed={id:`bed-${unitId}-${Date.now()}`,unitId,bedNumber:bedNumber||`Bed ${n}`,status:'Empty' as BedStatus};commitBeds([...beds,bed]);commitUnits(units.map(u=>u.id===unitId?{...u,totalBeds:u.totalBeds+1}:u));void notifyClinicalData(`تم إضافة سرير جديد: ${bed.bedNumber}.`,'تمت إضافة بيانات جديدة',{unitId:bed.unitId,type:'bed-update'});return bed;};
- const removeBed=(id:string)=>{const bed=beds.find(b=>b.id===id);if(!bed||bedIsOccupied(bed))return false;const count=beds.filter(b=>b.unitId===bed.unitId).length;if(count<=1)return false;commitBeds(beds.filter(b=>b.id!==id));commitUnits(units.map(u=>u.id===bed.unitId?{...u,totalBeds:Math.max(1,u.totalBeds-1)}:u));return true;};
+ const removeBed=(id:string)=>{const bed=beds.find(b=>b.id===id);if(!bed||bedIsOccupied(bed))return false;const count=beds.filter(b=>b.unitId===bed.unitId).length;if(count<=1)return false;commitBeds(beds.filter(b=>b.id!==id));commitUnits(units.map(u=>u.id===bed.unitId?{...u,totalBeds:Math.max(1,u.totalBeds-1)}:u));enqueueDeletion({collection:'beds',id});return true;};
  const syncNow=async()=>{if(isLocalPreview()){showToast('Cloud sync is disabled in the isolated local preview.','info');return;}setIsSyncing(true);try{const ok=await syncCurrentUserNow();if(!ok){const detail=localStorage.getItem('cardiovault_last_cloud_sync_error_detail')||'No authenticated Firebase user or sync failed.';throw new Error(detail);}const pendingEventsSaved=await flushPendingDepartmentLifecycleWrites(getActiveWorkspaceId());setLastSyncTime(new Date().toLocaleTimeString());showToast(pendingEventsSaved?'Cloud sync and pending lifecycle events completed successfully.':'Clinical data synced, but a master-file event still needs confirmation. Retry cloud sync.',pendingEventsSaved?'success':'warning');}catch(error){console.warn(error);showToast('Cloud sync failed. Your data is saved on this device and will retry.','error');}finally{setIsSyncing(false);}};
  const currentPatient=patients.find(p=>p.id===currentPatientId);
   return <AppContext.Provider value={{theme,setTheme,toggleTheme,auth,loginWithGoogle,loginWithEmail,unlockWithPin,lockApp,logout,currentUser,setCurrentUser,updateOwnDisplayName,currentView,setCurrentView,currentUnitId,setCurrentUnitId,currentPatientId,setCurrentPatientId,currentPatient,activePatientSection,setActivePatientSection,units,beds,patients,archivedPatients,getPatientById,getBedsByUnit,getUnitById,addPatient,updatePatient,dischargePatient,transferPatient,readmitPatient,deletePatientPermanently,addUnit,finalizeUnitCreation,completeUnitSetup,updateUnit,lockUnitCapacity,deleteUnit,hospitals,addHospital,assignUnitToHospital,canWriteUnit,groupUnitsByHospital,addBed,removeBed,isSearchOpen,setIsSearchOpen,isSyncing,lastSyncTime,syncNow,toasts,showToast,dismissToast,privacySafeMonitor,setPrivacySafeMonitor,favoritePatientIds,toggleFavoritePatient,myWorkspaces,isTeamPickerOpen,isSwitchingTeam,openTeamPicker,closeTeamPicker,refreshWorkspaceIndex,switchWorkspace}}>{children}</AppContext.Provider>;
